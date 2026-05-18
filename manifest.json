@@ -1,0 +1,19 @@
+{
+  "name": "银行科技岗八股文",
+  "short_name": "银行八股文",
+  "description": "银行科技岗面试八股文复习宝典 · 11大模块 · 离线可用",
+  "start_url": "index.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#090d1a",
+  "theme_color": "#090d1a",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "lang": "zh-CN"
+}

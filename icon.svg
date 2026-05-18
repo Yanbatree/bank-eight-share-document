@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="80" fill="url(#bg)"/>
+  <text x="256" y="200" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="90" fill="#38bdf8">银行</text>
+  <text x="256" y="310" text-anchor="middle" font-family="sans-serif" font-weight="600" font-size="55" fill="#a78bfa">八股文</text>
+  <text x="256" y="400" text-anchor="middle" font-family="sans-serif" font-weight="400" font-size="32" fill="#5a6d86">面试宝典</text>
+</svg>
