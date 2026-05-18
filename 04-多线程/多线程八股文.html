@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多线程八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #fb923c; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #ea580c; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🧵 Java 多线程八股文</h1>
+
+<!-- ============ 一、基础 ============ -->
+<h2 id="one-1">一、基础概念</h2>
+
+<h3>1. 线程 vs 进程</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>进程</th><th>线程</th></tr>
+<tr><td>定义</td><td>程序的一次执行实例，资源分配的基本单位</td><td>CPU 调度的基本单位</td></tr>
+<tr><td>资源</td><td>独立的内存空间（堆、方法区）</td><td>共享进程的堆和方法区，独享栈和 PC</td></tr>
+<tr><td>通信</td><td>复杂（管道、消息队列、共享内存、Socket）</td><td>简单（共享内存、wait/notify）</td></tr>
+<tr><td>开销</td><td>创建/切换开销大</td><td>创建/切换开销小</td></tr>
+<tr><td>独立性</td><td>一个进程崩溃不影响其他</td><td>一个线程崩溃可能导致整个进程崩溃</td></tr>
+</table>
+</div>
+
+<h3 id="one-2">2. 线程生命周期（6 种状态）</h3>
+
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> NEW : new Thread()
+    NEW --> RUNNABLE : start()
+    RUNNABLE --> BLOCKED : 竞争 synchronized 锁失败
+    BLOCKED --> RUNNABLE : 获取到锁
+    RUNNABLE --> WAITING : wait()/join()/park()
+    WAITING --> RUNNABLE : notify()/notifyAll()/unpark()
+    RUNNABLE --> TIMED_WAITING : sleep(ms)/wait(ms)/join(ms)
+    TIMED_WAITING --> RUNNABLE : 超时/notify()
+    RUNNABLE --> TERMINATED : run() 结束
+    TERMINATED --> [*]
+</div>
+
+<div class="card">
+<table>
+<tr><th>状态</th><th>说明</th><th>进入方式</th></tr>
+<tr><td>NEW</td><td>创建但未启动</td><td>new Thread()</td></tr>
+<tr><td>RUNNABLE</td><td>就绪或运行中</td><td>start()</td></tr>
+<tr><td>BLOCKED</td><td>等待获取锁</td><td>synchronized 竞争失败</td></tr>
+<tr><td>WAITING</td><td>无限等待</td><td>wait() / join() / LockSupport.park()</td></tr>
+<tr><td>TIMED_WAITING</td><td>限时等待</td><td>sleep(ms) / wait(ms) / join(ms)</td></tr>
+<tr><td>TERMINATED</td><td>执行完毕</td><td>run() 结束或异常退出</td></tr>
+</table>
+</div>
+
+<h3 id="one-3">3. 创建线程的方式</h3>
+
+<div class="card">
+<table>
+<tr><th>方式</th><th>说明</th></tr>
+<tr><td>继承 Thread</td><td>重写 run()，调用 start()。缺点：单继承限制</td></tr>
+<tr><td>实现 Runnable</td><td>实现 run()，传给 new Thread()。推荐，任务与线程分离</td></tr>
+<tr><td>实现 Callable</td><td>call() 有<strong>返回值</strong>+抛异常。通过 FutureTask 包装</td></tr>
+<tr><td>线程池</td><td>通过 ExecutorService 提交任务，<strong>生产环境推荐</strong></td></tr>
+</table>
+<strong>start() vs run()：</strong>start() 创建新线程并调用 run()；直接调用 run() 只是普通方法调用，在当前线程执行。
+</div>
+
+<!-- ============ 二、锁 ============ -->
+<h2 id="two-1">二、锁机制</h2>
+
+<h3>1. synchronized 底层原理</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "Java 对象头"
+        A["Mark Word<br/>32/64 bit<br/>存 hashcode、锁信息、GC 年龄"]
+        B["Klass Pointer<br/>指向类元数据"]
+    end
+    subgraph "Monitor 机制"
+        C["每个对象关联一个 Monitor"]
+        C --> D["Owner: 持有锁的线程"]
+        C --> E["EntryList: 等待获取锁的线程"]
+        C --> F["WaitSet: wait() 的线程"]
+    end
+    A -->|"锁升级过程"| C
+</div>
+
+<div class="highlight">
+<strong>synchronized 代码块：</strong>编译为 monitorenter / monitorexit 字节码指令，操作对象头的 Mark Word。<br/>
+<strong>synchronized 方法：</strong>方法标志 ACC_SYNCHRONIZED，JVM 隐式调用 monitorenter/monitorexit。
+</div>
+
+<h3 id="two-2">2. 锁升级过程（JDK 1.6+ 锁优化）</h3>
+
+<div class="mermaid">
+graph LR
+    A["无锁<br/>No Lock"] -->|"有线程获取锁"| B["偏向锁<br/>Biased Lock"]
+    B -->|"另一个线程竞争"| C["轻量级锁<br/>Lightweight Lock"]
+    C -->|"自旋超过阈值/竞争激烈"| D["重量级锁<br/>Heavyweight Lock"]
+    Note["不可降级"]
+</div>
+
+<div class="card">
+<table>
+<tr><th>锁状态</th><th>原理</th><th>适用场景</th></tr>
+<tr><td><strong>偏向锁</strong></td><td>Mark Word 存线程 ID，同一线程再次获取无需 CAS</td><td>一个线程反复获取同一锁</td></tr>
+<tr><td><strong>轻量级锁</strong></td><td>CAS 替换 Mark Word，失败则自旋等待</td><td>线程交替执行，竞争不激烈</td></tr>
+<tr><td><strong>重量级锁</strong></td><td>膨胀为 Monitor，未获取到锁的线程阻塞（切换内核态）</td><td>竞争激烈</td></tr>
+</table>
+<strong>为什么要升级？</strong>大多数情况下锁不会有竞争，用重量级锁每次都要切内核态开销太大。逐步升级是"乐观"策略。
+</div>
+
+<h3 id="two-3">3. volatile 关键字</h3>
+
+<div class="card">
+<strong>两大作用：</strong>
+<ol>
+<li><strong>保证可见性</strong>：一个线程修改 volatile 变量后，其他线程立即可见（写入后立即刷新到主存，读取直接从主存读）</li>
+<li><strong>禁止指令重排序</strong>：通过内存屏障（Memory Barrier）禁止 JVM/JIT/CPU 重排相关指令</li>
+</ol>
+
+<strong>volatile 不能保证原子性！</strong>比如 i++（读-改-写）不是原子的。
+<pre><code>volatile int count = 0;
+count++; // 线程不安全！实际是三步：读→加1→写</code></pre>
+
+<strong>典型应用：</strong>单例模式 DCL（双重检查锁定）中的 instance 变量必须 volatile 防止指令重排导致拿到半初始化对象。
+</div>
+
+<h3 id="two-4">4. CAS 与 ABA 问题</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant T as 线程
+    participant M as 内存 V
+
+    T->>M: ① 读取 V = A
+    T->>T: ② 计算新值 V' = B
+    T->>M: ③ CAS(V, A, B): V == A ? V=B : fail
+    M-->>T: 成功（V 仍是 A）或者失败重试
+</div>
+
+<div class="card">
+<strong>CAS（Compare And Swap）</strong>：CPU 级别的原子指令，JVM 通过 Unsafe 类调用。
+
+<strong>ABA 问题：</strong>
+<pre><code>线程1: 读到 A，准备改成 C
+线程2: 把 A → B → A（中间变过）
+线程1: CAS 发现还是 A，以为没变，实际已经变了</code></pre>
+<strong>解决：</strong><code>AtomicStampedReference</code> 加版本号，每次修改版本号 +1。
+</div>
+
+<h3 id="two-5">5. AQS 原理</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "AQS 核心结构"
+        A["state (volatile int)<br/>同步状态"]
+        B["CLH 队列<br/>双向链表存等待线程"]
+    end
+    A -->|"state=0: 未占用<br/>state=1: 已占用<br/>state>1: 重入"| C["ReentrantLock / Semaphore 等基于此实现"]
+    B --> D["公平锁: 先检查队列再 CAS<br/>非公平锁: 直接 CAS，失败再入队"]
+</div>
+
+<div class="highlight">
+<strong>AQS = AbstractQueuedSynchronizer</strong>，JUC 包的基石。ReentrantLock、Semaphore、CountDownLatch、ReentrantReadWriteLock 都基于它。
+</div>
+
+<h3 id="two-6">6. ReentrantLock 原理</h3>
+
+<div class="card">
+<table>
+<tr><th>特性</th><th>说明</th></tr>
+<tr><td>可重入</td><td>同一线程可多次获取同一把锁，state 递增，释放时递减</td></tr>
+<tr><td>公平/非公平</td><td>公平：先入队先获取。非公平：新来的直接 CAS 尝试（性能更好，默认）</td></tr>
+<tr><td>可中断</td><td><code>lockInterruptibly()</code> 等待时可响应中断</td></tr>
+<tr><td>可超时</td><td><code>tryLock(timeout, unit)</code> 超时返回 false</td></tr>
+<tr><td>多条件</td><td>一个 Lock 可创建多个 Condition，精确唤醒</td></tr>
+</table>
+</div>
+
+<h3 id="two-7">7. synchronized vs ReentrantLock</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>synchronized</th><th>ReentrantLock</th></tr>
+<tr><td>实现</td><td>JVM 层面，monitor 机制</td><td>JDK 层面，AQS + CAS</td></tr>
+<tr><td>释放</td><td>自动释放（代码块结束/异常）</td><td><strong>手动释放</strong>（finally 中 unlock）</td></tr>
+<tr><td>公平</td><td>非公平</td><td>可选公平/非公平</td></tr>
+<tr><td>可中断</td><td>不可中断</td><td>可中断</td></tr>
+<tr><td>条件</td><td>一个 wait/notify</td><td>多个 Condition</td></tr>
+<tr><td>性能</td><td>JDK 1.6+ 优化后差距不大</td><td>竞争激烈时略好</td></tr>
+<tr><td>建议</td><td>优先使用（简单、不易出错）</td><td>需要高级特性时使用</td></tr>
+</table>
+</div>
+
+<!-- ============ 三、线程池 ============ -->
+<h2 id="three-1">三、线程池</h2>
+
+<h3>1. ThreadLocal</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "ThreadLocal 原理"
+        T["Thread 对象"]
+        TL["ThreadLocalMap"]
+        E1["Entry: ThreadLocal(弱引用) → Value(强引用)"]
+        E2["Entry: ThreadLocal(弱引用) → Value(强引用)"]
+        T --> TL
+        TL --> E1
+        TL --> E2
+    end
+    Note["每个 Thread 有自己的 ThreadLocalMap<br/>ThreadLocal 只是 key"]
+</div>
+
+<div class="card">
+<strong>内存泄漏：</strong>Key 是弱引用（GC 时回收），但 Value 是强引用，不会被自动回收。ThreadLocal 不用时调用 <code>remove()</code> 是必须的。
+
+<strong>InheritableThreadLocal：</strong>子线程可继承父线程的值。线程池中需要注意线程复用导致值混乱。
+</div>
+
+<h3 id="three-2">2. 线程池核心参数（7个）</h3>
+
+<div class="card">
+<pre><code>new ThreadPoolExecutor(
+    corePoolSize,      // 核心线程数
+    maximumPoolSize,   // 最大线程数
+    keepAliveTime,     // 非核心线程空闲存活时间
+    unit,              // 时间单位
+    workQueue,         // 阻塞队列
+    threadFactory,     // 线程工厂
+    handler            // 拒绝策略
+);</code></pre>
+</div>
+
+<h3 id="three-3">3. 线程池执行流程</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["提交任务"] --> B{"核心线程数<br/>未满？"}
+    B -->|"是"| C["创建核心线程执行"]
+    B -->|"否"| D{"工作队列<br/>未满？"}
+    D -->|"是"| E["放入队列等待"]
+    D -->|"否"| F{"最大线程数<br/>未满？"}
+    F -->|"是"| G["创建非核心线程执行"]
+    F -->|"否"| H["执行拒绝策略"]
+</div>
+
+<h3 id="three-4">4. 四种拒绝策略</h3>
+
+<div class="card">
+<table>
+<tr><th>策略</th><th>行为</th></tr>
+<tr><td><strong>AbortPolicy</strong></td><td>抛 RejectedExecutionException（<strong>默认</strong>）</td></tr>
+<tr><td><strong>CallerRunsPolicy</strong></td><td>由提交任务的线程自己执行（提交速度变慢，自然降级）</td></tr>
+<tr><td><strong>DiscardPolicy</strong></td><td>直接丢弃新任务，不抛异常</td></tr>
+<tr><td><strong>DiscardOldestPolicy</strong></td><td>丢弃队列中最旧的任务，然后提交新任务</td></tr>
+</table>
+</div>
+
+<h3 id="three-5">5. 线程池大小怎么设置？</h3>
+
+<div class="card">
+<strong>经验公式：</strong>
+• <strong>CPU 密集型</strong>：<code>核心数 + 1</code>
+• <strong>IO 密集型</strong>：<code>核心数 × 2</code> 或 <code>核心数 / (1 - 阻塞系数)</code>（阻塞系数通常 0.8~0.9）
+
+<strong>银行场景特别注意：</strong>不能直接用 Executors（无界队列 OOM），必须用自定义 ThreadPoolExecutor。
+
+<strong>常见线程池：</strong>
+<table>
+<tr><th>类型</th><th>特点</th><th>风险</th></tr>
+<tr><td>newFixedThreadPool</td><td>固定核心=最大，无界队列</td><td>OOM</td></tr>
+<tr><td>newCachedThreadPool</td><td>核心=0，最大=MAX，SynchronousQueue</td><td>无限创建线程 OOM</td></tr>
+<tr><td>newScheduledThreadPool</td><td>定时/周期任务</td><td>—</td></tr>
+<tr><td>newSingleThreadExecutor</td><td>单线程，顺序执行</td><td>OOM</td></tr>
+</table>
+<strong>阿规/银行规范：</strong>不用 Executors，手动 new ThreadPoolExecutor。
+</div>
+
+<div class="nav-bottom">
+  <a href="../03-集合/集合八股文.html">← 上一篇：集合</a>
+  <a href="../05-JVM/JVM八股文.html">下一篇：JVM →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

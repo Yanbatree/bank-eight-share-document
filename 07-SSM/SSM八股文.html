@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSM 八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #c084fc; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #9333ea; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🍃 SSM 八股文</h1>
+<p style="color:var(--text-secondary)">Spring + Spring Boot + Spring MVC + MyBatis</p>
+
+<!-- ============ Spring IoC ============ -->
+<h2 id="spring-ioc">一、Spring IoC</h2>
+
+<h3>1. IoC 和 DI</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "传统方式 - 控制正转"
+        A["类 A"] -->|"主动 new"| B["类 B"]
+    end
+    subgraph "IoC - 控制反转"
+        C["IoC 容器"] -->|"注入"| D["类 A"]
+        C -->|"注入"| E["类 B"]
+        D -.->|"使用"| E
+        Note["创建和组装由容器负责<br/>应用程序被动接收"]
+    end
+</div>
+
+<div class="card">
+<strong>IoC (Inversion of Control)</strong>：对象的创建、管理、装配权从程序员反转给 Spring 容器。<br/>
+<strong>DI (Dependency Injection)</strong>：IoC 的具体实现方式——容器在运行时动态注入依赖（构造器注入、Setter 注入、字段注入）。<br/>
+<strong>推荐构造器注入</strong>：不依赖反射，字段可设为 final，方便测试。
+</div>
+
+<h3 id="spring-bean">2. Bean 生命周期 & 作用域</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["① 实例化 Instantiation<br/>反射调用构造器"] --> B["② 属性赋值 Populate<br/>依赖注入"]
+    B --> C["③ Aware 回调<br/>BeanNameAware / BeanFactoryAware"]
+    C --> D["④ BeanPostProcessor.before"]
+    D --> E["⑤ @PostConstruct / init-method"]
+    E --> F["⑥ BeanPostProcessor.after"]
+    F --> G["⑦ Bean 就绪，可被使用"]
+    G --> H["⑧ @PreDestroy / destroy-method"]
+    H --> I["⑨ Bean 销毁"]
+</div>
+
+<div class="card">
+<strong>Bean 作用域：</strong>
+<table>
+<tr><th>作用域</th><th>说明</th></tr>
+<tr><td><strong>singleton</strong></td><td>容器中只有一个实例（默认）</td></tr>
+<tr><td><strong>prototype</strong></td><td>每次获取都创建新实例</td></tr>
+<tr><td>request</td><td>每个 HTTP 请求一个实例（Web）</td></tr>
+<tr><td>session</td><td>每个 HTTP Session 一个实例（Web）</td></tr>
+</table>
+<strong>循环依赖解决：</strong>三级缓存（singletonObjects → earlySingletonObjects → singletonFactories）。只有 singleton 的 setter 注入才能自动解决，构造器注入不行。
+</div>
+
+<!-- ============ Spring AOP ============ -->
+<h2 id="spring-aop">二、Spring AOP</h2>
+
+<h3>1. AOP 核心概念</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "AOP 核心概念"
+        A["切面 Aspect<br/>横切逻辑：日志/事务/权限"]
+        B["切点 Pointcut<br/>在哪里切入"]
+        C["通知 Advice<br/>什么时候执行"]
+        D["连接点 JoinPoint<br/>程序执行点"]
+    end
+    A --> B
+    A --> C
+    B --> D
+</div>
+
+<div class="card">
+<strong>通知类型：</strong>
+<table>
+<tr><th>类型</th><th>时机</th></tr>
+<tr><td>@Before</td><td>目标方法执行前</td></tr>
+<tr><td>@After</td><td>目标方法执行后（无论是否异常）</td></tr>
+<tr><td>@AfterReturning</td><td>目标方法正常返回后</td></tr>
+<tr><td>@AfterThrowing</td><td>目标方法抛出异常后</td></tr>
+<tr><td>@Around</td><td>环绕，可控制方法是否执行</td></tr>
+</table>
+</div>
+
+<h3>2. AOP 实现原理</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "JDK 动态代理"
+        A["目标类实现了接口"] --> B["Proxy.newProxyInstance()"]
+        B --> C["生成 $Proxy 类<br/>实现相同接口"]
+    end
+    subgraph "CGLIB 代理"
+        D["目标类无接口"] --> E["Enhancer 生成子类"]
+        E --> F["生成子类代理<br/>继承目标类"]
+    end
+    Note["Spring Boot 2.x 默认 CGLIB<br/>Spring Boot 1.x 默认 JDK 动态代理"]
+</div>
+
+<div class="highlight">
+<strong>JDK 动态代理 vs CGLIB：</strong>
+• JDK 代理：基于接口，只能代理有接口的类，生成速度快
+• CGLIB：基于继承，不能代理 final 类/方法，运行时生成字节码
+• <strong>注意：</strong>同一个类内部方法相互调用 AOP 不生效（this.xxx() 不走代理对象）
+</div>
+
+<!-- ============ Spring 事务 ============ -->
+<h2 id="spring-tx">三、Spring 事务</h2>
+
+<h3>1. 事务传播行为</h3>
+
+<div class="card">
+<table>
+<tr><th>传播行为</th><th>说明</th><th>场景</th></tr>
+<tr><td><strong>REQUIRED</strong></td><td>有事务则加入，没有则新建（<strong>默认</strong>）</td><td>最常用</td></tr>
+<tr><td><strong>REQUIRES_NEW</strong></td><td>总是新建事务，挂起当前事务</td><td>日志记录（独立提交）</td></tr>
+<tr><td><strong>NESTED</strong></td><td>嵌套事务，内层回滚不影响外层</td><td>Savepoint 机制</td></tr>
+<tr><td>SUPPORTS</td><td>有事务则加入，没有则非事务执行</td><td>查询</td></tr>
+<tr><td>MANDATORY</td><td>必须在事务中，否则抛异常</td><td>强制事务</td></tr>
+<tr><td>NEVER</td><td>不能在事务中，否则抛异常</td><td>—</td></tr>
+<tr><td>NOT_SUPPORTED</td><td>非事务执行，有则挂起</td><td>—</td></tr>
+</table>
+</div>
+
+<h3 id="spring-tx-fail">2. 事务失效的 8 大场景</h3>
+
+<div class="card">
+<table>
+<tr><th>场景</th><th>原因</th><th>解决</th></tr>
+<tr><td>① 方法非 public</td><td>AOP 代理只能拦截 public</td><td>改为 public</td></tr>
+<tr><td>② 同类内部调用</td><td>this.method() 不走代理</td><td>注入自己 / 拆分到另一个类</td></tr>
+<tr><td>③ 异常被 try-catch 吞了</td><td>Spring 靠异常回滚</td><td>catch 中抛异常 / 手动回滚</td></tr>
+<tr><td>④ 异常类型不匹配</td><td>默认只回滚 RuntimeException</td><td>@Transactional(rollbackFor = Exception.class)</td></tr>
+<tr><td>⑤ 数据库引擎不支持</td><td>MyISAM 不支持事务</td><td>用 InnoDB</td></tr>
+<tr><td>⑥ 多线程</td><td>不同线程不同事务</td><td>—</td></tr>
+<tr><td>⑦ 传播行为设置错误</td><td>如设为 NOT_SUPPORTED</td><td>检查 propagation 设置</td></tr>
+<tr><td>⑧ 类本身没被 Spring 管理</td><td>不是 Bean，没有代理</td><td>加 @Service/@Component</td></tr>
+</table>
+</div>
+
+<!-- ============ Spring Boot ============ -->
+<h2 id="spring-boot">四、Spring Boot</h2>
+
+<h3>1. Spring Boot 核心特性</h3>
+
+<div class="mermaid">
+graph TD
+    SB["Spring Boot<br/>核心特性"] --> S1["① 自动配置 AutoConfiguration<br/>@EnableAutoConfiguration + spring.factories"]
+    SB --> S2["② 起步依赖 Starter<br/>一键引入全套依赖"]
+    SB --> S3["③ 内嵌 Tomcat/Jetty<br/>无需外部容器，jar 直接运行"]
+    SB --> S4["④ 外部化配置<br/>application.yml, 环境变量, 命令行"]
+    SB --> S5["⑤ Actuator 监控<br/>健康检查、metrics"]
+</div>
+
+<div class="card">
+<strong>自动配置原理：</strong>
+<pre><code>@SpringBootApplication
+  ├── @SpringBootConfiguration
+  ├── @EnableAutoConfiguration  → @Import(AutoConfigurationImportSelector)
+  │    └── 读取 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
+  │         → 加载所有自动配置类 → @ConditionalOnXxx 条件判断 → 按需自动配置
+  └── @ComponentScan  → 扫描当前包及子包</code></pre>
+</div>
+
+<h3 id="spring-boot-anno">2. 常用注解</h3>
+
+<div class="card">
+<table>
+<tr><th>注解</th><th>作用</th></tr>
+<tr><td><code>@SpringBootApplication</code></td><td>标记主类 = @Configuration + @EnableAutoConfiguration + @ComponentScan</td></tr>
+<tr><td><code>@RestController</code></td><td>= @Controller + @ResponseBody（返回 JSON）</td></tr>
+<tr><td><code>@RequestMapping / @GetMapping / @PostMapping</code></td><td>请求映射</td></tr>
+<tr><td><code>@PathVariable / @RequestParam / @RequestBody</code></td><td>参数绑定</td></tr>
+<tr><td><code>@Autowired</code></td><td>按类型注入（配合 @Qualifier 按名称）</td></tr>
+<tr><td><code>@Value("${}")</code></td><td>读取配置文件</td></tr>
+<tr><td><code>@ConfigurationProperties</code></td><td>批量绑定配置</td></tr>
+<tr><td><code>@ConditionalOnClass / @ConditionalOnMissingBean</code></td><td>条件装配</td></tr>
+</table>
+</div>
+
+<!-- ============ Spring MVC ============ -->
+<h2 id="spring-mvc">五、Spring MVC</h2>
+
+<h3>Spring MVC 请求处理流程</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 客户端
+    participant DS as DispatcherServlet
+    participant HM as HandlerMapping
+    participant HA as HandlerAdapter
+    participant H as Controller
+    participant VR as ViewResolver
+    participant V as View
+
+    C->>DS: HTTP 请求
+    DS->>HM: 查找 Handler
+    HM-->>DS: HandlerExecutionChain<br/>(Handler + Interceptors)
+    DS->>HA: 执行 Handler
+    HA->>H: 调用 Controller 方法
+    H-->>HA: ModelAndView / @ResponseBody JSON
+    HA-->>DS: ModelAndView
+    DS->>VR: 解析视图
+    VR-->>DS: View 对象
+    DS->>V: 渲染
+    V-->>DS: 渲染结果
+    DS-->>C: HTTP 响应
+</div>
+
+<div class="card">
+<strong>核心组件：</strong>
+• <strong>DispatcherServlet</strong>：前端总控制器
+• <strong>HandlerMapping</strong>：根据 URL 找到 Handler
+• <strong>HandlerAdapter</strong>：执行 Handler 的适配器
+• <strong>HandlerInterceptor</strong>：拦截器（pre → Controller → post → afterCompletion）
+• <strong>ViewResolver</strong>：解析视图名到具体 View（前后端分离后少用了）
+• <strong>HttpMessageConverter</strong>：JSON/XML 序列化（@ResponseBody 用这个）
+</div>
+
+<!-- ============ MyBatis ============ -->
+<h2 id="mybatis">六、MyBatis</h2>
+
+<h3>1. MyBatis 核心原理</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["SqlSessionFactory"] --> B["SqlSession"]
+    B --> C["Executor 执行器"]
+    C --> D["MappedStatement<br/>(SQL 封装)"]
+    D --> E["TypeHandler<br/>参数/结果映射"]
+    E --> F["JDBC 执行"]
+    F --> G["数据库"]
+</div>
+
+<div class="card">
+<strong>#{} vs ${}：</strong>
+• <code>#{}</code>：预编译占位符 → <code>?</code>，防 SQL 注入。用于参数值
+• <code>${}</code>：直接字符串拼接，有 SQL 注入风险。用于表名/列名等动态标识
+
+<strong>缓存：</strong>
+• 一级缓存：SqlSession 级别，默认开启
+• 二级缓存：Mapper 级别，需手动开启（<code>&lt;cache/&gt;</code>），跨 SqlSession
+
+<strong>插件机制：</strong>通过拦截器（Interceptor）拦截 Executor、StatementHandler、ParameterHandler、ResultSetHandler。分页插件（PageHelper）就是拦截 Executor 的 query 方法。
+</div>
+
+<div class="nav-bottom">
+  <a href="../06-计算机网络/计算机网络八股文.html">← 上一篇：计算机网络</a>
+  <a href="../08-场景题/场景题八股文.html">下一篇：场景题 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

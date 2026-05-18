@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>场景题八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #fbbf24; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #b45309; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🏦 银行场景题八股文</h1>
+<p style="color:var(--text-secondary)">银行面试最爱问的经典场景 + 标准答案框架</p>
+
+<!-- ==================== 1 ==================== -->
+<h2 id="s1">1. 如何保证信息传输的安全性？</h2>
+
+<div class="mermaid">
+graph TD
+    subgraph "传输安全四层防护"
+        L1["① 通道加密<br/>HTTPS/TLS 1.2+"]
+        L2["② 数据加密<br/>敏感字段单独 AES/RSA 加密"]
+        L3["③ 身份认证<br/>Token/JWT + 签名验签"]
+        L4["④ 防篡改 & 防重放<br/>签名 + 时间戳 + Nonce"]
+    end
+    L1 --> L2 --> L3 --> L4
+</div>
+
+<div class="card">
+<strong>银行标准回答框架：</strong><br/><br/>
+
+<strong>① 传输通道层面：</strong>
+• 全站 HTTPS，TLS 1.2+，禁用不安全加密套件
+• 证书管理：使用正规 CA 签发的证书，定期更新
+
+<strong>② 数据加密层面：</strong>
+• 敏感字段（身份证、银行卡号、密码）在应用层再做一次 <strong>AES 加密</strong>
+• 密钥不硬编码，使用密钥管理服务（KMS）或配置中心加密存储
+
+<strong>③ 身份认证层面：</strong>
+• Token 机制（JWT 或 Session），每个请求携带凭证
+• 关键操作（转账、修改密码）二次验证（短信/人脸）
+
+<strong>④ 防篡改 & 防重放：</strong>
+• 请求参数做签名（MD5/SHA256 + 盐），服务端验签
+• 每个请求带时间戳 + 随机数（Nonce），5 分钟内有效，Nonce 不可重复（存 Redis）
+
+<strong>⑤ 日志审计：</strong>
+• 所有请求记录到日志，包含操作人、IP、时间、参数（脱敏后）
+• 异常访问触发告警
+</div>
+
+<!-- ==================== 2 ==================== -->
+<h2 id="s2">2. 如何保证接口幂等性？</h2>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 客户端
+    participant S as 服务端
+    participant R as Redis
+
+    Note over C: ① 先获取 Token
+    C->>S: GET /api/idempotent-token
+    S->>R: SET token→1 EX 30s
+    S-->>C: 返回 token
+
+    Note over C: ② 带 Token 请求
+    C->>S: POST /api/pay + token
+    S->>R: DEL token (原子操作)
+    alt 删除成功（首次请求）
+        S->>S: 执行业务
+        S-->>C: 200 OK
+    else 删除失败（重复请求，token 不存在）
+        S-->>C: 429 请勿重复提交
+    end
+</div>
+
+<div class="card">
+<strong>方案对比：</strong>
+<table>
+<tr><th>方案</th><th>原理</th><th>适用</th></tr>
+<tr><td><strong>Token 机制</strong></td><td>先获取 Token，提交时校验并删除（Redis SETNX + DEL）</td><td>表单提交、支付</td></tr>
+<tr><td><strong>数据库唯一索引</strong></td><td>insert 时依赖唯一约束防重</td><td>创建订单</td></tr>
+<tr><td><strong>状态机</strong></td><td>业务状态流转（待支付→已支付），已支付的不再处理</td><td>状态变更</td></tr>
+<tr><td><strong>乐观锁</strong></td><td>UPDATE SET xxx, version=version+1 WHERE version=N</td><td>并发更新</td></tr>
+</table>
+<strong>银行场景（支付/转账）推荐：Token + 状态机 双重保障。</strong>
+</div>
+
+<!-- ==================== 3 ==================== -->
+<h2 id="s3">3. 秒杀系统怎么设计？</h2>
+
+<div class="mermaid">
+flowchart TD
+    A["用户请求"] --> B["① CDN + 静态化<br/>页面静态资源走 CDN"]
+    A --> C["② 前端限流<br/>按钮置灰、验证码"]
+    C --> D["③ Nginx 网关<br/>IP 限流、黑名单"]
+    D --> E["④ 业务层<br/>Redis 预减库存 + 异步下单"]
+    E --> F["⑤ MQ 消峰<br/>RocketMQ/Kafka"]
+    F --> G["⑥ 数据库<br/>最终扣库存、生成订单"]
+</div>
+
+<div class="card">
+<strong>核心要点：</strong>
+• <strong>Redis 预减库存</strong>：用 Lua 脚本原子操作 `DECR stock`，< 0 直接返回售罄
+• <strong>MQ 异步下单</strong>：减库存成功后发 MQ，异步落库，前端轮询结果
+• <strong>防止超卖</strong>：Redis Lua 原子判断 + DB 用 `WHERE stock > 0` 兜底
+• <strong>限流</strong>：Nginx 限流 + 业务层令牌桶/漏桶
+• <strong>静态化</strong>：秒杀页面提前 CDN 缓存，减少服务端压力
+</div>
+
+<!-- ==================== 4 ==================== -->
+<h2 id="s4">4. 高并发下怎么限流？</h2>
+
+<div class="mermaid">
+graph LR
+    subgraph "限流算法"
+        A["计数器<br/>固定窗口"]
+        B["滑动窗口<br/>更平滑"]
+        C["漏桶<br/>恒定速率"]
+        D["令牌桶<br/>允许突发"]
+    end
+    D -->|"最常用"| E["Guava RateLimiter / Sentinel"]
+</div>
+
+<div class="card">
+<table>
+<tr><th>层级</th><th>工具</th><th>方式</th></tr>
+<tr><td>网关层</td><td>Nginx</td><td>limit_req_zone（漏桶）/ limit_conn</td></tr>
+<tr><td>服务层</td><td>Sentinel / Guava RateLimiter</td><td>令牌桶，QPS 限流 + 熔断降级</td></tr>
+<tr><td>业务层</td><td>Redis + Lua</td><td>滑动窗口计数</td></tr>
+</table>
+<strong>限流后的处理：</strong>排队（验证码/等待页面）、降级（返回缓存/默认结果）、熔断（快速失败）。
+</div>
+
+<!-- ==================== 5 ==================== -->
+<h2 id="s5">5. 分布式事务怎么处理？</h2>
+
+<div class="mermaid">
+graph TD
+    subgraph "分布式事务方案"
+        A["2PC / XA<br/>强一致，性能差"]
+        B["TCC Try-Confirm-Cancel<br/>两阶段补偿"]
+        C["本地消息表<br/>本地事务 + 消息"]
+        D["RocketMQ 事务消息<br/>半消息 + 回查"]
+        E["Seata AT 模式<br/>自动回滚"]
+        F["最大努力通知<br/>重试 + 人工兜底"]
+    end
+</div>
+
+<div class="card">
+<strong>银行场景推荐：</strong>
+• <strong>核心交易（转账）</strong>：TCC 模式（Try 冻结 → Confirm 扣款 / Cancel 解冻）
+• <strong>非核心（发短信/记账）</strong>：本地消息表 + 定时任务补偿
+• <strong>最终一致性场景</strong>：RocketMQ 事务消息
+
+<strong>TCC 举例（转账 100 元）：</strong>
+<pre><code>Try:    冻结 A 账户 100 元 + 冻结 B 账户预增
+Confirm: A 扣 100 + B 加 100
+Cancel:  A 解冻 100 + B 取消预增</code></pre>
+</div>
+
+<!-- ==================== 6 ==================== -->
+<h2 id="s6">6. 单点登录 SSO 怎么实现？</h2>
+
+<div class="mermaid">
+sequenceDiagram
+    participant B as 浏览器
+    participant A1 as 系统A
+    participant SSO as SSO 中心
+    participant A2 as 系统B
+
+    Note over B,A2: 访问系统A（未登录）
+    B->>A1: 访问系统A
+    A1-->>B: 302 → SSO 中心
+    B->>SSO: 跳转登录
+    SSO-->>B: 登录页面
+    B->>SSO: 提交账号密码
+    SSO->>SSO: 创建全局 Session (Redis)
+    SSO-->>B: Set-Cookie: sso_token + 302→系统A?ticket=xxx
+    B->>A1: 带 ticket 访问
+    A1->>SSO: 验证 ticket
+    SSO-->>A1: 有效 + 用户信息
+    A1->>A1: 创建局部 Session
+    A1-->>B: 登录成功
+
+    Note over B,A2: 访问系统B（已登录）
+    B->>A2: 访问系统B
+    A2-->>B: 302 → SSO 中心
+    B->>SSO: 带 sso_token
+    SSO->>SSO: 校验 Cookie，已登录
+    SSO-->>B: 302→系统B?ticket=xxx
+    B->>A2: 带 ticket
+    A2->>SSO: 验证 ticket
+    A2-->>B: 自动登录成功
+</div>
+
+<div class="card">
+<strong>核心三点：</strong>
+① <strong>共享认证状态</strong>：Redis 存全局 Session
+② <strong>Ticket 机制</strong>：子系统不直接接触 cookie，通过 ticket 交换用户信息
+③ <strong>JWT 变种方案</strong>：SSO 签发 JWT，各子系统验签即可，无需回调 SSO
+</div>
+
+<!-- ==================== 7 ==================== -->
+<h2 id="s7">7. 敏感数据怎么存储和展示？</h2>
+
+<div class="card">
+<strong>存储（落库加密）：</strong>
+• 密码：BCrypt（不可逆 + 加盐）
+• 身份证、银行卡号：AES-256 加密存储，密钥放 KMS
+• 手机号：脱敏存储或 AES 加密
+
+<strong>展示（脱敏）：</strong>
+• 身份证：`320***********1234`
+• 手机号：`138****5678`
+• 银行卡：`6222 **** **** 1234`
+
+<strong>实现方式：</strong>
+• 数据库查询后在 Service 层脱敏
+• 日志中敏感字段自动脱敏（log4j2 自定义 PatternConverter / Fastjson2 @JSONField(serializeUsing = DesensitizeSerializer.class)）
+</div>
+
+<!-- ==================== 8 ==================== -->
+<h2 id="s8">8. 银行系统的日志和审计怎么做？</h2>
+
+<div class="card">
+<strong>日志分类：</strong><br/>
+• <strong>操作日志</strong>：谁（用户ID/IP）、什么时候、做了什么操作、操作前后的值（脱敏后）、结果
+• <strong>系统日志</strong>：ERROR/WARN 级别，请求链路追踪（TraceId）
+• <strong>安全日志</strong>：登录/登出、权限变更、异常访问
+
+<strong>实现方式：</strong>
+• 自定义 <code>@AuditLog</code> 注解 + AOP 自动记录操作日志
+• 用 MDC 注入 <code>traceId</code>，全链路传递
+• ELK（Elasticsearch + Logstash + Kibana）集中存储和检索
+<strong>银行合规要点：</strong>日志至少保留 6 个月，不可篡改。
+</div>
+
+<!-- ==================== 9 ==================== -->
+<h2 id="s9">9. 接口响应慢怎么排查优化？</h2>
+
+<div class="mermaid">
+flowchart TD
+    A["接口慢"] --> B{"耗时在哪？"}
+    B -->|"网络"| C["CDN / 减少传输数据"]
+    B -->|"应用"| D["加缓存 / 异步 / 并行"]
+    B -->|"数据库"| E["加索引 / 优化 SQL / 读写分离"]
+    B -->|"第三方"| F["超时控制 / 降级 / 熔断"]
+
+    D --> D1["Redis 缓存热点数据"]
+    D --> D2["CompletableFuture 并行调用"]
+    D --> D3["MQ 异步处理非关键逻辑"]
+</div>
+
+<div class="card">
+<strong>排查链路：</strong>
+① 加监控（SkyWalking / Pinpoint）定位慢在哪一层
+② 数据库慢 → EXPLAIN 分析，加索引，优化 SQL
+③ 业务慢 → 加 Redis 缓存，减少重复计算
+④ 串行调用多 → CompletableFuture 并行
+⑤ 数据量大 → 分页，避免全量查
+⑥ 接口复杂 → 非关键逻辑 MQ 异步
+</div>
+
+<!-- ==================== 10 ==================== -->
+<h2 id="s10">10. 大文件上传怎么设计？</h2>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 客户端
+    participant S as 服务端
+
+    C->>S: ① 计算文件 MD5
+    C->>S: ② POST /upload/check?md5=xxx
+    S-->>C: { uploaded:[0,1,2], merged: false }
+
+    loop 续传未完成的分片
+        C->>S: ③ POST /upload/chunk?md5=xxx&chunk=3
+        S-->>C: OK
+    end
+
+    C->>S: ④ POST /upload/merge?md5=xxx&totalChunks=10
+    S->>S: 合并分片 + MD5 校验
+    S-->>C: 上传完成 + 文件 URL
+</div>
+
+<div class="card">
+<strong>核心设计：</strong>
+• <strong>分片上传</strong>：大文件切成多片（如 5MB/片），并行上传
+• <strong>秒传</strong>：上传前先查 MD5，已存在则跳过
+• <strong>断点续传</strong>：记录已上传分片索引，重试只传缺失的分片
+• <strong>合并校验</strong>：合并后验证完整文件的 MD5
+</div>
+
+<!-- ==================== 11 ==================== -->
+<h2 id="s11">11. 如何防止表单重复提交？</h2>
+
+<div class="card">
+<strong>前后端协同方案：</strong>
+
+<strong>前端：</strong>
+• 按钮点击后置灰 + loading
+• 防抖/节流限制点击频率
+
+<strong>后端（核心）：</strong>
+• Token 机制：页面加载时获取唯一 Token → 提交时校验并删除 Token（Redis SETNX + DEL Lua 原子操作）
+• 唯一索引兜底：订单号、流水号建唯一索引，重复 insert 直接报错
+• 有些场景可以用 <strong>前端防抖 + 后端幂等</strong> 双重保障
+</div>
+
+<!-- ==================== 12 ==================== -->
+<h2 id="s12">12. 数据库和缓存一致性如何保证？</h2>
+
+<div class="mermaid">
+flowchart TD
+    A["更新数据"] --> B["① 更新数据库"]
+    B --> C["② 删除缓存"]
+    C --> D{"删除成功？"}
+    D -->|"是"| E["完成 ✅"]
+    D -->|"否"| F["③ 重试 / 发 MQ"]
+    F --> G["④ Canal 监听 binlog<br/>异步更新缓存"]
+
+    H["读取数据"] --> I["① 查缓存"]
+    I -->|"命中"| J["返回"]
+    I -->|"未命中"| K["② 查数据库 + SETNX 写缓存"]
+    K --> L["③ 设置过期时间"]
+</div>
+
+<div class="highlight">
+<strong>银行场景推荐：先更新数据库→删除缓存（Cache Aside Pattern）</strong><br/>
+延迟双删 + MQ 补偿 + Canal 监听 binlog 作为终极兜底方案。
+</div>
+
+<div class="nav-bottom">
+  <a href="../07-SSM/SSM八股文.html">← 上一篇：SSM</a>
+  <a href="../01-MySQL/MySQL八股文.html">返回第一篇：MySQL →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

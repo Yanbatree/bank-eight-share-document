@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MySQL 八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #38bdf8; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #0284c7; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🐬 MySQL 八股文</h1>
+
+<!-- ==================== 一、索引 ==================== -->
+<h2 id="one-1">一、索引</h2>
+
+<h3>1. 索引底层数据结构？为什么用 B+ 树？</h3>
+
+<div class="mermaid">
+graph TD
+    A["B+ 树结构"] --> B["非叶子节点<br/>只存索引键<br/><small>不存数据</small>"]
+    A --> C["叶子节点<br/>存完整数据<br/><small>形成有序双向链表</small>"]
+    B --> D["好处: 树更矮，IO 更少"]
+    C --> E["好处: 范围查询只需遍历链表"]
+</div>
+
+<div class="card">
+<table>
+<tr><th>对比</th><th>哈希索引</th><th>B 树</th><th>B+ 树</th></tr>
+<tr><td>等值查询</td><td>✅ O(1)</td><td>✅ O(logN)</td><td>✅ O(logN)</td></tr>
+<tr><td>范围查询</td><td>❌ 不支持</td><td>✅ 需中序遍历</td><td>✅ 叶子链表直接扫</td></tr>
+<tr><td>排序</td><td>❌</td><td>⚠️ 复杂</td><td>✅ 天然有序</td></tr>
+<tr><td>树高度</td><td>—</td><td>较高（节点存数据）</td><td>更矮（节点只存键）</td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>核心：</strong>B+ 树非叶子节点不存 data，一个页能放更多索引键 → 树更矮 → IO 次数更少。叶子节点双向链表 → 范围查询直接遍历即可。
+</div>
+
+<h3 id="one-2">2. 聚簇索引 vs 非聚簇索引</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph 聚簇索引
+        A["主键索引树<br/>叶子存&lt;b&gt;完整行数据&lt;/b&gt;"]
+    end
+    subgraph 非聚簇索引
+        B["二级索引树<br/>叶子存&lt;b&gt;主键值&lt;/b&gt;"]
+    end
+    B -->|"回表"| A
+</div>
+
+<div class="card">
+<strong>聚簇索引</strong>：叶子节点存放<strong>整行数据</strong>，一张表只有一个（一般是主键）。<br/>
+<strong>非聚簇索引（二级索引）</strong>：叶子节点存放<strong>主键值</strong>，查完还需要<strong>回表</strong>。
+</div>
+
+<h3 id="one-3">3. 回表 & 覆盖索引</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant Query as 查询
+    participant Index2 as 二级索引(name)
+    participant PK as 聚簇索引(id)
+
+    Note over Query,PK: ❌ 回表场景：SELECT * FROM user WHERE name='张三'
+    Query->>Index2: 查 name='张三'
+    Index2-->>Query: 得到主键 id=100
+    Query->>PK: 用 id=100 查完整行
+    PK-->>Query: 返回整行数据
+
+    Note over Query,PK: ✅ 覆盖索引：SELECT id,name FROM user WHERE name='张三'
+    Query->>Index2: 查 name='张三'
+    Index2-->>Query: 直接返回 id, name，不回表！
+</div>
+
+<div class="highlight">
+<strong>覆盖索引</strong> = 查询的列都在索引中，不需要回表。常用手段是建立合适的联合索引。
+</div>
+
+<h3 id="one-4">4. 最左前缀原则</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "联合索引 (a,b,c) 等效于"
+        X["索引 (a)"]
+        Y["索引 (a,b)"]
+        Z["索引 (a,b,c)"]
+    end
+</div>
+
+<div class="card">
+<strong>命中</strong>：<code>WHERE a=1</code> / <code>WHERE a=1 AND b=2</code> / <code>WHERE a=1 AND b=2 AND c=3</code><br/>
+<strong>不命中</strong>：<code>WHERE b=2</code>（跳过 a）、<code>WHERE a=1 AND c=3</code>（b 断了，只用到了 a）<br/>
+<strong>原因</strong>：联合索引按 (a,b,c) 排序，跳过第一列就无法用二分查找定位。
+</div>
+
+<h3 id="one-5">5. 索引失效场景</h3>
+
+<div class="card">
+<table>
+<tr><th>场景</th><th>示例</th><th>原因</th></tr>
+<tr><td>!= / &lt;&gt;</td><td><code>WHERE status != 1</code></td><td>无法精确定位范围</td></tr>
+<tr><td>LIKE 前导模糊</td><td><code>WHERE name LIKE '%张'</code></td><td>无法二分定位起点</td></tr>
+<tr><td>列上有函数/运算</td><td><code>WHERE YEAR(time)=2024</code></td><td>破坏了索引值</td></tr>
+<tr><td>隐式类型转换</td><td><code>WHERE phone=13800138000</code> (phone是varchar)</td><td>MySQL 对索引列做了隐式转换</td></tr>
+<tr><td>OR 不全有索引</td><td><code>WHERE a=1 OR b=2</code>（b 没索引）</td><td rowspan="2">优化器认为全表更快</td></tr>
+<tr><td>违反最左前缀</td><td>联合索引 (a,b) 只查 b</td></tr>
+</table>
+</div>
+
+<h3 id="one-6">6. 索引下推（ICP）</h3>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "无 ICP"
+        A["存储引擎: 按 name 过滤"] --> B["返回所有匹配行给 Server"]
+        B --> C["Server 层: 再按 age 过滤"]
+    end
+    subgraph "有 ICP (5.6+)"
+        D["存储引擎: 按 name AND age 一起过滤"] --> E["只返回符合全部条件的行"]
+    end
+</div>
+
+<div class="highlight">
+<strong>效果</strong>：在索引层就过滤掉不满足全部 WHERE 条件的行，减少回表和网络开销。
+</div>
+
+<!-- ==================== 二、事务与锁 ==================== -->
+<h2 id="two-1">二、事务与锁</h2>
+
+<h3>1. ACID 四大特性</h3>
+
+<div class="mermaid">
+graph TD
+    ACID["ACID 四大特性"]
+    A["原子性 Atomicity<br/><span class='tag tag-green'>undo log</span>"]
+    C["一致性 Consistency<br/><span class='tag tag-blue'>由 A+I+D 共同保证</span>"]
+    I["隔离性 Isolation<br/><span class='tag tag-green'>MVCC + 锁</span>"]
+    D["持久性 Durability<br/><span class='tag tag-green'>redo log</span>"]
+    ACID --> A
+    ACID --> C
+    ACID --> I
+    ACID --> D
+</div>
+
+<div class="card">
+<table>
+<tr><th>特性</th><th>说明</th><th>实现机制</th></tr>
+<tr><td>原子性</td><td>事务不可分割，全做或全不做</td><td>undo log 回滚</td></tr>
+<tr><td>一致性</td><td>事务前后数据完整性约束不变</td><td>其他三个特性共同保证</td></tr>
+<tr><td>隔离性</td><td>并发事务互不干扰</td><td>MVCC + 锁机制</td></tr>
+<tr><td>持久性</td><td>提交后数据永久保存</td><td>redo log + 刷盘</td></tr>
+</table>
+</div>
+
+<h3 id="two-2">2. 事务并发三大问题</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant T1 as 事务 T1
+    participant DB as 数据库
+    participant T2 as 事务 T2
+
+    Note over T1,T2: ❌ 脏读
+    T1->>DB: 修改 age=20（未提交）
+    T2->>DB: 读取 age → 20
+    T1->>DB: ROLLBACK（age 恢复原值）
+    Note over T2: T2 读到了"脏数据"
+
+    Note over T1,T2: ❌ 不可重复读
+    T1->>DB: 读取 age → 18
+    T2->>DB: UPDATE age=20 + COMMIT
+    T1->>DB: 再次读取 age → 20
+    Note over T1: 两次读同一个数据，结果不同
+
+    Note over T1,T2: ❌ 幻读
+    T1->>DB: SELECT COUNT(*) → 100
+    T2->>DB: INSERT 一行 + COMMIT
+    T1->>DB: SELECT COUNT(*) → 101
+    Note over T1: 两次查，行数不同
+</div>
+
+<h3 id="two-3">3. 四种隔离级别</h3>
+
+<div class="card">
+<table>
+<tr><th>隔离级别</th><th>脏读</th><th>不可重复读</th><th>幻读</th><th>实现</th></tr>
+<tr><td>READ UNCOMMITTED</td><td>✅ 可能</td><td>✅</td><td>✅</td><td>不加锁</td></tr>
+<tr><td>READ COMMITTED</td><td>❌</td><td>✅ 可能</td><td>✅</td><td>每次 SELECT 新建 ReadView</td></tr>
+<tr><td><strong>REPEATABLE READ</strong></td><td>❌</td><td>❌</td><td>❌ (MVCC 基本解决)</td><td>事务首次 SELECT 建 ReadView + Next-Key Lock</td></tr>
+<tr><td>SERIALIZABLE</td><td>❌</td><td>❌</td><td>❌</td><td>所有读加共享锁</td></tr>
+</table>
+<small style="color:var(--orange)">InnoDB 默认 RR 级别，通过 MVCC（快照读）+ Next-Key Lock（当前读）基本解决幻读</small>
+</div>
+
+<h3 id="two-4">4. MVCC 原理</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "一行数据的版本链"
+        V3["版本3: trx_id=300<br/>age=22<br/>roll_pointer"]
+        V2["版本2: trx_id=200<br/>age=20<br/>roll_pointer"]
+        V1["版本1: trx_id=100<br/>age=18<br/>roll_pointer=null"]
+        V3 -->|指向| V2
+        V2 -->|指向| V1
+    end
+    subgraph "ReadView 可见性判断"
+        R["ReadView: 活跃事务列表<br/>m_ids = [200]"]
+        R -->|"trx_id=300 > max → 不可见"| V3
+        R -->|"trx_id=200 在 m_ids 中 → 不可见"| V2
+        R -->|"trx_id=100 < min → 可见 ✅"| V1
+    end
+</div>
+
+<div class="highlight">
+<strong>RC vs RR 关键区别：</strong><br/>
+• RC：每次 SELECT 生成新 ReadView → 能看到其他事务已提交的修改 → 不可重复读<br/>
+• RR：首次 SELECT 生成 ReadView，后续复用 → 看不到后来的提交 → 可重复读
+</div>
+
+<h3 id="two-5">5. 行锁类型</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "Next-Key Lock 范围"
+        A["索引值 10"] -->|"Gap Lock"| B["空隙"]
+        B -->|"Record Lock"| C["索引值 20"]
+        C -->|"Gap Lock"| D["空隙"]
+        D -->|"Record Lock"| E["索引值 30"]
+    end
+    F["Next-Key Lock = Gap Lock + Record Lock<br/>锁定区间: (10,20] 或 (20,30]"]
+</div>
+
+<div class="card">
+<table>
+<tr><th>锁</th><th>作用</th><th>备注</th></tr>
+<tr><td>Record Lock</td><td>锁定单条索引记录</td><td>精确命中</td></tr>
+<tr><td>Gap Lock</td><td>锁定索引间隙</td><td>阻止 INSERT，只在 RR 级别</td></tr>
+<tr><td>Next-Key Lock</td><td>Record + Gap</td><td>InnoDB 默认行锁形式</td></tr>
+</table>
+</div>
+
+<h3 id="two-6">6. 死锁 & 解决</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant A as 事务A
+    participant DB as MySQL
+    participant B as 事务B
+    A->>DB: UPDATE SET age=20 WHERE id=1
+    Note over A: 持有 id=1 的 X 锁
+    B->>DB: UPDATE SET age=30 WHERE id=2
+    Note over B: 持有 id=2 的 X 锁
+    A->>DB: UPDATE SET age=25 WHERE id=2
+    Note over A: 等待 id=2 的锁...
+    B->>DB: UPDATE SET age=35 WHERE id=1
+    Note over B: 等待 id=1 的锁...
+    Note over DB: 💀 死锁！互相等待
+    DB-->>A: 回滚代价小的事务
+</div>
+
+<div class="highlight">
+<strong>预防死锁：</strong>统一资源访问顺序、缩短事务、合理索引（减少锁范围）、死锁检测（<code>innodb_deadlock_detect=ON</code>）
+</div>
+
+<!-- ==================== 三、日志 ==================== -->
+<h2 id="three-1">三、日志系统</h2>
+
+<h3>1. redo log vs undo log</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>redo log</th><th>undo log</th></tr>
+<tr><td>作用</td><td>崩溃恢复，保证持久性</td><td>事务回滚 + MVCC，保证原子性</td></tr>
+<tr><td>记录内容</td><td>物理日志：页的修改</td><td>逻辑日志：修改前的数据</td></tr>
+<tr><td>写入时机</td><td>事务执行中写入 buffer</td><td>修改数据前先写入</td></tr>
+<tr><td>存储位置</td><td>redo log file（循环写）</td><td>undo 表空间</td></tr>
+</table>
+</div>
+
+<h3 id="three-2">2. WAL 机制</h3>
+
+<div class="mermaid">
+flowchart LR
+    A["更新请求"] --> B["写 redo log buffer"]
+    B --> C["写 binlog"]
+    C --> D["写 redo log (prepare)"]
+    D --> E["写 binlog 完成"]
+    E --> F["redo log 标记 commit"]
+    F --> G["返回客户端成功"]
+    G -.->|"后台异步"| H["脏页刷盘"]
+</div>
+
+<div class="highlight">
+<strong>Write-Ahead Logging：</strong>先写日志再写磁盘。崩溃后靠 redo log 重放恢复。避免每次更新都随机写磁盘。
+</div>
+
+<h3 id="three-3">3. binlog vs redo log</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>binlog</th><th>redo log</th></tr>
+<tr><td>层级</td><td>Server 层（所有引擎通用）</td><td>InnoDB 引擎层</td></tr>
+<tr><td>内容</td><td>逻辑日志（SQL/行变更）</td><td>物理日志</td></tr>
+<tr><td>用途</td><td>主从复制、数据恢复</td><td>崩溃恢复</td></tr>
+<tr><td>写入方式</td><td>事务提交时一次性写</td><td>事务执行中持续写</td></tr>
+</table>
+</div>
+
+<h3 id="three-4">4. 两阶段提交</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant T as 事务
+    participant R as redo log
+    participant B as binlog
+
+    T->>R: ① 写入 redo log，状态=prepare
+    T->>B: ② 写入 binlog
+    T->>R: ③ redo log 状态改为 commit
+
+    Note over T,R: 崩溃恢复判断：
+    Note over T,R: redo prepare + binlog 完整 → 提交
+    Note over T,R: redo prepare + binlog 不完整 → 回滚
+</div>
+
+<div class="highlight">
+<strong>目的：</strong>保证 binlog 和 redo log 的一致性，这样才能保证主从数据一致。
+</div>
+
+<!-- ==================== 四、SQL优化 ==================== -->
+<h2 id="four-1">四、SQL 优化</h2>
+
+<h3>1. 一条 SQL 的执行过程</h3>
+
+<div class="mermaid">
+flowchart LR
+    A["① 连接器<br/>建立连接，权限验证"] --> B["② 分析器<br/>词法分析 + 语法分析"]
+    B --> C["③ 优化器<br/>选索引、确定 JOIN 顺序"]
+    C --> D["④ 执行器<br/>调用引擎接口获取数据"]
+    D --> E["存储引擎<br/>InnoDB / MyISAM"]
+</div>
+
+<h3 id="four-2">2. EXPLAIN 关键字段</h3>
+
+<div class="card">
+<table>
+<tr><th>字段</th><th>含义</th><th>好 / 坏</th></tr>
+<tr><td><strong>type</strong></td><td>访问类型</td><td>system > const > eq_ref > <strong>ref</strong> > <strong>range</strong> > index > <strong>ALL</strong></td></tr>
+<tr><td><strong>key</strong></td><td>实际使用的索引</td><td>有索引名 ✅ / NULL ❌</td></tr>
+<tr><td><strong>rows</strong></td><td>预估扫描行数</td><td>越小越好</td></tr>
+<tr><td><strong>Extra</strong></td><td>额外信息</td><td><code>Using index</code> ✅ / <code>Using filesort</code> ❌ / <code>Using temporary</code> ❌</td></tr>
+<tr><td><strong>key_len</strong></td><td>索引使用的字节数</td><td>越大说明用的列越多</td></tr>
+</table>
+</div>
+
+<h3 id="four-3">3. 慢查询排查流程</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["发现慢查询"] --> B["开启 slow_query_log<br/>设置 long_query_time"]
+    B --> C["拿到慢 SQL"]
+    C --> D["EXPLAIN 分析执行计划"]
+    D --> E{"走索引了吗？"}
+    E -->|"没走"| F["加索引 / 改写 SQL"]
+    E -->|"走了"| G{"type 是 ALL/index？"}
+    G -->|"是"| H["索引失效，排查原因"]
+    G -->|"否"| I{"扫描行数多？"}
+    I -->|"是"| J["优化 SQL 逻辑 / 分页"]
+    I -->|"否"| K["考虑读写分离 / 缓存"]
+</div>
+
+<h3 id="four-4">4. 分库分表</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph 垂直拆分
+        A["大库"] --> A1["用户库"]
+        A --> A2["订单库"]
+        A --> A3["商品库"]
+        B["宽表"] --> B1["主表: 常用字段"]
+        B --> B2["扩展表: 冷字段"]
+    end
+    subgraph 水平拆分
+        C["大表 user"] --> C1["user_0<br/>id % 4 = 0"]
+        C --> C2["user_1<br/>id % 4 = 1"]
+        C --> C3["user_2<br/>id % 4 = 2"]
+        C --> C4["user_3<br/>id % 4 = 3"]
+    end
+</div>
+
+<div class="card">
+<strong>垂直分库</strong>：按业务拆分 → 解决并发压力<br/>
+<strong>垂直分表</strong>：冷热分离 → 减少单行大小<br/>
+<strong>水平分库分表</strong>：按字段 hash 取模 → 解决单表数据量大的问题<br/>
+<strong>带来的问题</strong>：分布式事务、跨库 JOIN、全局 ID（雪花算法）
+</div>
+
+<!-- ==================== 五、主从复制 ==================== -->
+<h2 id="five-1">五、主从复制</h2>
+
+<div class="mermaid">
+flowchart LR
+    M["Master 主库"]
+    S["Slave 从库"]
+    M -->|"① 写 binlog"| M
+    M -->|"② IO 线程拉取 binlog"| S
+    S -->|"③ 写入 relay log"| S
+    S -->|"④ SQL 线程重放"| S
+</div>
+
+<div class="card">
+<strong>延迟原因：</strong>Slave 单线程回放、大事务、机器性能差异。<br/>
+<strong>缓解方案：</strong>MySQL 5.7+ 并行复制（按库/按组提交）、升级硬件、拆分大事务。<br/>
+<strong>半同步复制：</strong>Master 等至少一个 Slave 收到 binlog 后再返回成功。
+</div>
+
+<div class="nav-bottom">
+  <span></span>
+  <a href="../02-Redis/Redis八股文.html">下一篇：Redis 八股文 →</a>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

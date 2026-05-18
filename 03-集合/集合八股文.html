@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Java 集合八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #a78bfa; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #7c3aed; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>📦 Java 集合八股文</h1>
+
+<h2 id="one-1">一、集合框架总览</h2>
+
+<div class="mermaid">
+graph TD
+    Collection["Collection 接口"]
+    Collection --> List["List<br/>有序，可重复"]
+    Collection --> Set["Set<br/>无序，不可重复"]
+    Collection --> Queue["Queue<br/>队列"]
+
+    List --> ArrayList["ArrayList<br/>数组实现"]
+    List --> LinkedList["LinkedList<br/>双向链表"]
+    List --> Vector["Vector<br/>线程安全，已过时"]
+
+    Set --> HashSet["HashSet<br/>HashMap 实现"]
+    Set --> TreeSet["TreeSet<br/>TreeMap 实现，排序"]
+    Set --> LinkedHashSet["LinkedHashSet<br/>有序,双向链表维护"]
+
+    Queue --> PriorityQueue["PriorityQueue<br/>优先队列"]
+    Queue --> ArrayDeque["ArrayDeque<br/>双端队列"]
+
+    Map["Map 接口<br/>键值对"]
+    Map --> HashMap["HashMap<br/>数组+链表+红黑树"]
+    Map --> LinkedHashMap["LinkedHashMap<br/>有序 HashMap"]
+    Map --> TreeMap["TreeMap<br/>红黑树，有序"]
+    Map --> HashTable["HashTable<br/>线程安全，过时"]
+    Map --> ConcurrentHashMap["ConcurrentHashMap<br/>线程安全"]
+</div>
+
+<h2>一、List</h2>
+
+<h3 id="one-2">1. ArrayList vs LinkedList</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>ArrayList</th><th>LinkedList</th></tr>
+<tr><td>底层</td><td>Object[] 数组</td><td>双向链表</td></tr>
+<tr><td>随机访问</td><td>✅ O(1)</td><td>❌ O(n) 需要遍历</td></tr>
+<tr><td>头插/删除</td><td>❌ O(n) 需要移动元素</td><td>✅ O(1)</td></tr>
+<tr><td>尾插</td><td>✅ O(1) 均摊</td><td>✅ O(1)</td></tr>
+<tr><td>内存</td><td>紧凑，只存数据</td><td>每个节点多两个指针</td></tr>
+<tr><td>使用场景</td><td>读多写少 / 随机访问</td><td>频繁头尾增删</td></tr>
+</table>
+</div>
+
+<h3 id="one-3">2. ArrayList 扩容机制</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant A as ArrayList
+    participant E as ElementData[]
+
+    C->>A: add(e)
+    A->>A: 检查容量 → size == elementData.length？
+    alt 容量不够
+        A->>A: grow() → 新容量 = 旧 * 1.5
+        A->>E: Arrays.copyOf() → 复制到新数组
+    end
+    A->>E: elementData[size++] = e
+</div>
+
+<div class="card">
+<strong>扩容细节：</strong>
+• 初始容量（无参构造）：JDK 1.8 是空数组，<strong>第一次 add 才初始化为 10</strong>
+• 扩容倍率：<code>newCapacity = oldCapacity + (oldCapacity >> 1)</code> ≈ <strong>1.5 倍</strong>
+• 方法：<code>Arrays.copyOf()</code> → 底层是 <code>System.arraycopy()</code>（native）
+• <strong>扩容代价：</strong>需要开辟新数组 + 拷贝数据 → 如果知道大概容量，用 <code>new ArrayList(int capacity)</code> 预分配
+</div>
+
+<h3 id="one-4">3. fail-fast 机制</h3>
+
+<div class="card">
+<strong>现象：</strong>用 for-each / Iterator 遍历时，如果用集合自身的 remove/add 修改，抛出 <code>ConcurrentModificationException</code>。
+
+<strong>原理：</strong>
+<pre><code>int modCount;  // 集合结构修改次数
+int expectedModCount;  // 迭代器创建时记录的 modCount
+// 每次 next() 前检查 modCount == expectedModCount，不等就抛异常
+</code></pre>
+
+<strong>解决：</strong>用迭代器的 <code>remove()</code> 而非集合的 <code>remove()</code>（迭代器会同步 expectedModCount），或用 <code>CopyOnWriteArrayList</code>。
+</div>
+
+<!-- ============ 二、HashMap ============ -->
+<h2 id="two-1">二、HashMap 核心</h2>
+
+<h3>1. HashMap 底层原理（JDK 1.8）</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "HashMap 结构"
+        A["数组 Node&lt;K,V&gt;[] table<br/>每个位置称为 bucket/桶"]
+        B["链表<br/>当 hash 冲突时"]
+        C["红黑树<br/>链表长度 ≥ 8 且 数组长度 ≥ 64 时"]
+        A --> B
+        B -->|"树化阈值=8"| C
+    end
+    subgraph "put 流程"
+        P1["① 计算 hash: (h = key.hashCode()) ^ (h >>> 16)"] --> P2["② 计算桶位置: (n-1) & hash"]
+        P2 --> P3["③ 桶为空？"]
+        P3 -->|"是"| P4["直接放入"]
+        P3 -->|"否"| P5["④ 判断 key 是否相同"]
+        P5 -->|"相同"| P6["覆盖 value"]
+        P5 -->|"不同"| P7["⑤ 链表尾插 / 红黑树插入"]
+        P7 --> P8["⑥ 检查是否需扩容"]
+    end
+</div>
+
+<div class="highlight">
+<strong>hash 扰动函数（为什么高 16 位异或低 16 位）：</strong><br/>
+<code>(h = key.hashCode()) ^ (h >>> 16)</code><br/>
+HashMap 容量一般较小（初始 16），取模时只用到了低位。高位异或低位是为了让<strong>高位也参与运算</strong>，减少 hash 冲突。
+</div>
+
+<h3 id="two-2">2. HashMap 扩容机制</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "扩容前 capacity=16"
+        T1["table (len=16)"]
+    end
+    subgraph "扩容后 capacity=32"
+        T2["table (len=32)"]
+    end
+    T1 -->|"threshold=16*0.75=12<br/>size>12 触发扩容"| T2
+    Note["负载因子 0.75：空间和时间的折中<br/>太大→hash冲突多 太小→浪费空间"]
+</div>
+
+<div class="card">
+<strong>扩容过程：</strong>
+• 负载因子默认 0.75：size > capacity × 0.75 时扩容
+• 扩容为原来的 <strong>2 倍</strong>（容量始终是 2 的幂）
+• <strong>数据迁移</strong>：每个桶的元素重新计算位置 → 要么在原位置，要么在原位置 + 旧容量
+• 机制：<code>e.hash & oldCap == 0 ? 原地 : 原地 + oldCap</code>
+
+<strong>为什么容量始终是 2 的幂？</strong> <code>(n-1) & hash</code> 的计算方式需要 n 是 2 的幂才能均匀分布，且扩容时方便重定位。
+</div>
+
+<h3 id="two-3">3. JDK 1.7 vs 1.8 HashMap 区别</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>JDK 1.7</th><th>JDK 1.8</th></tr>
+<tr><td>结构</td><td>数组 + 链表</td><td>数组 + 链表 + <strong>红黑树</strong></td></tr>
+<tr><td>插入方式</td><td><strong>头插法</strong>（多线程扩容死循环）</td><td><strong>尾插法</strong>（避免了死循环）</td></tr>
+<tr><td>hash 计算</td><td>9 次扰动</td><td>1 次扰动（效率更高）</td></tr>
+<tr><td>扩容条件</td><td>size ≥ threshold</td><td>size > threshold（且桶不为空）</td></tr>
+</table>
+</div>
+
+<h3 id="two-4">4. HashMap 线程不安全的表现</h3>
+
+<div class="card">
+<table>
+<tr><th>问题</th><th>场景</th></tr>
+<tr><td><strong>数据覆盖</strong></td><td>两个线程同时 put，A 还没插入 B 就插入了 → A 覆盖 B</td></tr>
+<tr><td><strong>1.7 死循环</strong></td><td>扩容时头插法导致链表成环 → get() 时 CPU 100%</td></tr>
+<tr><td><strong>size 不准确</strong></td><td>size++ 不是原子操作</td></tr>
+</table>
+</div>
+
+<h3 id="two-5">5. ConcurrentHashMap 原理</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "JDK 1.7 Segment 分段锁"
+        S1["Segment 1<br/>独立锁"]
+        S2["Segment 2<br/>独立锁"]
+        S3["Segment N<br/>独立锁"]
+        S1 --> B1["HashEntry 链表"]
+        S2 --> B2["HashEntry 链表"]
+        S3 --> B3["HashEntry 链表"]
+    end
+    subgraph "JDK 1.8 CAS + synchronized"
+        C1["Node[] table"]
+        C1 --> C2["桶为空 → CAS 插入"]
+        C1 --> C3["桶不空 → synchronized 锁头节点"]
+        C3 --> C4["链表 / 红黑树操作"]
+    end
+</div>
+
+<div class="card">
+<strong>JDK 1.8 ConcurrentHashMap 核心机制：</strong>
+• <strong>无锁读</strong>：get 不加锁，Node 的 val 和 next 用 volatile 保证可见性
+• <strong>初始化</strong>：CAS 保证只有一个线程初始化数组
+• <strong>插入</strong>：桶为空 → CAS 尝试插入；桶不为空 → synchronized 锁桶头节点
+• <strong>扩容</strong>：多线程协同扩容，每个线程负责一部分桶的迁移
+• <strong>size 计数</strong>：<code>baseCount + CounterCell[]</code> 分散竞争
+</div>
+
+<h3 id="two-6">6. HashTable vs ConcurrentHashMap</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>HashTable</th><th>ConcurrentHashMap</th></tr>
+<tr><td>锁粒度</td><td>锁整张表（synchronized 方法）</td><td>锁桶（synchronized 头节点）</td></tr>
+<tr><td>并发度</td><td>1（全表锁）</td><td>高（桶级别锁）</td></tr>
+<tr><td>读操作</td><td>加锁（get 也锁）</td><td><strong>无锁</strong>（volatile 保证可见性）</td></tr>
+<tr><td>null</td><td>不允许 null key/value</td><td>不允许 null key/value</td></tr>
+<tr><td>性能</td><td>差</td><td>好</td></tr>
+</table>
+</div>
+
+<!-- ============ 三、其他集合 ============ -->
+<h2 id="three-1">三、其他集合</h2>
+
+<h3>1. HashSet 底层 = HashMap</h3>
+
+<div class="card">
+<strong>HashSet 完全基于 HashMap 实现：</strong>
+<pre><code>// HashSet 的 add 方法
+public boolean add(E e) {
+    return map.put(e, PRESENT) == null;  // PRESENT 是全局哑元 Object
+}</code></pre>
+<strong>为什么用 HashMap 而不用 ArrayList 检查重复？</strong>HashMap O(1) vs ArrayList O(n)。
+</div>
+
+<h3 id="three-2">2. TreeMap / TreeSet —— 红黑树实现</h3>
+
+<div class="card">
+<strong>红黑树自平衡规则：</strong>
+• 节点是红色或黑色
+• 根节点是黑色
+• 每个叶子节点（NIL）是黑色
+• 红色节点的子节点必须是黑色（不能连续红）
+• 从任意节点到其每个叶子节点路径上黑色节点数相同
+
+<strong>时间复杂度：</strong>增删改查 O(logN)
+<strong>使用：</strong>需要排序时用 TreeMap（自然顺序 / 自定义 Comparator）
+</div>
+
+<h3 id="three-3">3. LinkedHashMap —— 有序 HashMap</h3>
+
+<div class="card">
+<strong>原理：</strong>HashMap + 双向链表，维护插入顺序或访问顺序（LRU 缓存）。
+<strong>LRU 实现：</strong><code>accessOrder=true</code>，每次 get 将节点移到链表尾部。重写 <code>removeEldestEntry()</code> 实现自动淘汰。
+</div>
+
+<div class="nav-bottom">
+  <a href="../02-Redis/Redis八股文.html">← 上一篇：Redis</a>
+  <a href="../04-多线程/多线程八股文.html">下一篇：多线程 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

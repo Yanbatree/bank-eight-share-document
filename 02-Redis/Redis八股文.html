@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis 八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #f472b6; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #be185d; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🔴 Redis 八股文</h1>
+
+<!-- ============ 一、基础 ============ -->
+<h2 id="one-1">一、基础</h2>
+
+<h3>1. Redis 为什么这么快？</h3>
+
+<div class="mermaid">
+graph TD
+    A["Redis 为什么快"] --> B["① 纯内存操作<br/>数据存在内存中"]
+    A --> C["② 单线程模型<br/>无上下文切换/锁竞争"]
+    A --> D["③ IO 多路复用<br/>一个线程处理多个连接"]
+    A --> E["④ 高效数据结构<br/>跳表/压缩列表等"]
+    A --> F["⑤ RESP 协议简单<br/>解析开销小"]
+</div>
+
+<h3 id="one-2">2. 五种基本数据类型</h3>
+
+<div class="card">
+<table>
+<tr><th>类型</th><th>场景</th><th>底层结构</th></tr>
+<tr><td><strong>String</strong></td><td>缓存、计数器、分布式锁、Session</td><td>SDS（简单动态字符串）/ int / embstr / raw</td></tr>
+<tr><td><strong>Hash</strong></td><td>存储对象（用户信息）、购物车</td><td>ziplist → listpack / dict</td></tr>
+<tr><td><strong>List</strong></td><td>消息队列、最新列表、时间线</td><td>quicklist（由 ziplist + linkedlist 组成）</td></tr>
+<tr><td><strong>Set</strong></td><td>标签、好友关系、共同关注、抽奖</td><td>intset / dict</td></tr>
+<tr><td><strong>ZSet</strong></td><td>排行榜、延时队列、带权重的集合</td><td>ziplist → listpack / skiplist + dict</td></tr>
+</table>
+</div>
+
+<h3 id="one-3">3. 底层数据结构</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "ZSet 的实现"
+        A["跳表 Skiplist<br/>O(logN) 范围查询"]
+        B["dict 字典<br/>O(1) 按 member 查 score"]
+        A --- B
+    end
+    subgraph "跳表为什么不用红黑树"
+        C["跳表实现简单"]
+        D["跳表天然支持范围查询<br/>找到起点后顺序遍历"]
+        E["跳表平均 O(logN)<br/>红黑树也是 O(logN)"]
+    end
+</div>
+
+<div class="highlight">
+<strong>常见底层结构：</strong>SDS、双向链表、压缩列表（ziplist）、listpack、quicklist、跳表（skiplist）、整数集合（intset）、dict、RedisObject
+</div>
+
+<!-- ============ 二、缓存问题 ============ -->
+<h2 id="two-1">二、缓存三大问题</h2>
+
+<h3>1. 缓存穿透 / 击穿 / 雪崩</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "🔴 缓存穿透"
+        P1["请求查询不存在的数据"] --> P2["缓存没有，DB也没有"]
+        P2 --> P3["大量请求直接打到 DB"]
+        P3 --> P4["解决：布隆过滤器 / 缓存空值"]
+    end
+
+    subgraph "🟡 缓存击穿"
+        H1["热点 key 过期"] --> H2["大量并发请求同一 key"]
+        H2 --> H3["瞬时流量全部打到 DB"]
+        H3 --> H4["解决：互斥锁 / 逻辑过期"]
+    end
+
+    subgraph "🔵 缓存雪崩"
+        X1["大量 key 同时过期 / Redis 宕机"] --> X2["请求全部打到 DB"]
+        X2 --> X3["DB 扛不住，服务崩溃"]
+        X3 --> X4["解决：过期加随机值 / 高可用集群"]
+    end
+</div>
+
+<div class="card">
+<table>
+<tr><th>问题</th><th>原因</th><th>解决方案</th></tr>
+<tr><td><strong>穿透</strong></td><td>查询不存在的数据</td><td>① 布隆过滤器 ② 缓存空值（短过期） ③ 参数校验</td></tr>
+<tr><td><strong>击穿</strong></td><td>热点 key 过期瞬间</td><td>① 互斥锁（setnx） ② 不设过期 + 异步更新 ③ 逻辑过期</td></tr>
+<tr><td><strong>雪崩</strong></td><td>大量 key 同时过期 / Redis 宕机</td><td>① 过期时间 + 随机值 ② 高可用（主从+哨兵/集群）③ 限流降级熔断</td></tr>
+</table>
+</div>
+
+<h3 id="two-2">2. 缓存和数据库一致性</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant App as 应用
+    participant Cache as Redis
+    participant DB as MySQL
+
+    Note over App,DB: ✅ 推荐的更新策略：先更新 DB，再删缓存
+    App->>DB: ① UPDATE 数据
+    DB-->>App: 成功
+    App->>Cache: ② DELETE 缓存
+    Note over App,Cache: 下次读时 Cache Miss，从 DB 加载最新数据
+
+    Note over App,DB: ❌ 为什么不是"先删缓存，再更新 DB"？
+    Note over App,DB: 先删 → 另一线程读到旧数据写入缓存 → 缓存是旧数据
+</div>
+
+<div class="highlight">
+<strong>最终一致性方案：</strong>
+① <strong>先更新 DB，再删缓存</strong>（最常用）
+② 删缓存失败 → 重试 / 发 MQ 消息异步重试
+③ 延时双删：删缓存 → 更新 DB → 延时再删一次
+④ <strong>Canal</strong>：监听 binlog，异步更新缓存（适合强一致场景）
+</div>
+
+<h3 id="two-3">3. 过期删除策略</h3>
+
+<div class="card">
+<strong>惰性删除 + 定期删除：</strong><br/>
+• <strong>惰性删除</strong>：访问 key 时检查是否过期，过期则删除。省 CPU，占内存<br/>
+• <strong>定期删除</strong>：每隔一段时间随机抽一批 key 检查并删除过期 key。折中方案<br/>
+<strong>Redis 用的是两种结合：</strong>定期随机抽取 + 访问时惰性检查
+</div>
+
+<h3 id="two-4">4. 内存淘汰策略（8种）</h3>
+
+<div class="card">
+<table>
+<tr><th>策略</th><th>行为</th></tr>
+<tr><td><strong>noeviction</strong></td><td>不淘汰，写请求直接报错（默认）</td></tr>
+<tr><td><strong>allkeys-lru</strong></td><td>所有 key 中，淘汰最近最少使用的（推荐）</td></tr>
+<tr><td><strong>allkeys-lfu</strong></td><td>所有 key 中，淘汰使用频率最低的</td></tr>
+<tr><td><strong>volatile-lru</strong></td><td>有过期时间的 key 中，淘汰最近最少使用的</td></tr>
+<tr><td><strong>volatile-lfu</strong></td><td>有过期时间的 key 中，淘汰使用频率最低的</td></tr>
+<tr><td><strong>volatile-ttl</strong></td><td>有过期时间的 key 中，淘汰 TTL 最短的</td></tr>
+<tr><td><strong>allkeys-random</strong></td><td>所有 key 中随机淘汰</td></tr>
+<tr><td><strong>volatile-random</strong></td><td>有过期时间的 key 中随机淘汰</td></tr>
+</table>
+<strong>LRU vs LFU：</strong>LRU 看"最近" → 热点数据不容易淘汰；LFU 看"频率" → 防止偶尔访问一次就留下来
+</div>
+
+<!-- ============ 三、持久化 & 集群 ============ -->
+<h2 id="three-1">三、持久化 & 集群</h2>
+
+<h3>1. RDB vs AOF</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "RDB 快照"
+        R1["每隔一段时间<br/>全量快照到磁盘"] --> R2["✅ 恢复快<br/>❌ 可能丢最后一段数据<br/>❌ 大数据量 fork 慢"]
+    end
+    subgraph "AOF 日志"
+        A1["每次写操作<br/>追加到 AOF 文件"] --> A2["✅ 数据更安全<br/>❌ 文件大，恢复慢<br/>❌ 写性能有影响"]
+    end
+</div>
+
+<div class="card">
+<table>
+<tr><th></th><th>RDB</th><th>AOF</th></tr>
+<tr><td>原理</td><td>定时全量内存快照</td><td>写命令追加日志</td></tr>
+<tr><td>文件大小</td><td>小（压缩二进制）</td><td>大（文本命令）</td></tr>
+<tr><td>恢复速度</td><td><strong>快</strong></td><td>慢（重放所有命令）</td></tr>
+<tr><td>数据安全</td><td>可能丢失最后一次快照后的数据</td><td><strong>更安全</strong>（可配置每秒同步）</td></tr>
+<tr><td>fork</td><td>需要 fork，大数据量下阻塞</td><td>不需要 fork</td></tr>
+</table>
+<strong>最佳实践：</strong>RDB + AOF 混合使用。Redis 4.0+ 支持混合持久化——RDB 快照 + 增量 AOF。
+</div>
+
+<h3 id="three-2">2. 主从 + 哨兵</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "主从架构"
+        M["Master<br/>读写"]
+        S1["Slave 1<br/>只读"]
+        S2["Slave 2<br/>只读"]
+        M -->|异步复制| S1
+        M -->|异步复制| S2
+    end
+    subgraph "哨兵 Sentinel"
+        SN1["Sentinel 1"] --> M
+        SN2["Sentinel 2"] --> M
+        SN3["Sentinel 3"] --> M
+        SN1 -.->|"监控 + 投票"| SN2
+        SN2 -.->|"监控 + 投票"| SN3
+        Note["Master 挂了 → 哨兵投票选举新 Master → 通知客户端"]
+    end
+</div>
+
+<div class="highlight">
+<strong>哨兵三个任务：</strong>监控（心跳检测）、自动故障转移（选新 Master）、通知客户端。<br/>
+<strong>哨兵集群：</strong>至少 3 个实例，避免单点故障。用 Raft 类似算法选出 Leader 执行故障转移。
+</div>
+
+<h3 id="three-3">3. Cluster 集群（3.0+）</h3>
+
+<div class="card">
+<strong>16384 个哈希槽</strong>，每个节点负责一部分槽。
+
+<pre><code>slot = CRC16(key) % 16384</code></pre>
+
+<strong>特点：</strong>
+• 去中心化：节点间通过 Gossip 协议通信
+• 主从结构：每个分片有 Master + Slave
+• 客户端重定向：key 不在当前节点 → 返回 MOVED（永久）或 ASK（临时迁移中）
+• 至少 3 主 3 从 保证高可用
+
+<strong>为什么是 16384？</strong> 心跳包大小 + 节点数限制的折中。16k 槽足够 1000 个节点用。
+</div>
+
+<!-- ============ 四、分布式锁 ============ -->
+<h2 id="four-1">四、分布式锁</h2>
+
+<h3>1. 用 Redis 实现分布式锁</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant A as 客户端 A
+    participant R as Redis
+    participant B as 客户端 B
+
+    A->>R: SET lock_key unique_value NX EX 10
+    R-->>A: OK ✅ 获取锁成功
+    Note over A: 执行业务逻辑...
+
+    B->>R: SET lock_key unique_value NX EX 10
+    R-->>B: nil ❌ 锁被占用
+
+    A->>R: Lua 脚本：先判断 value 是否自己的，是则 DEL
+    Note over A: GET value == unique_value → DEL key
+    R-->>A: OK 释放锁
+</div>
+
+<div class="highlight">
+<strong>核心要素：</strong><br/>
+① <code>SET key value NX EX timeout</code>：原子加锁 + 设过期<br/>
+② value 用唯一标识（UUID / 线程ID）：释放时验证，防止误删<br/>
+③ <strong>Lua 脚本释放</strong>：先 GET 判断 value，相等再 DEL——保证原子性<br/>
+④ <strong>过期时间</strong>要足够：防止业务没执行完锁就过期了
+</div>
+
+<h3 id="four-2">2. 分布式锁的常见问题</h3>
+
+<div class="card">
+<table>
+<tr><th>问题</th><th>方案</th></tr>
+<tr><td>锁过期，业务还没结束</td><td><strong>看门狗机制</strong>（Redisson）：定时续期</td></tr>
+<tr><td>释放了别人的锁</td><td>value 存唯一标识 + Lua 脚本验证后删除</td></tr>
+<tr><td>主从切换锁丢失</td><td><strong>RedLock</strong>：向多个独立实例加锁，过半成功才算获取</td></tr>
+<tr><td>单点故障</td><td>使用 RedLock / Zookeeper 方案</td></tr>
+</table>
+</div>
+
+<!-- ============ 五、线程模型 ============ -->
+<h2 id="five-1">五、线程模型</h2>
+
+<h3>1. 单线程模型详解</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "Redis 单线程模型"
+        A["多个客户端连接"] --> B["IO 多路复用<br/>(epoll/select/kqueue)"]
+        B --> C["事件队列"]
+        C --> D["单线程<br/>逐个处理事件"]
+        D --> E["读事件 → 解析命令 → 执行 → 写响应"]
+    end
+</div>
+
+<div class="card">
+<strong>Redis 6.0 之前为什么单线程？</strong><br/>
+• 瓶颈在<strong>内存和网络</strong>，不在 CPU<br/>
+• 单线程避免了上下文切换和锁竞争<br/>
+• 数据结构简单高效，命令执行很快<br/>
+<br/>
+<strong>缺点：</strong>单个慢命令（如 KEYS、FLUSHALL）会阻塞所有请求。大 key 的 DEL 也会阻塞。
+</div>
+
+<h3 id="five-2">2. IO 多路复用</h3>
+
+<div class="card">
+<strong>核心思想：</strong>一个线程同时监听多个 socket，哪个有事件就处理哪个。<br/>
+<br/>
+<table>
+<tr><th>系统调用</th><th>机制</th><th>特点</th></tr>
+<tr><td>select</td><td>遍历所有 fd</td><td>O(n)，有 1024 限制</td></tr>
+<tr><td>poll</td><td>遍历，链表存 fd</td><td>O(n)，无数量限制</td></tr>
+<tr><td>epoll（Linux）</td><td>回调机制，内核通知就绪 fd</td><td>O(1)，无数量限制，<strong>Redis 首选</strong></td></tr>
+</table>
+</div>
+
+<h3 id="five-3">3. Redis 6.0+ 的多线程</h3>
+
+<div class="highlight">
+<strong>注意：</strong>Redis 6.0 引入的多线程只是<strong>网络 IO 多线程</strong>，命令执行仍然是单线程。
+
+<pre><code>读请求解析（多线程）→ 命令执行（单线程）→ 写响应（多线程）</code></pre>
+
+<strong>为什么不全多线程？</strong>保证原子性——单线程执行命令天然线程安全，无需加锁。
+</div>
+
+<div class="nav-bottom">
+  <a href="../01-MySQL/MySQL八股文.html">← 上一篇：MySQL</a>
+  <a href="../03-集合/集合八股文.html">下一篇：Java 集合 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

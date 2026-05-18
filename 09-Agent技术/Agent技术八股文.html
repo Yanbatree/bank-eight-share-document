@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent & MCP 技术八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #22d3ee; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #0891b2; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🤖 AI Agent & MCP 技术八股文</h1>
+<p style="color:var(--text-secondary)">2025 面试新热点 — 手写 Agent + MCP 协议 + RAG 问答</p>
+
+<!-- ==================== 一、AI Agent ==================== -->
+<h2 id="one-1">一、AI Agent 基础</h2>
+
+<h3>1. 什么是 AI Agent？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "AI Agent = LLM + 工具 + 规划 + 记忆"
+        LLM["LLM 大脑<br/>推理、决策"]
+        Tools["工具 Tools<br/>API、数据库、代码执行"]
+        Planning["规划 Planning<br/>任务分解、反思、纠错"]
+        Memory["记忆 Memory<br/>短期记忆(上下文) + 长期记忆(向量库)"]
+    end
+    LLM -->|"调用"| Tools
+    LLM -->|"驱动"| Planning
+    LLM -->|"读写"| Memory
+</div>
+
+<div class="card">
+<strong>通俗理解：</strong>LLM 像一个会说话的大脑，Agent 给这个大脑装上了<strong>手（工具调用）</strong>和<strong>笔记本（记忆）</strong>，让它可以自主完成复杂任务。
+
+<strong>核心公式：</strong><code>Agent = LLM + Memory + Planning + Tool Use</code>
+</div>
+
+<h3 id="one-2">2. Agent 核心架构</h3>
+
+<div class="mermaid">
+flowchart LR
+    User["用户输入"] --> Agent["Agent 大脑 (LLM)"]
+    Agent -->|"思考：需要查什么？"| Router["路由器"]
+    Router -->|"查资料"| RAG["RAG 检索"]
+    Router -->|"调接口"| API["API / 工具调用"]
+    Router -->|"写代码"| Code["代码执行器"]
+    RAG --> Context["上下文组装"]
+    API --> Context
+    Code --> Context
+    Context --> Agent
+    Agent -->|"生成最终回答"| User
+</div>
+
+<div class="highlight">
+<strong>Agent 循环（ReAct 模式）：</strong><br/>
+Thought（思考下一步做什么）→ Action（执行工具）→ Observation（观察结果）→ Thought（继续思考）→ ... → Final Answer
+</div>
+
+<h3 id="one-3">3. AI Agent vs 传统 LLM Chat</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>传统 LLM Chat</th><th>AI Agent</th></tr>
+<tr><td>能力</td><td>纯文本生成</td><td>能调用外部工具、查数据库、执行代码</td></tr>
+<tr><td>自主性</td><td>被动回答</td><td>主动规划、多步执行</td></tr>
+<tr><td>记忆</td><td>只有对话上下文</td><td>短期 + 长期记忆（向量库）</td></tr>
+<tr><td>纠错</td><td>不具备</td><td>观察结果后自我反思纠正</td></tr>
+<tr><td>场景</td><td>闲聊、写作、翻译</td><td>自动化运维、智能客服、代码助手</td></tr>
+</table>
+</div>
+
+<h3 id="one-4">4. 多 Agent 编排模式</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "编排模式"
+        A["① 顺序流水线<br/>A → B → C → D"]
+        B["② 并行分发<br/>同一问题分发给多个 Agent，投票/汇总"]
+        C["③ 层级委托<br/>Master Agent 把子任务分给 Specialist Agent"]
+        D["④ 辩论模式<br/>多个 Agent 互相质疑，取最优结论"]
+    end
+</div>
+
+<div class="card">
+<strong>常见框架：</strong>
+• <strong>LangChain / LangGraph</strong>：链式调用 + 状态图编排
+• <strong>AutoGen（Microsoft）</strong>：多 Agent 对话协作
+• <strong>CrewAI</strong>：角色扮演式多 Agent
+• <strong>Anthropic Claude Code</strong>：Agent 驱动的代码助手（Skills + MCP + Hooks）
+• <strong>Dify / Coze</strong>：低代码 Agent 平台
+</div>
+
+<!-- ==================== 二、MCP ==================== -->
+<h2 id="two-1">二、MCP 协议</h2>
+
+<h3>1. MCP 是什么？（Model Context Protocol）</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "MCP 之前 - 每个 LLM 单独对接"
+        L1["Claude"] --> DB1["数据库插件"]
+        L2["GPT"] --> DB2["数据库插件"]
+        L3["Gemini"] --> DB3["数据库插件"]
+    end
+    subgraph "MCP 之后 - 统一协议"
+        L4["任何 LLM 客户端"] --> MCP["MCP 协议"]
+        MCP --> Server1["DB Server"]
+        MCP --> Server2["File Server"]
+        MCP --> Server3["API Server"]
+    end
+</div>
+
+<div class="highlight">
+<strong>一句话：</strong>MCP 是 AI 应用的<strong>"USB-C 接口"</strong>——定义了 LLM 如何与外部工具/数据源交互的统一标准协议，由 Anthropic 在 2024 年底开源。
+
+<strong>类比：</strong>LSP（Language Server Protocol）标准化了 IDE 和语言工具的通信，MCP 标准化了 LLM 和外部工具的通信。
+</div>
+
+<h3 id="two-2">2. MCP 架构</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "MCP Host (IDE / Claude Desktop)"
+        Host["Host<br/>承载 LLM 的应用"]
+    end
+    subgraph "MCP Client"
+        Client["Client<br/>协议客户端<br/>与 Server 1:1 连接"]
+    end
+    subgraph "MCP Server"
+        S1["Server 1: 数据库<br/>暴露 query/insert 等工具"]
+        S2["Server 2: 文件系统<br/>暴露 read/write/list 等工具"]
+        S3["Server 3: API<br/>暴露自定义业务工具"]
+    end
+    Host --> Client
+    Client -->|"stdio / SSE"| S1
+    Client -->|"stdio / SSE"| S2
+    Client -->|"stdio / SSE"| S3
+
+    subgraph "远程资源"
+        S1 --> DB["MySQL / PostgreSQL"]
+        S2 --> FS["本地 / 远程文件"]
+        S3 --> API["REST API / gRPC"]
+    end
+</div>
+
+<div class="card">
+<strong>MCP 三大核心概念：</strong>
+<table>
+<tr><th>概念</th><th>作用</th><th>举例</th></tr>
+<tr><td><strong>Resources</strong></td><td>暴露数据（只读，类似 GET）</td><td>文件内容、数据库记录、文档</td></tr>
+<tr><td><strong>Tools</strong></td><td>暴露操作（可执行动作）</td><td>创建文件、发送消息、查询 API</td></tr>
+<tr><td><strong>Prompts</strong></td><td>预定义的提示模板</td><td>代码审查模板、SQL 生成模板</td></tr>
+</table>
+</div>
+
+<h3 id="two-3">3. MCP vs Function Calling</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>Function Calling</th><th>MCP</th></tr>
+<tr><td>定义方</td><td>每个 LLM 厂商自己的规范</td><td>统一的开源协议</td></tr>
+<tr><td>生态</td><td>各自为政</td><td>社区共建 Server，一次开发到处用</td></tr>
+<tr><td>发现机制</td><td>开发者手动声明函数</td><td>Server 自描述，Client 自动发现工具</td></tr>
+<tr><td>安全性</td><td>依赖各厂商</td><td>明确的权限模型 + 沙箱</td></tr>
+<tr><td>传输</td><td>HTTP/gRPC（各厂商不同）</td><td>标准 stdio / SSE</td></tr>
+</table>
+<strong>关系：MCP 可以理解为 Function Calling 的"标准化升级版"。</strong>
+</div>
+
+<h3 id="two-4">4. MCP 核心通信机制</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant Host as MCP Host
+    participant Client as MCP Client
+    participant Server as MCP Server
+
+    Note over Host,Server: ① 初始化握手
+    Host->>Client: 启动 Server
+    Client->>Server: initialize (协议版本 + 客户端信息)
+    Server-->>Client: capabilities (支持的能力列表)
+
+    Note over Host,Server: ② 发现工具
+    Client->>Server: tools/list
+    Server-->>Client: [{name, description, inputSchema}]
+
+    Note over Host,Server: ③ LLM 决定调用工具
+    Client->>Server: tools/call {name, arguments}
+    Server-->>Client: {content: [...]}
+
+    Note over Host,Server: ④ 读取资源（可选）
+    Client->>Server: resources/read {uri}
+    Server-->>Client: {contents: [...]}
+</div>
+
+<div class="highlight">
+<strong>面试加分点：</strong>能说出 MCP 是 LLM ↔ 外部世界的标准协议，类比 LSP，先说 Protocol 层（Resources/Tools/Prompts），再说 Transport 层（stdio/SSE），面试官会觉得你真正理解了这个东西。
+</div>
+
+<!-- ==================== 三、关键配套技术 ==================== -->
+<h2 id="three-1">三、关键配套技术</h2>
+
+<h3>1. RAG（检索增强生成）</h3>
+
+<div class="mermaid">
+flowchart TD
+    Offline["离线阶段"] --> O1["① 文档切分 Chunking"]
+    O1 --> O2["② Embedding 向量化<br/>(text-embedding-3)"]
+    O2 --> O3["③ 存入向量数据库<br/>(Milvus/Pinecone/Elasticsearch)"]
+
+    Online["在线阶段"] --> N1["① 用户提问"]
+    N1 --> N2["② 问题向量化"]
+    N2 --> N3["③ 向量相似度检索 Top-K"]
+    N3 --> N4["④ 拼接 Prompt:<br/>上下文 + 问题"]
+    N4 --> N5["⑤ LLM 生成回答"]
+</div>
+
+<div class="card">
+<strong>银行场景：</strong>智能客服（规章制度问答）、信贷审批辅助（检索历史案例）、合规审查（检索法规条文）。
+
+<strong>优化技巧：</strong>
+• 文档切分：语义切分 > 固定长度切分
+• 检索策略：混合检索（向量 + 关键词）> 纯向量
+• 重排序（Rerank）：检索后精排 Top-K，提高相关性
+</div>
+
+<h3 id="three-2">2. Tool Use / Function Calling 原理</h3>
+
+<div class="card">
+<strong>工作流程：</strong>
+<pre><code>① 开发者定义工具 schema（名称、描述、参数 JSON Schema）
+② 用户输入问题 → LLM 判断是否需要调用工具
+③ 需要 → LLM 输出 tool_call（工具名 + 参数）而非文本
+④ 客户端执行工具调用，获取结果
+⑤ 将结果传回 LLM → LLM 基于结果生成最终回答</code></pre>
+
+<strong>关键：</strong>LLM 不直接执行工具，它是"决策者"——决定调用哪个工具和传什么参数，实际执行由客户端完成。
+</div>
+
+<h3 id="three-3">3. Prompt Engineering 核心技巧</h3>
+
+<div class="card">
+<table>
+<tr><th>技巧</th><th>说明</th><th>示例</th></tr>
+<tr><td><strong>角色设定</strong></td><td>定义 AI 的身份和行为</td><td>"你是一个银行风控专家..."</td></tr>
+<tr><td><strong>Few-Shot</strong></td><td>给 2-3 个示例</td><td>输入→输出示例对</td></tr>
+<tr><td><strong>思维链 CoT</strong></td><td>引导 LLM 一步步推理</td><td>"请逐步分析这个交易的风险"</td></tr>
+<tr><td><strong>结构化输出</strong></td><td>指定输出格式</td><td>"请以 JSON 格式返回"</td></tr>
+<tr><td><strong>约束 + 边界</strong></td><td>明确什么不能做</td><td>"不要给出具体投资建议"</td></tr>
+</table>
+</div>
+
+<!-- ==================== 四、银行场景 ==================== -->
+<h2 id="four-1">四、银行 + Agent = ？</h2>
+
+<h3>1. 银行中 Agent 的应用场景</h3>
+
+<div class="mermaid">
+graph TD
+    Bank["银行 Agent 应用"] --> S1["① 智能客服<br/>RAG + 多轮对话，解答业务咨询"]
+    Bank --> S2["② 智能风控<br/>Agent 调用多数据源分析交易风险"]
+    Bank --> S3["③ 智能研发<br/>Claude Code + MCP 辅助开发"]
+    Bank --> S4["④ 智能运维<br/>Agent 自动巡检、告警分析、故障处理"]
+    Bank --> S5["⑤ 合规审查<br/>自动检查合同/文件合规性"]
+    Bank --> S6["⑥ 代码审查<br/>Agent 审查代码安全和质量问题"]
+</div>
+
+<div class="card">
+<strong>银行场景的特殊要求（Agent 安全版）：</strong>
+• 工具调用需要<strong>审批卡点</strong>：写入/转账类操作必须人工确认
+• 敏感数据<strong>不入 LLM</strong>：用户真实姓名、卡号等脱敏后再传
+• <strong>本地部署</strong>：大模型私有化部署，数据不出银行内网
+• <strong>审计追踪</strong>：Agent 每一步决策都有日志
+</div>
+
+<h3 id="four-2">2. Claude Code 生态概念速通</h3>
+
+<div class="card">
+<table>
+<tr><th>概念</th><th>是什么</th><th>银行场景</th></tr>
+<tr><td><strong>Skill</strong></td><td>可复用的专业工作流（如 TDD、Debug）</td><td>定制银行业务 Skill（如反洗钱检查）</td></tr>
+<tr><td><strong>MCP Server</strong></td><td>LLM 与外部系统交互的标准接口</td><td>对接银行内部 API、数据库</td></tr>
+<tr><td><strong>Hook</strong></td><td>在特定事件触发时执行的脚本</td><td>提交前自动跑安全扫描</td></tr>
+<tr><td><strong>Worktree</strong></td><td>隔离的 Git 工作区</td><td>多需求并行开发互不干扰</td></tr>
+<tr><td><strong>Plan Mode</strong></td><td>先出方案再写代码</td><td>满足银行对方案评审的合规要求</td></tr>
+</table>
+
+<strong>手写一个简单的 MCP Server demo：</strong>
+<pre><code>// 简易 MCP Server - 提供天气查询工具
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+
+const server = new Server({
+  name: "weather-server",
+  version: "1.0.0"
+}, {
+  capabilities: { tools: {} }
+});
+
+server.setRequestHandler("tools/list", async () => ({
+  tools: [{
+    name: "get_weather",
+    description: "查询指定城市的天气",
+    inputSchema: {
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"]
+    }
+  }]
+}));
+
+server.setRequestHandler("tools/call", async (request) => {
+  const { city } = request.params.arguments;
+  return { content: [{ type: "text", text: `${city}: 晴, 25°C` }] };
+});</code></pre>
+</div>
+
+<div class="nav-bottom">
+  <a href="../08-场景题/场景题八股文.html">← 上一篇：场景题</a>
+  <a href="../10-银行业务/银行业务八股文.html">下一篇：银行业务 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>计算机网络八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #60a5fa; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #2563eb; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🌐 计算机网络八股文</h1>
+
+<!-- ============ 一、TCP ============ -->
+<h2 id="one-1">一、基础</h2>
+
+<h3>1. OSI 七层 vs TCP/IP 四层</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "OSI 七层"
+        O7["应用层"]
+        O6["表示层"]
+        O5["会话层"]
+        O4["传输层"]
+        O3["网络层"]
+        O2["数据链路层"]
+        O1["物理层"]
+    end
+    subgraph "TCP/IP 四层"
+        T4["应用层 HTTP/DNS/FTP"]
+        T3["传输层 TCP/UDP"]
+        T2["网际层 IP/ICMP"]
+        T1["网络接口层"]
+    end
+    O7 --> T4
+    O6 --> T4
+    O5 --> T4
+    O4 --> T3
+    O3 --> T2
+    O2 --> T1
+    O1 --> T1
+</div>
+
+<div class="card">
+<strong>各层常见协议：</strong>
+<table>
+<tr><th>层</th><th>协议</th></tr>
+<tr><td>应用层</td><td>HTTP, HTTPS, DNS, FTP, SMTP, WebSocket</td></tr>
+<tr><td>传输层</td><td>TCP, UDP</td></tr>
+<tr><td>网络层</td><td>IP, ICMP, ARP</td></tr>
+<tr><td>数据链路层</td><td>MAC 地址, ARP</td></tr>
+</table>
+</div>
+
+<h3 id="one-2">2. TCP vs UDP</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>TCP</th><th>UDP</th></tr>
+<tr><td>连接</td><td>面向连接</td><td>无连接</td></tr>
+<tr><td>可靠性</td><td>可靠（确认+重传+排序+流量控制）</td><td>不可靠</td></tr>
+<tr><td>速度</td><td>慢</td><td>快</td></tr>
+<tr><td>头部开销</td><td>20 字节</td><td>8 字节</td></tr>
+<tr><td>场景</td><td>HTTP、文件传输、邮件</td><td>视频直播、DNS、语音通话、游戏</td></tr>
+<tr><td>广播/多播</td><td>不支持</td><td>支持</td></tr>
+</table>
+</div>
+
+<!-- ============ 三次握手 ============ -->
+<h3 id="one-3">3. TCP 三次握手</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 客户端
+    participant S as 服务器
+
+    Note over C,S: 第一次握手
+    C->>S: SYN=1, seq=x
+    Note over S: 收到 SYN，状态 → SYN_RCVD
+
+    Note over C,S: 第二次握手
+    S->>C: SYN=1, ACK=1, seq=y, ack=x+1
+    Note over C: 收到 SYN+ACK，状态 → ESTABLISHED
+
+    Note over C,S: 第三次握手
+    C->>S: ACK=1, seq=x+1, ack=y+1
+    Note over S: 收到 ACK，状态 → ESTABLISHED
+</div>
+
+<div class="highlight">
+<strong>为什么是三次，不是两次？</strong>防止<strong>已失效的连接请求</strong>到达服务端导致错误建立连接。如果是两次握手，服务端收到过期的 SYN 就会建立无用的连接。
+
+<strong>为什么不是四次？</strong>三次已经可以确认双方收发能力正常（客户端收/发正常，服务端收/发正常），四次没有必要。
+</div>
+
+<h3 id="one-4">4. TCP 四次挥手</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 主动关闭方
+    participant S as 被动关闭方
+
+    C->>S: FIN=1, seq=u
+    Note over S: 收到 FIN → CLOSE_WAIT
+    S->>C: ACK=1, seq=v, ack=u+1
+    Note over C: 收到 ACK → FIN_WAIT_2
+    Note over S: 处理剩余数据...
+
+    S->>C: FIN=1, ACK=1, seq=w, ack=u+1
+    Note over C: 收到 FIN → TIME_WAIT
+    C->>S: ACK=1, seq=u+1, ack=w+1
+    Note over S: 收到 ACK → CLOSED
+    Note over C: 等待 2MSL → CLOSED
+</div>
+
+<div class="highlight">
+<strong>为什么是四次？</strong>TCP 全双工，双方都需要发送 FIN + ACK。服务端收到 FIN 后可能还有数据要发，所以 ACK 和 FIN 分开发送。
+</div>
+
+<h3 id="one-5">5. TIME_WAIT 为什么是 2MSL？</h3>
+
+<div class="card">
+<strong>MSL = Maximum Segment Lifetime</strong>（报文最大存活时间，Linux 默认 30s）。
+
+<strong>2MSL 的原因：</strong>
+① <strong>确保最后的 ACK 能到达</strong>：如果服务端没收到最后的 ACK，会重发 FIN，客户端需要在 TIME_WAIT 期间能重发 ACK
+② <strong>让旧连接的所有报文在网络中消失</strong>：防止旧连接的报文影响新连接
+
+<strong>大量 TIME_WAIT 的问题：</strong>占用端口和系统资源。解决方案：<code>net.ipv4.tcp_tw_reuse</code>、SO_REUSEADDR。
+</div>
+
+<h3 id="one-6">6. TCP 可靠传输机制</h3>
+
+<div class="mermaid">
+graph TD
+    R["TCP 可靠性"] --> R1["① 确认应答<br/>ACK + 序列号"]
+    R --> R2["② 超时重传<br/>重传超时时间 RTO"]
+    R --> R3["③ 流量控制<br/>滑动窗口"]
+    R --> R4["④ 拥塞控制<br/>慢启动/拥塞避免/快重传/快恢复"]
+    R --> R5["⑤ 校验和<br/>校验数据是否出错"]
+    R --> R6["⑥ 序号和排序<br/>保证数据有序"]
+</div>
+
+<h3 id="one-7">7. 流量控制 & 拥塞控制</h3>
+
+<div class="card">
+<strong>流量控制（端到端）：</strong>接收方通过窗口大小（rwnd）告知发送方自己能接收多少，防止发送方太快把接收方"淹没"。
+
+<strong>拥塞控制（网络层面）：</strong>
+<pre><code>① 慢启动：cwnd 从 1 开始，指数增长（每 RTT 翻倍）
+② 拥塞避免：cwnd ≥ ssthresh 后，线性增长（每 RTT +1）
+③ 快重传：连续收到 3 个重复 ACK 立即重传（不等超时）
+④ 快恢复：收到 3 个重复 ACK，ssthresh = cwnd/2，cwnd = ssthresh，进入拥塞避免</code></pre>
+</div>
+
+<!-- ============ 二、HTTP ============ -->
+<h2 id="two-1">二、HTTP</h2>
+
+<h3>1. HTTP 各版本区别</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>HTTP/1.0</th><th>HTTP/1.1</th><th>HTTP/2</th><th>HTTP/3</th></tr>
+<tr><td>连接</td><td>短连接</td><td>长连接 (Keep-Alive)</td><td>多路复用（单连接）</td><td>基于 QUIC (UDP)</td></tr>
+<tr><td>队头阻塞</td><td>❌ 严重</td><td>❌ 有（Pipeline）</td><td>✅ 基本解决</td><td>✅ 彻底解决</td></tr>
+<tr><td>头部压缩</td><td>无</td><td>无</td><td>HPACK</td><td>QPACK</td></tr>
+<tr><td>服务器推送</td><td>无</td><td>无</td><td>✅</td><td>✅</td></tr>
+<tr><td>传输</td><td>文本</td><td>文本</td><td>二进制帧</td><td>二进制</td></tr>
+</table>
+</div>
+
+<h3 id="two-2">2. HTTP vs HTTPS</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>HTTP</th><th>HTTPS</th></tr>
+<tr><td>端口</td><td>80</td><td>443</td></tr>
+<tr><td>加密</td><td>明文传输</td><td>SSL/TLS 加密</td></tr>
+<tr><td>证书</td><td>不需要</td><td>需要 CA 证书</td></tr>
+<tr><td>连接</td><td>TCP 三次握手</td><td>TCP 三次握手 + TLS 握手</td></tr>
+<tr><td>SEO</td><td>无优势</td><td>搜索排名更靠前</td></tr>
+</table>
+</div>
+
+<h3 id="two-3">3. HTTPS 握手过程（TLS 1.2）</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 客户端
+    participant S as 服务端
+
+    Note over C,S: ① Client Hello
+    C->>S: TLS 版本 + 随机数1 + 密码套件列表
+
+    Note over C,S: ② Server Hello
+    S->>C: 选中的 TLS 版本 + 随机数2 + 选中的密码套件
+    S->>C: ③ Certificate: 服务器证书（含公钥）
+    S->>C: ④ Server Hello Done
+
+    Note over C: ⑤ 验证证书（CA 签名），生成随机数3
+    C->>S: ⑥ Client Key Exchange：用服务器公钥加密随机数3
+    C->>S: ⑦ Change Cipher Spec：后续通信加密
+    C->>S: ⑧ Finished（加密的）
+
+    Note over S: 用私钥解密得到随机数3
+    Note over C,S: 双方用随机数1+2+3 生成对称密钥
+    S->>C: ⑨ Change Cipher Spec + Finished
+
+    Note over C,S: ✅ 握手完成，对称加密通信
+</div>
+
+<div class="highlight">
+<strong>混合加密：</strong>非对称加密（RSA/ECDHE）交换密钥 + 对称加密（AES）传输数据。原因是非对称加密计算量大，不适合大量数据。
+</div>
+
+<h3 id="two-4">4. GET vs POST</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>GET</th><th>POST</th></tr>
+<tr><td>语义</td><td>获取资源</td><td>创建/提交数据</td></tr>
+<tr><td>参数位置</td><td>URL 查询串</td><td>请求体</td></tr>
+<tr><td>安全性</td><td>参数暴露在 URL/浏览器历史/日志</td><td>相对安全（不在 URL）</td></tr>
+<tr><td>幂等性</td><td>✅ 幂等</td><td>❌ 不幂等</td></tr>
+<tr><td>缓存</td><td>可缓存</td><td>不可缓存（通常）</td></tr>
+<tr><td>长度限制</td><td>URL 有长度限制（浏览器/服务器）</td><td>无长度限制</td></tr>
+</table>
+</div>
+
+<h3 id="two-5">5. HTTP 状态码</h3>
+
+<div class="card">
+<table>
+<tr><th>类别</th><th>常见状态码</th></tr>
+<tr><td><strong>1xx 信息</strong></td><td>100 Continue</td></tr>
+<tr><td><strong>2xx 成功</strong></td><td><strong>200 OK</strong>, 201 Created, 204 No Content</td></tr>
+<tr><td><strong>3xx 重定向</strong></td><td><strong>301 永久</strong>（搜索引擎换URL）, <strong>302 临时</strong>, 304 Not Modified（缓存）</td></tr>
+<tr><td><strong>4xx 客户端错误</strong></td><td><strong>400 Bad Request</strong>, <strong>401 Unauthorized</strong>, <strong>403 Forbidden</strong>, <strong>404 Not Found</strong>, 405 Method Not Allowed</td></tr>
+<tr><td><strong>5xx 服务端错误</strong></td><td><strong>500 Internal Server Error</strong>, <strong>502 Bad Gateway</strong>, <strong>503 Service Unavailable</strong>, 504 Gateway Timeout</td></tr>
+</table>
+<strong>301 vs 302：</strong>301 永久重定向（浏览器缓存，下次直接走新地址）；302 临时重定向（每次都要问原地址）。
+</div>
+
+<h3 id="two-6">6. Cookie / Session / Token (JWT)</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "Cookie-Session 模式"
+        A["登录"] --> B["服务端创建 Session 存内存/Redis"]
+        B --> C["Set-Cookie: sessionId=xxx"]
+        C --> D["每次请求自动带 Cookie"]
+        D --> E["服务端查 Session 验证身份"]
+    end
+    subgraph "JWT Token 模式"
+        F["登录"] --> G["服务端签发 JWT<br/>{header}.{payload}.{signature}"]
+        G --> H["客户端存 localStorage/Cookie"]
+        H --> I["每次请求手动带 Authorization: Bearer token"]
+        I --> J["服务端验证签名，无需查存储"]
+    end
+</div>
+
+<div class="card">
+<strong>Session 优缺点：</strong>服务端存储 → 拓展性差（需 Redis 共享）但更安全（可主动失效）。<br/>
+<strong>JWT 优缺点：</strong>无状态 → 好拓展，但签出后 token 仍有效（需黑名单），payload 过长影响性能。<br/>
+<strong>银行场景：</strong>通常用 Session + Redis 集中存储，可主动踢人、设超时，更安全可控。
+</div>
+
+<!-- ============ 三、综合 ============ -->
+<h2 id="three-1">三、综合</h2>
+
+<h3>1. 浏览器输入 URL 后发生了什么？</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["① 输入 URL"] --> B["② DNS 解析<br/>域名 → IP"]
+    B --> C["③ TCP 三次握手"]
+    C --> D{HTTPS?}
+    D -->|"是"| E["④ TLS 握手"]
+    D -->|"否"| F["⑤ HTTP 请求"]
+    E --> F
+    F --> G["⑥ 服务端处理<br/>Nginx → 应用 → DB"]
+    G --> H["⑦ 返回 HTTP 响应"]
+    H --> I["⑧ 浏览器解析渲染<br/>HTML → CSS → JS → 渲染树 → 绘制"]
+    I --> J["⑨ TCP 四次挥手"]
+</div>
+
+<h3 id="three-2">2. DNS 解析详细过程</h3>
+
+<div class="mermaid">
+flowchart LR
+    C["浏览器"] -->|"① 查缓存"| B["浏览器缓存"]
+    B -->|"② 未命中"| OS["操作系统缓存 (hosts)"]
+    OS -->|"③ 未命中"| Router["路由器缓存"]
+    Router -->|"④ 未命中"| LDNS["本地 DNS 服务器"]
+    LDNS -->|"⑤ 迭代查询"| Root["根域名服务器 ."]
+    Root -->|"返回 .com 地址"| LDNS
+    LDNS -->|"⑥ 查询"| TLD[".com 顶级域名服务器"]
+    TLD -->|"返回 example.com 地址"| LDNS
+    LDNS -->|"⑦ 查询"| Auth["权威 DNS 服务器"]
+    Auth -->|"返回 IP"| LDNS
+    LDNS -->|"⑧ 返回结果 + 缓存"| C
+</div>
+
+<div class="nav-bottom">
+  <a href="../05-JVM/JVM八股文.html">← 上一篇：JVM</a>
+  <a href="../07-SSM/SSM八股文.html">下一篇：SSM →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

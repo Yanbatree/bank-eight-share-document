@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>银行业务八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #f97316; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #c2410c; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>🏦 银行业务八股文</h1>
+<p style="color:var(--text-secondary)">不懂业务的技术人容易挂在二面 — 银行核心概念速通</p>
+
+<!-- ==================== 一、核心业务 ==================== -->
+<h2 id="one-1">一、核心系统与业务</h2>
+
+<h3>1. 银行核心系统架构</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "渠道层"
+        CH1["网银 / 手机银行"]
+        CH2["柜面系统"]
+        CH3["ATM / POS"]
+        CH4["开放银行 API"]
+    end
+    subgraph "业务处理层"
+        BIZ1["核心银行系统<br/>(Core Banking)"]
+        BIZ2["支付清算系统"]
+        BIZ3["信贷管理系统"]
+        BIZ4["国际结算系统"]
+        BIZ5["资金交易系统"]
+    end
+    subgraph "管理与支撑层"
+        M1["反洗钱 AML"]
+        M2["风控系统"]
+        M3["数据仓库"]
+        M4["监管报送"]
+        M5["客户关系管理 CRM"]
+    end
+    CH1 --> BIZ1
+    CH2 --> BIZ1
+    CH3 --> BIZ1
+    CH4 --> BIZ1
+    BIZ1 --> M1
+    BIZ1 --> M2
+    BIZ1 --> M4
+</div>
+
+<div class="card">
+<strong>核心银行系统（Core Banking System）</strong> 是银行 IT 的心脏——负责处理存款、贷款、账户管理等最基础的业务。通常厂商有：Oracle FLEXCUBE、Temenos T24、长亮科技、神州信息、神码等。近年银行在做"核心系统分布式转型"，从大型机/小型机上迁移到分布式架构。
+</div>
+
+<h3 id="one-2">2. 存款业务</h3>
+
+<div class="card">
+<strong>活期存款：</strong>随时存取，按日计息，按季结息（每季末月 20 日）。
+
+<strong>定期存款：</strong>约定存期和利率，到期一次还本付息。提前支取按活期利率计息。
+
+<strong>计息公式：</strong><code>利息 = 本金 × 年利率 × 存期(天) / 360</code>
+
+<strong>技术关注点：</strong>
+• 利率不是固定的——央行调整基准利率后，系统要支持<strong>分段计息</strong>
+• 利息计算精度：银行用 <code>BigDecimal</code>，绝对不能有浮点误差
+• 账户状态机：正常 → 冻结 → 挂失 → 销户，状态流转必须严格
+</div>
+
+<h3 id="one-3">3. 贷款业务</h3>
+
+<div class="mermaid">
+flowchart LR
+    A["① 贷款申请"] --> B["② 信贷审批<br/>(征信查询 + 风控模型)"]
+    B --> C["③ 合同签订"]
+    C --> D["④ 放款"]
+    D --> E["⑤ 还款管理<br/>(等额本息 / 等额本金 / 先息后本)"]
+    E --> F["⑥ 贷款结清"]
+
+    subgraph "贷后管理"
+        G["五级分类<br/>正常→关注→次级→可疑→损失"]
+        H["逾期催收"]
+        I["拨备计提"]
+    end
+</div>
+
+<div class="card">
+<strong>常见还款方式：</strong>
+<table>
+<tr><th>方式</th><th>特点</th></tr>
+<tr><td>等额本息</td><td>每月还款额固定，本金递增+利息递减。总额多于等额本金</td></tr>
+<tr><td>等额本金</td><td>每月还本金相同，利息递减。前期压力大，总额更少</td></tr>
+<tr><td>先息后本</td><td>每月只还利息，到期一次还本金。企业经营贷常用</td></tr>
+</table>
+
+<strong>技术关注点：</strong>还款计划表生成、逾期罚息计算（逾期利率 = 正常利率 × 1.5）、贷款核销、征信上报。
+</div>
+
+<h3 id="one-4">4. 支付清算</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant A as 付款人
+    participant BankA as 付款银行
+    participant Clearing as 清算机构
+    participant BankB as 收款银行
+    participant B as 收款人
+
+    A->>BankA: 发起转账
+    BankA->>BankA: 扣款 + 冻结
+    BankA->>Clearing: 发送支付指令
+    Clearing->>Clearing: 净额轧差计算
+    Clearing->>BankB: 发送入账指令
+    BankB->>B: 入账
+    Note over Clearing: 日终完成资金清算
+
+    Note over BankA,BankB: 小额支付系统(BEPS)：定时批量处理<br/>大额支付系统(HVPS)：实时逐笔
+</div>
+
+<div class="card">
+<strong>中国支付清算体系：</strong>
+<table>
+<tr><th>系统</th><th>特点</th><th>场景</th></tr>
+<tr><td><strong>大额支付系统 HVPS</strong></td><td>实时、逐笔、全额清算</td><td>大额转账（≥5万元/笔）</td></tr>
+<tr><td><strong>小额支付系统 BEPS</strong></td><td>定时、批量、净额清算</td><td>代发工资、水电费代扣</td></tr>
+<tr><td><strong>网上支付跨行清算系统 IBPS</strong></td><td>7×24 实时到账</td><td>网银/手机银行跨行转账</td></tr>
+<tr><td><strong>银联 CUPS</strong></td><td>银行卡跨行交易转接</td><td>刷卡消费、ATM 取款</td></tr>
+<tr><td><strong>网联 NUCC</strong></td><td>第三方支付（支付宝/微信）清算</td><td>移动支付</td></tr>
+</table>
+</div>
+
+<!-- ==================== 二、会计与结算 ==================== -->
+<h2 id="two-1">二、银行会计基础</h2>
+
+<h3>1. 借贷记账法</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "恒等式"
+        Eq["资产 = 负债 + 所有者权益"]
+    end
+    subgraph "记账规则"
+        R1["资产类：借增贷减"]
+        R2["负债类：借减贷增"]
+        R3["所有者权益：借减贷增"]
+        R4["收入：借减贷增"]
+        R5["费用：借增贷减"]
+    end
+    Eq --- R1
+    Eq --- R2
+    Eq --- R3
+</div>
+
+<div class="card">
+<strong>举例：客户存入 1000 元现金</strong>
+<pre><code>借：库存现金       1000  （资产增加）
+    贷：活期存款-客户  1000  （负债增加）</code></pre>
+
+<strong>技术关注点：</strong>每笔交易都要生成会计分录，<strong>有借必有贷，借贷必相等</strong>。程序要对账——日终跑批时检查总账、分户账、明细账三者是否一致。
+</div>
+
+<h3 id="two-2">2. 日终批量处理（跑批）</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["日终跑批<br/>(通常夜间进行)"] --> B["① 日切<br/>终止当日交易"]
+    B --> C["② 计息结息<br/>存款/贷款利息计算"]
+    C --> D["③ 总账记账<br/>生成科目汇总"]
+    D --> E["④ 对账<br/>总分核对、内外核对"]
+    E --> F["⑤ 生成报表<br/>监管报表、行内报表"]
+    F --> G["⑥ 数据备份<br/>归档 + 备份"]
+    G --> H["⑦ 开新日<br/>开放次日交易"]
+</div>
+
+<div class="highlight">
+<strong>银行科技岗必知：</strong>跑批是银行最关键的后台作业。如果跑批出了问题（算错利息、对账不平），第二天所有网点都会受影响。跑批期间核心系统对外不可用，所以往往凌晨执行，对性能和可靠性要求极高。
+</div>
+
+<!-- ==================== 三、监管合规 ==================== -->
+<h2 id="three-1">三、监管与合规</h2>
+
+<h3>1. 监管合规体系</h3>
+
+<div class="card">
+<table>
+<tr><th>监管机构</th><th>职责</th></tr>
+<tr><td><strong>中国人民银行（央行）</strong></td><td>货币政策、支付清算体系、反洗钱监管、征信管理</td></tr>
+<tr><td><strong>国家金融监督管理总局</strong></td><td>银行保险业日常监管、机构准入、现场/非现场检查</td></tr>
+<tr><td><strong>中国证监会</strong></td><td>证券市场、基金、期货监管</td></tr>
+<tr><td><strong>国家外汇管理局</strong></td><td>外汇管理、国际收支统计</td></tr>
+</table>
+
+<strong>重要监管要求：</strong>
+• <strong>巴塞尔协议 III</strong>：资本充足率 ≥ 8%、核心一级资本充足率 ≥ 5%
+• <strong>存款准备金</strong>：银行必须将一定比例的存款缴存央行（目前约 7%）
+• <strong>存贷比</strong>：贷款余额 / 存款余额 ≤ 75%（已取消硬性限制但仍是监测指标）
+• <strong>LPR（贷款市场报价利率）</strong>：贷款利率的定价基准，每月 20 日公布
+</div>
+
+<h3 id="three-2">2. 反洗钱 AML</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["交易发生"] --> B{"大额交易？<br/>现金≥5万/转账≥50万(个人)"}
+    B -->|"是"| C["大额交易上报<br/>交易后 5 个工作日内"]
+    B -->|"否"| D{"可疑交易？<br/>基于规则+模型判断"}
+    D -->|"是"| E["可疑交易上报<br/>交易后 10 个工作日内"]
+    D -->|"否"| F["正常放行"]
+</div>
+
+<div class="card">
+<strong>AML 技术实现要点：</strong>
+• <strong>规则引擎</strong>：交易频率异常、金额异常、对手方异常（高风险国家/地区）
+• <strong>AI 模型</strong>：基于历史案例训练的异常检测模型
+• <strong>名单筛查</strong>：制裁名单、政治敏感人物（PEP）名单实时匹配
+• <strong>客户风险评级</strong>：低/中/高/禁止四档，高风险客户加强尽调（EDD）
+</div>
+
+<h3 id="three-3">3. 银行风控体系</h3>
+
+<div class="card">
+<table>
+<tr><th>风控类型</th><th>场景</th><th>技术手段</th></tr>
+<tr><td><strong>信用风险</strong></td><td>贷款违约</td><td>评分卡模型、机器学习、征信数据</td></tr>
+<tr><td><strong>市场风险</strong></td><td>利率/汇率/股价波动</td><td>VaR 模型、压力测试</td></tr>
+<tr><td><strong>操作风险</strong></td><td>内控失效、人为失误</td><td>双人复核、权限管控、审计日志</td></tr>
+<tr><td><strong>流动性风险</strong></td><td>无法满足提现需求</td><td>流动性覆盖率 LCR 监控</td></tr>
+<tr><td><strong>合规风险</strong></td><td>违反法律法规</td><td>AML 系统、名单筛查</td></tr>
+<tr><td><strong>欺诈风险</strong></td><td>电信诈骗、盗刷</td><td>设备指纹、行为分析、生物识别</td></tr>
+</table>
+</div>
+
+<!-- ==================== 四、技术特点 ==================== -->
+<h2 id="four-1">四、银行系统技术特点</h2>
+
+<h3>1. 分布式核心系统转型</h3>
+
+<div class="card">
+<strong>传统核心系统的问题：</strong>
+• 跑在 IBM 大型机（Mainframe）上，COBOL 开发，维护成本高
+• 单体架构，弹性扩展困难
+• 批量处理模式，无法支撑高频实时交易场景
+
+<strong>分布式核心转型方向：</strong>
+• <strong>微服务化</strong>：拆分为客户服务、账户服务、产品服务、计息服务
+• <strong>单元化架构</strong>：按客户维度分片（如按 customer_id hash 取模），每个单元自包含
+• <strong>内存数据库</strong>：高频查询用 Redis 缓存，提升性能
+• <strong>数据最终一致性</strong>：核心交易用 TCC 分布式事务，非核心用 MQ 补偿
+
+<strong>转型难点：</strong>停机时间窗口极小、数据迁移风险高、新旧系统并行运行（"双模 IT"）。
+</div>
+
+<h3 id="four-2">2. 银行系统高可用九大要求</h3>
+
+<div class="card">
+<table>
+<tr><th>要求</th><th>技术实现</th></tr>
+<tr><td><strong>99.99%+ 可用</strong></td><td>两地三中心、同城双活、异地灾备，RPO → 0, RTO < 30min</td></tr>
+<tr><td><strong>数据强一致</strong></td><td>ACID 事务、分布式事务 TCC/SAGA 用于核心交易</td></tr>
+<tr><td><strong>安全合规</strong></td><td>等保三级/四级、数据加密、传输加密、访问控制</td></tr>
+<tr><td><strong>可审计</strong></td><td>全量操作日志、不可篡改、保留至少 6 个月</td></tr>
+<tr><td><strong>容量规划</strong></td><td>峰值 QPS 预留 3 倍+ 余量，定期全链路压测</td></tr>
+<tr><td><strong>灰度发布</strong></td><td>金丝雀 → 按比例 → 全量，可随时回滚</td></tr>
+<tr><td><strong>监控告警</strong></td><td>交易成功率、响应时间、对账差异，分级告警</td></tr>
+<tr><td><strong>限流降级</strong></td><td>网关限流 + 核心服务熔断 + 兜底策略</td></tr>
+<tr><td><strong>幂等设计</strong></td><td>所有写操作支持幂等，防重复扣款</td></tr>
+</table>
+</div>
+
+<h3 id="four-3">3. 银行系统 vs 互联网系统</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>银行系统</th><th>互联网系统</th></tr>
+<tr><td><strong>一致性</strong></td><td>强一致（钱不能丢不能错）</td><td>最终一致（可容忍短暂不一致）</td></tr>
+<tr><td><strong>可用性</strong></td><td>99.99%+，故障影响巨大</td><td>99.9%+，部分降级可接受</td></tr>
+<tr><td><strong>安全</strong></td><td>极严格，全链路加密 + 审计</td><td>较高，但对安全事件容忍度更高</td></tr>
+<tr><td><strong>技术栈</strong></td><td>保守，Java + 数据库，COBOL 仍有</td><td>激进，Go/Node/Python + NoSQL</td></tr>
+<tr><td><strong>迭代速度</strong></td><td>慢，月级，需严格测试</td><td>快，天级/周级，CI/CD</td></tr>
+<tr><td><strong>架构</strong></td><td>从大型机走向分布式</td><td>云原生微服务</td></tr>
+<tr><td><strong>核心关注</strong></td><td>安全 > 正确 > 可用 > 性能</td><td>体验 > 性能 > 可用 > 安全</td></tr>
+</table>
+</div>
+
+<div class="nav-bottom">
+  <a href="../09-Agent技术/Agent技术八股文.html">← 上一篇：Agent 技术</a>
+  <a href="../11-银行智能化/银行智能化八股文.html">下一篇：银行智能化 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

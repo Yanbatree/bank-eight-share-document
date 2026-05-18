@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JVM 八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #34d399; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #059669; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>☕ JVM 八股文</h1>
+
+<!-- ============ 一、内存模型 ============ -->
+<h2 id="one-1">一、内存模型</h2>
+
+<h3>1. JVM 运行时数据区域</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "线程共享"
+        Heap["堆 Heap<br/>对象实例、数组<br/>-Xms -Xmx"]
+        MethodArea["方法区 / 元空间<br/>类信息、常量、静态变量<br/>-XX:MetaspaceSize"]
+    end
+    subgraph "线程私有"
+        Stack["虚拟机栈 Stack<br/>栈帧：局部变量表、操作数栈<br/>-Xss"]
+        PC["程序计数器 PC<br/>当前执行的字节码行号"]
+        NativeStack["本地方法栈<br/>Native 方法"]
+    end
+</div>
+
+<div class="card">
+<table>
+<tr><th>区域</th><th>存放内容</th><th>异常</th><th>GC</th></tr>
+<tr><td><strong>堆</strong></td><td>对象实例、数组</td><td>OOM</td><td>✅ 主要区域</td></tr>
+<tr><td><strong>方法区（元空间）</strong></td><td>类信息、常量、静态变量、JIT 代码</td><td>OOM</td><td>✅ 回收类/常量</td></tr>
+<tr><td><strong>虚拟机栈</strong></td><td>局部变量表、操作数栈、方法出口</td><td>StackOverflow / OOM</td><td>❌</td></tr>
+<tr><td><strong>程序计数器</strong></td><td>字节码行号</td><td>无</td><td>❌</td></tr>
+<tr><td><strong>本地方法栈</strong></td><td>Native 方法</td><td>StackOverflow / OOM</td><td>❌</td></tr>
+</table>
+<strong>JDK 8 变化：</strong>方法区用<strong>元空间</strong>（Metaspace）替代永久代，元空间使用<strong>本地内存</strong>而非堆内存，默认无上限。
+</div>
+
+<h3 id="one-2">2. 堆的内存结构（分代）</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "堆空间"
+        Young["新生代 Young (1/3)"]
+        Old["老年代 Old (2/3)"]
+        Young -->|"Minor GC → 年龄 + 1<br/>年龄 ≥ 15 晋升"| Old
+    end
+    subgraph "新生代细分"
+        E["Eden (8/10)"]
+        S0["S0 Survivor (1/10)"]
+        S1["S1 Survivor (1/10)"]
+    end
+    E -->|"Minor GC"| S0
+    S0 -.->|"复制算法"| S1
+</div>
+
+<div class="card">
+<strong>为什么分代？</strong>绝大部分对象朝生夕死（IBM 研究：98% 对象活不过一次 GC）。分代后：
+• 新生代用<strong>复制算法</strong>：存活率低，复制代价小
+• 老年代用<strong>标记-清除/整理算法</strong>：存活率高
+</div>
+
+<h3 id="one-3">3. 对象创建过程</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["① 类加载检查<br/>类是否已加载？"] --> B["② 分配内存<br/>指针碰撞 / 空闲列表"]
+    B --> C["③ 初始化零值<br/>保证不赋初值也能用"]
+    C --> D["④ 设置对象头<br/>Mark Word + Klass Pointer"]
+    D --> E["⑤ 执行 init<br/>构造方法"]
+</div>
+
+<h3 id="one-4">4. 对象内存布局（3 部分）</h3>
+
+<div class="card">
+<table>
+<tr><th>部分</th><th>内容</th><th>大小</th></tr>
+<tr><td><strong>对象头</strong></td><td>Mark Word（hash/锁/GC年龄）+ Klass Pointer（类元数据）</td><td>32位: 8B / 64位: 12-16B</td></tr>
+<tr><td><strong>实例数据</strong></td><td>父类和子类的字段</td><td>不定</td></tr>
+<tr><td><strong>对齐填充</strong></td><td>保证对象大小是 8 字节整数倍</td><td>不定</td></tr>
+</table>
+</div>
+
+<!-- ============ 二、GC ============ -->
+<h2 id="two-1">二、垃圾回收</h2>
+
+<h3>1. 如何判断对象已死？</h3>
+
+<div class="mermaid">
+graph TD
+    A["可达性分析算法"] --> B["从 GC Roots 出发<br/>沿着引用链搜索"]
+    B --> C["不可达的对象 → 判定为可回收"]
+    subgraph "GC Roots 有哪些？"
+        R1["虚拟机栈中的引用对象"]
+        R2["静态变量引用的对象"]
+        R3["常量引用的对象"]
+        R4["JNI 引用的对象"]
+        R5["被 synchronized 持有的对象"]
+    end
+    R1 --> B
+    R2 --> B
+    R3 --> B
+    R4 --> B
+    R5 --> B
+</div>
+
+<div class="card">
+<strong>引用计数法的问题：</strong>循环引用——A 引用 B，B 引用 A，两者计数都不为 0 但实际已不可达。Java 不采用。
+<strong>真正回收前：</strong>不可达 → 标记 → 筛选（finalize 是否需执行）→ 再次标记 → 回收。<strong>finalize() 不推荐使用</strong>。
+</div>
+
+<h3 id="two-2">2. 四种引用类型</h3>
+
+<div class="card">
+<table>
+<tr><th>类型</th><th>回收时机</th><th>用途</th></tr>
+<tr><td><strong>强引用 Strong</strong></td><td>永远不回收</td><td>普通的 new 对象</td></tr>
+<tr><td><strong>软引用 Soft</strong></td><td>内存不够时回收</td><td>缓存（内存敏感）</td></tr>
+<tr><td><strong>弱引用 Weak</strong></td><td>下次 GC 必回收</td><td>ThreadLocal 的 key、WeakHashMap</td></tr>
+<tr><td><strong>虚引用 Phantom</strong></td><td>任何时候</td><td>跟踪对象回收状态（NIO 直接内存回收）</td></tr>
+</table>
+</div>
+
+<h3 id="two-3">3. GC 算法</h3>
+
+<div class="card">
+<table>
+<tr><th>算法</th><th>过程</th><th>优缺点</th><th>适用</th></tr>
+<tr><td><strong>标记-清除</strong></td><td>标记存活 → 清除未标记</td><td>❌ 碎片多</td><td>老年代（CMS 基础）</td></tr>
+<tr><td><strong>标记-整理</strong></td><td>标记存活 → 向一端移动 → 清理边界外</td><td>✅ 无碎片 ❌ 开销大</td><td>老年代（Serial Old, Parallel Old）</td></tr>
+<tr><td><strong>复制</strong></td><td>存活对象复制到另一块 → 整块清理原空间</td><td>✅ 无碎片 ❌ 浪费一半空间</td><td>新生代（98% 对象死，复制代价小）</td></tr>
+</table>
+</div>
+
+<h3 id="two-4">4. 垃圾收集器</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "新生代收集器"
+        Serial["Serial<br/>单线程，STW"]
+        ParNew["ParNew<br/>Serial 多线程版"]
+        Parallel["Parallel Scavenge<br/>关注吞吐量"]
+    end
+    subgraph "老年代收集器"
+        CMS["CMS<br/>并发，低延迟"]
+        SerialOld["Serial Old<br/>单线程"]
+        ParallelOld["Parallel Old<br/>多线程"]
+    end
+    subgraph "全堆"
+        G1["G1<br/>Region 化，低延迟，JDK 9 默认"]
+        ZGC["ZGC<br/>超低延迟(<1ms)，JDK 11+"]
+    end
+    Serial --> SerialOld
+    ParNew --> CMS
+    Parallel --> ParallelOld
+</div>
+
+<div class="highlight">
+<strong>银行面试重点——G1 收集器：</strong>
+• 堆分为大小相等的 Region（1~32MB）
+• 不要求全堆连续，Region 可灵活扮演 Eden/Survivor/Old/Humongous
+• <strong>Mixed GC</strong>：不只回收新生代，也回收部分老年代 Region（选回收价值高的）
+• <strong>目标：</strong>用户设定的停顿时间（-XX:MaxGCPauseMillis，默认 200ms）
+</div>
+
+<!-- ============ 三、类加载 ============ -->
+<h2 id="three-1">三、类加载</h2>
+
+<h3>1. 类加载过程</h3>
+
+<div class="mermaid">
+flowchart LR
+    A["① 加载 Loading<br/>获取二进制字节流"] --> B["② 验证 Verification<br/>格式、语义检查"]
+    B --> C["③ 准备 Preparation<br/>静态变量赋默认值"]
+    C --> D["④ 解析 Resolution<br/>符号引用→直接引用"]
+    D --> E["⑤ 初始化 Initialization<br/>执行 clinit, 静态变量赋值"]
+</div>
+
+<div class="card">
+注意：<strong>准备阶段</strong> static 变量赋的是<strong>默认值</strong>（0/null/false），<strong>初始化阶段</strong>才赋代码中写的值。但 <code>static final</code> 常量在准备阶段就赋最终值。
+</div>
+
+<h3 id="three-2">2. 双亲委派模型</h3>
+
+<div class="mermaid">
+graph TD
+    Bootstrap["Bootstrap ClassLoader<br/>加载 rt.jar (JVM 实现, C++)"]
+    Ext["Extension ClassLoader<br/>加载 ext 目录 (JDK 9+ 废弃)"]
+    App["Application ClassLoader<br/>加载 classpath (用户类)"]
+
+    Bootstrap -->|"父"| Ext
+    Ext -->|"父"| App
+
+    Note["委派流程：自底向上检查，自顶向下加载<br/>App → Ext → Bootstrap → Ext → App"]
+</div>
+
+<div class="highlight">
+<strong>为什么双亲委派？</strong>
+① 防止核心类被篡改（自己写的 java.lang.String 不会被加载）
+② 避免类的重复加载（父加载器已加载，子就不用再加载）
+</div>
+
+<h3 id="three-3">3. 打破双亲委派</h3>
+
+<div class="card">
+<strong>典型案例：</strong>
+• <strong>JDBC</strong>：SPI 机制，接口在核心库（Bootstrap 加载），实现在 classpath → 通过<strong>线程上下文类加载器</strong>打破
+• <strong>Tomcat</strong>：每个 WebApp 有自己的 ClassLoader，隔离不同应用的类
+• <strong>OSGi</strong>：网状类加载模型
+</div>
+
+<!-- ============ 四、实战 ============ -->
+<h2 id="four-1">四、实战调优</h2>
+
+<h3>1. 常见 OOM 场景</h3>
+
+<div class="card">
+<table>
+<tr><th>类型</th><th>原因</th><th>排查</th></tr>
+<tr><td><strong>java.lang.OutOfMemoryError: Java heap space</strong></td><td>堆不够、内存泄漏</td><td>增大 -Xmx / dump 分析</td></tr>
+<tr><td><strong>OOM: GC overhead limit exceeded</strong></td><td>GC 耗时超过 98% 但回收不到 2% 堆</td><td>检查是否有大对象或泄漏</td></tr>
+<tr><td><strong>OOM: Metaspace</strong></td><td>加载过多类（动态代理/CGLIB）</td><td>增大 MetaspaceSize 或排查类加载</td></tr>
+<tr><td><strong>StackOverflowError</strong></td><td>递归过深</td><td>检查递归出口 / 增大 -Xss</td></tr>
+<tr><td><strong>OOM: Direct buffer memory</strong></td><td>堆外内存（NIO）用满</td><td>-XX:MaxDirectMemorySize</td></tr>
+</table>
+</div>
+
+<h3 id="four-2">2. 常用 JVM 参数</h3>
+
+<div class="card">
+<table>
+<tr><th>参数</th><th>作用</th><th>示例</th></tr>
+<tr><td>-Xms</td><td>初始堆大小</td><td>-Xms2g</td></tr>
+<tr><td>-Xmx</td><td>最大堆大小</td><td>-Xmx4g</td></tr>
+<tr><td>-Xss</td><td>线程栈大小</td><td>-Xss1m</td></tr>
+<tr><td>-XX:MetaspaceSize</td><td>元空间初始大小</td><td>-XX:MetaspaceSize=256m</td></tr>
+<tr><td>-XX:MaxMetaspaceSize</td><td>元空间最大值</td><td>-XX:MaxMetaspaceSize=512m</td></tr>
+<tr><td>-XX:NewRatio</td><td>老年代/新生代比例</td><td>-XX:NewRatio=2 (老:新=2:1)</td></tr>
+<tr><td>-XX:+PrintGCDetails</td><td>打印 GC 详情</td><td>—</td></tr>
+<tr><td>-XX:+HeapDumpOnOutOfMemoryError</td><td>OOM 时 dump 堆</td><td>—</td></tr>
+</table>
+</div>
+
+<h3 id="four-3">3. CPU 飙升 / 内存泄漏排查流程</h3>
+
+<div class="mermaid">
+flowchart TD
+    Start["问题"] --> CPU{"CPU 高？"}
+    CPU -->|"是"| C1["① top 找到高 CPU 进程 PID"]
+    C1 --> C2["② top -Hp PID 找到高 CPU 线程"]
+    C2 --> C3["③ printf '%x' tid → 十六进制"]
+    C3 --> C4["④ jstack PID | grep 十六进制"]
+    C4 --> C5["定位到具体代码行！"]
+
+    CPU -->|"内存高"| M1["① jmap -dump PID → dump 文件"]
+    M1 --> M2["② MAT / JProfiler 分析"]
+    M2 --> M3["③ 找大对象 / GC Root 链"]
+    M3 --> M4["定位内存泄漏点"]
+</div>
+
+<div class="card">
+<strong>常用命令：</strong>
+• <code>jps</code>：查看 Java 进程
+• <code>jstat -gc PID 1000</code>：实时监控 GC
+• <code>jmap -heap PID</code>：堆摘要
+• <code>jmap -dump:format=b,file=xxx.hprof PID</code>：堆 dump
+• <code>jstack PID</code>：线程快照（死锁 / 阻塞分析）
+</div>
+
+<div class="nav-bottom">
+  <a href="../04-多线程/多线程八股文.html">← 上一篇：多线程</a>
+  <a href="../06-计算机网络/计算机网络八股文.html">下一篇：计算机网络 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>
