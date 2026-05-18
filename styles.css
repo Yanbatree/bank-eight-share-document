@@ -256,25 +256,58 @@ body {
   align-items: center;
   gap: 5px;
   height: 28px;
-  padding: 0 10px;
-  background: rgba(251,191,36,0.2);
-  border: 1px solid rgba(251,191,36,0.4);
+  padding: 0 5px 0 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
   border-radius: 14px;
-  color: #fbbf24;
+  color: #94a3b8;
   cursor: pointer;
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   font-family: var(--font-sans);
   transition: all var(--duration-fast) var(--ease-out);
   z-index: 1;
 }
 .theme-toggle:hover {
-  background: rgba(251,191,36,0.35);
-  border-color: rgba(251,191,36,0.6);
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.18);
+  color: #cbd5e1;
 }
-.theme-toggle svg { width: 14px; height: 14px; stroke: #fbbf24; }
-.theme-toggle-label { color: #fbbf24; }
+.theme-toggle-icon-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fbbf24;
+  flex-shrink: 0;
+}
+.theme-toggle-icon-circle svg {
+  width: 12px;
+  height: 12px;
+  stroke: #0f172a;
+}
+.theme-toggle-label { flex-shrink: 0; }
+
+/* Light theme overrides */
+[data-theme="light"] .theme-toggle {
+  background: rgba(0,0,0,0.03);
+  border-color: rgba(0,0,0,0.08);
+  color: #475569;
+}
+[data-theme="light"] .theme-toggle:hover {
+  background: rgba(0,0,0,0.06);
+  border-color: rgba(0,0,0,0.12);
+  color: #334155;
+}
+[data-theme="light"] .theme-toggle-icon-circle {
+  background: #6366f1;
+}
+[data-theme="light"] .theme-toggle-icon-circle svg {
+  stroke: #e0e7ff;
+}
 .theme-toggle-mobile { display: none; }
 
 /* ── Collapsed sidebar ─────────────────────────────────── */
