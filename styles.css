@@ -508,11 +508,11 @@ pre code {
 .sidebar-overlay { display: none; }
 
 /* ============================================================
-   MOBILE — 768px and below
+   MOBILE — 960px and below (covers phone portrait + landscape)
    Overlay sidebar + larger touch targets + readable sizing
    Desktop styles above are untouched
    ============================================================ */
-@media (max-width: 768px) {
+@media (max-width: 960px) {
 
   /* Show mobile chrome, hide desktop collapse toggle */
   .hamburger { display: flex; }
@@ -681,4 +681,66 @@ pre code {
 
   /* ── Scrollbar: thinner ───────────────────────────────── */
   ::-webkit-scrollbar { width: 3px; height: 3px; }
+}
+
+/* ============================================================
+   LANDSCAPE — phone sideways (short & wide)
+   2-column grid, compact vertical spacing
+   ============================================================ */
+@media (max-width: 960px) and (max-height: 500px) {
+
+  html { font-size: 15px; }
+
+  /* ── Hero: shorter ───────────────────────────────────── */
+  .hero-title { font-size: 1.3rem; }
+  .hero-sub   { font-size: 0.78rem; margin-bottom: var(--space-4); }
+
+  /* ── Landing grid: 2 columns ─────────────────────────── */
+  .grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px;
+  }
+  .topic-card {
+    padding: 12px 14px;
+    gap: 6px;
+  }
+  .topic-card .icon {
+    width: 28px; height: 28px;
+  }
+  .topic-card .icon svg {
+    width: 16px; height: 16px;
+  }
+  .topic-card .title {
+    font-size: 0.9rem;
+  }
+  .topic-card .desc {
+    font-size: 0.72rem;
+  }
+  .topic-card .badge {
+    font-size: 0.62rem;
+  }
+
+  /* ── Main content: tight top ──────────────────────────── */
+  .main { padding: 48px var(--space-3) var(--space-6); }
+  .container { padding: 48px var(--space-3) var(--space-6); }
+
+  /* ── Sidebar: narrower drawer ─────────────────────────── */
+  .sidebar { width: 260px; padding: var(--space-3); padding-top: 48px; }
+  .sidebar a { padding: 6px var(--space-2); font-size: 0.85rem; }
+
+  /* ── Headings: tight ──────────────────────────────────── */
+  h1 { font-size: 1.25rem; margin-bottom: var(--space-3); }
+  h2 { font-size: 1.05rem; margin: var(--space-4) 0 var(--space-2); }
+  h3 { font-size: 0.95rem; margin: var(--space-3) 0 var(--space-1); }
+
+  /* ── Cards ────────────────────────────────────────────── */
+  .card { padding: var(--space-3); }
+  .highlight { padding: var(--space-2) var(--space-3); font-size: 0.8rem; }
+
+  /* ── Code blocks ──────────────────────────────────────── */
+  pre { padding: var(--space-2); font-size: 0.72rem; }
+  code { font-size: 0.75rem; }
+
+  /* ── Footer ───────────────────────────────────────────── */
+  .nav-bottom { margin-top: var(--space-4); }
 }
