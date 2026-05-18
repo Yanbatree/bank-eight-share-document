@@ -165,6 +165,55 @@
     if (localStorage.getItem('sidebar-collapsed') === '1') { collapseSidebar(); }
   } catch(e) {}
 
+  // ── Mermaid click-to-zoom ──────────────────────────
+  document.addEventListener('click', function(e) {
+    var mermaidDiv = e.target.closest('.mermaid');
+    if (!mermaidDiv) return;
+    e.preventDefault();
+
+    var svg = mermaidDiv.querySelector('svg');
+    var img = mermaidDiv.querySelector('img');
+    if (!svg && !img) return;
+
+    // Build overlay
+    var overlay = document.createElement('div');
+    overlay.className = 'mermaid-zoom-overlay';
+    overlay.innerHTML = '<button class="zoom-close">&times;</button>'
+      + '<div class="zoom-wrapper"></div>';
+    var wrapper = overlay.querySelector('.zoom-wrapper');
+
+    if (svg) {
+      var clone = svg.cloneNode(true);
+      clone.style.width = '100%';
+      clone.style.height = 'auto';
+      clone.removeAttribute('width');
+      clone.removeAttribute('height');
+      wrapper.appendChild(clone);
+    } else {
+      var clone = img.cloneNode(true);
+      clone.style.width = '100%';
+      wrapper.appendChild(clone);
+    }
+
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+
+    function closeZoom() {
+      document.body.removeChild(overlay);
+      document.body.style.overflow = '';
+    }
+
+    overlay.querySelector('.zoom-close').addEventListener('click', closeZoom);
+    overlay.addEventListener('click', function(ev) {
+      if (ev.target === overlay) closeZoom();
+    });
+
+    // Escape key
+    document.addEventListener('keydown', function escHandler(ev) {
+      if (ev.key === 'Escape') { closeZoom(); document.removeEventListener('keydown', escHandler); }
+    });
+  });
+
   // ── Build page TOC from existing h2/h3 headings ────
   function buildTOC() {
     var toc = document.getElementById('page-toc');
