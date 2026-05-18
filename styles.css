@@ -805,6 +805,12 @@ pre code {
     font-size: 0.7rem;
     padding: var(--space-2) 0;
   }
+  .module-collapse-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+  }
+  .module-collapse-btn svg { width: 16px; height: 16px; }
 
   /* ── Main content: full width ─────────────────────────── */
   .main {
