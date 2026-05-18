@@ -52,10 +52,15 @@
   // ── Build sidebar HTML ──────────────────────────────
   var html = '<nav class="sidebar" id="global-nav">';
 
-  // Header: home icon + title linking to index
-  html += '<div class="sidebar-header" style="margin-bottom:14px">';
+  // Header: home icon + title + collapse toggle
+  html += '<div class="sidebar-header" style="margin-bottom:14px;position:relative">';
+  html += '<a href="' + resolveHref('index.html') + '" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit;font-weight:700;font-size:15px;letter-spacing:-0.01em">';
   html += '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>';
-  html += '<a href="' + resolveHref('index.html') + '" style="text-decoration:none;color:inherit;font-weight:700;font-size:15px;letter-spacing:-0.01em">银行八股文</a>';
+  html += '<span>银行八股文</span>';
+  html += '</a>';
+  html += '<button class="sidebar-toggle" id="sidebar-toggle" title="收起侧边栏" aria-label="收起侧边栏">';
+  html += '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  html += '</button>';
   html += '</div>';
 
   // Module list
@@ -82,10 +87,13 @@
 
   html += '</nav>';
 
-  // ── Inject into page ────────────────────────────────
+  // ── Inject sidebar + edge handle into page ──────────
   var oldNav = document.querySelector('.sidebar');
   if (oldNav) oldNav.remove();
+  var oldHandle = document.querySelector('.sidebar-handle');
+  if (oldHandle) oldHandle.remove();
   document.body.insertAdjacentHTML('afterbegin', html);
+  document.body.insertAdjacentHTML('afterbegin', '<div class="sidebar-handle" id="sidebar-handle" title="展开侧边栏"></div>');
 
   // ── Mobile: hamburger toggle logic ──────────────────
   var sidebar = document.getElementById('global-nav');
@@ -93,6 +101,11 @@
   var overlay = document.getElementById('sidebar-overlay');
 
   function openSidebar() {
+    sidebar.classList.remove('collapsed');
+    var mc = document.querySelector('.main');
+    if (mc) mc.classList.remove('expanded');
+    var h = document.getElementById('sidebar-handle');
+    if (h) h.classList.remove('visible');
     sidebar.classList.add('open');
     overlay.classList.add('show');
     document.body.style.overflow = 'hidden';
@@ -114,6 +127,43 @@
   sidebar.addEventListener('click', function(e) {
     if (e.target.tagName === 'A') { closeSidebar(); }
   });
+
+  // ── Collapse/expand sidebar ─────────────────────────
+  var toggleBtn = document.getElementById('sidebar-toggle');
+  var handle = document.getElementById('sidebar-handle');
+  var mainContent = document.querySelector('.main');
+
+  function collapseSidebar() {
+    sidebar.classList.add('collapsed');
+    if (mainContent) mainContent.classList.add('expanded');
+    if (handle) handle.classList.add('visible');
+    toggleBtn.setAttribute('title', '展开侧边栏');
+    toggleBtn.querySelector('svg').innerHTML = '<polyline points="9 18 15 12 9 6"/>';
+    try { localStorage.setItem('sidebar-collapsed', '1'); } catch(e) {}
+  }
+
+  function expandSidebar() {
+    sidebar.classList.remove('collapsed');
+    if (mainContent) mainContent.classList.remove('expanded');
+    if (handle) handle.classList.remove('visible');
+    toggleBtn.setAttribute('title', '收起侧边栏');
+    toggleBtn.querySelector('svg').innerHTML = '<polyline points="15 18 9 12 15 6"/>';
+    try { localStorage.setItem('sidebar-collapsed', '0'); } catch(e) {}
+  }
+
+  toggleBtn.addEventListener('click', function() {
+    if (sidebar.classList.contains('collapsed')) { expandSidebar(); }
+    else { collapseSidebar(); }
+  });
+
+  if (handle) {
+    handle.addEventListener('click', expandSidebar);
+  }
+
+  // Restore saved state
+  try {
+    if (localStorage.getItem('sidebar-collapsed') === '1') { collapseSidebar(); }
+  } catch(e) {}
 
   // ── Build page TOC from existing h2/h3 headings ────
   function buildTOC() {
