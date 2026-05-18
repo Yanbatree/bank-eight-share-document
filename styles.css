@@ -203,6 +203,37 @@ body {
   margin-bottom: var(--space-1);
 }
 
+/* Module collapse toggle */
+.module-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 4px;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.module-collapse-btn:hover { color: var(--text-primary); }
+.module-collapse-btn svg { width: 14px; height: 14px; }
+
+#module-list {
+  overflow: hidden;
+  max-height: 800px;
+  opacity: 1;
+  transition: max-height var(--duration-slow) var(--ease-out),
+              opacity var(--duration-normal) var(--ease-out);
+}
+#module-list.collapsed {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .sidebar a {
   display: block;
   color: var(--text-secondary);

@@ -73,7 +73,13 @@
 
   // Module list
   html += '<div class="sidebar-section">';
-  html += '<div class="sidebar-section-label">全部模块</div>';
+  html += '<div class="sidebar-section-label" style="display:flex;align-items:center;justify-content:space-between">';
+  html += '<span>全部模块</span>';
+  html += '<button class="module-collapse-btn" id="module-collapse-btn" title="折叠全部模块" aria-label="折叠全部模块">';
+  html += '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>';
+  html += '</button>';
+  html += '</div>';
+  html += '<div id="module-list">';
   MODULES.forEach(function(m) {
     var hrefFolder = m.href.split('/')[0];
     var active = (hrefFolder === 'index.html') ? isRoot : (pathname.indexOf('/' + hrefFolder + '/') !== -1);
@@ -85,6 +91,7 @@
     html += m.label;
     html += '</a>';
   });
+  html += '</div>';
   html += '</div>';
 
   // Page TOC placeholder (filled after DOM ready)
@@ -171,6 +178,43 @@
   // Restore saved state
   try {
     if (localStorage.getItem('sidebar-collapsed') === '1') { collapseSidebar(); }
+  } catch(e) {}
+
+  // ── Module list collapse toggle ──────────────────────
+  var moduleCollapseBtn = document.getElementById('module-collapse-btn');
+  var moduleList = document.getElementById('module-list');
+
+  function collapseModules() {
+    if (moduleList) moduleList.classList.add('collapsed');
+    if (moduleCollapseBtn) {
+      moduleCollapseBtn.setAttribute('title', '展开全部模块');
+      moduleCollapseBtn.querySelector('svg').innerHTML = '<polyline points="6 9 12 15 18 9"/>';
+    }
+    try { localStorage.setItem('modules-collapsed', '1'); } catch(e) {}
+  }
+
+  function expandModules() {
+    if (moduleList) moduleList.classList.remove('collapsed');
+    if (moduleCollapseBtn) {
+      moduleCollapseBtn.setAttribute('title', '折叠全部模块');
+      moduleCollapseBtn.querySelector('svg').innerHTML = '<polyline points="18 15 12 9 6 15"/>';
+    }
+    try { localStorage.setItem('modules-collapsed', '0'); } catch(e) {}
+  }
+
+  if (moduleCollapseBtn) {
+    moduleCollapseBtn.addEventListener('click', function() {
+      if (moduleList && moduleList.classList.contains('collapsed')) {
+        expandModules();
+      } else {
+        collapseModules();
+      }
+    });
+  }
+
+  // Restore saved module collapse state
+  try {
+    if (localStorage.getItem('modules-collapsed') === '1') { collapseModules(); }
   } catch(e) {}
 
   // ── Theme toggle ────────────────────────────────────
