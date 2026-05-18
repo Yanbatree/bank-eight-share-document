@@ -223,7 +223,7 @@ body {
   background: var(--accent-soft);
   border-color: var(--border-accent);
 }
-.module-collapse-btn svg { width: 14px; height: 14px; }
+.module-collapse-btn svg { width: 14px; height: 14px; stroke: currentColor; }
 
 #module-list {
   overflow: hidden;
