@@ -214,6 +214,25 @@
     });
   });
 
+  // ── Wrap tables for responsive scrolling ───────────
+  function wrapTables() {
+    var main = document.querySelector('.main');
+    if (!main) return;
+    var tables = main.querySelectorAll('table');
+    tables.forEach(function(t) {
+      if (t.parentNode.classList.contains('table-wrap')) return;
+      var wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      t.parentNode.insertBefore(wrap, t);
+      wrap.appendChild(t);
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', wrapTables);
+  } else {
+    wrapTables();
+  }
+
   // ── Build page TOC from existing h2/h3 headings ────
   function buildTOC() {
     var toc = document.getElementById('page-toc');

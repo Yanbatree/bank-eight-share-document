@@ -711,24 +711,41 @@ pre code {
   .card { padding: var(--space-4); }
   .highlight { padding: var(--space-3) var(--space-4); font-size: 0.85rem; }
 
-  /* ── Tables: scroll horizontally with hint ───────────── */
-  table {
-    font-size: 0.78rem;
+  /* ── Tables: adaptive width, scroll fallback ─────────── */
+  .table-wrap {
     display: block;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-md);
+    margin: var(--space-4) 0;
     background:
-      linear-gradient(to right, var(--surface-root) 15%, transparent),
-      linear-gradient(to left, var(--surface-root) 15%, transparent) right,
-      radial-gradient(farthest-side at 0% 50%, rgba(0,0,0,0.4), transparent) left / 20px 100%,
-      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,0.4), transparent) right / 20px 100%;
+      radial-gradient(farthest-side at 0% 50%, rgba(0,0,0,0.35), transparent) left / 14px 100%,
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,0.35), transparent) right / 14px 100%;
     background-repeat: no-repeat;
-    background-attachment: local, local, scroll, scroll;
+    background-attachment: scroll, scroll;
   }
-  thead th, tbody td { padding: var(--space-2) var(--space-3); white-space: nowrap; }
-  tbody td:first-child { white-space: nowrap; }
+  table {
+    font-size: 0.75rem;
+    width: 100%;
+    border: none;
+    border-radius: 0;
+    margin: 0;
+  }
+  thead th {
+    padding: var(--space-2) var(--space-1);
+    white-space: nowrap;
+    font-size: 0.65rem;
+  }
+  tbody td {
+    padding: var(--space-2) var(--space-1);
+    word-break: break-word;
+  }
+  tbody td:first-child {
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
 
   /* ── Code ─────────────────────────────────────────────── */
   pre { padding: var(--space-3); font-size: 0.78rem; }
