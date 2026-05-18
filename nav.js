@@ -41,11 +41,13 @@
            pathname.indexOf(href.replace(/\.html$/, '')) !== -1;
   }
 
-  // ── Inject hamburger button & overlay (mobile-only) ──
+  // ── Inject hamburger button, theme toggle & overlay (mobile-only) ──
   var hamburgerHTML = '<button class="hamburger" aria-label="菜单" id="hamburger-btn">'
     + '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
     + '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>'
     + '</svg></button>'
+    + '<button class="theme-toggle-mobile" id="theme-toggle-mobile" aria-label="切换主题">'
+    + '<svg id="theme-icon-mobile" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>'
     + '<div class="sidebar-overlay" id="sidebar-overlay"></div>';
   document.body.insertAdjacentHTML('afterbegin', hamburgerHTML);
 
@@ -60,6 +62,9 @@
   html += '</a>';
   html += '<button class="sidebar-toggle" id="sidebar-toggle" title="收起侧边栏" aria-label="收起侧边栏">';
   html += '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  html += '</button>';
+  html += '<button class="theme-toggle" id="theme-toggle" title="切换亮色/暗色主题" aria-label="切换主题">';
+  html += '<svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
   html += '</button>';
   html += '</div>';
 
@@ -164,6 +169,51 @@
   try {
     if (localStorage.getItem('sidebar-collapsed') === '1') { collapseSidebar(); }
   } catch(e) {}
+
+  // ── Theme toggle ────────────────────────────────────
+  var themeBtn = document.getElementById('theme-toggle');
+  var themeIcon = document.getElementById('theme-icon');
+  var themeBtnMobile = document.getElementById('theme-toggle-mobile');
+  var themeIconMobile = document.getElementById('theme-icon-mobile');
+  var htmlEl = document.documentElement;
+
+  var moonSVG = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  var sunSVG = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m-8.48-3.52l1.41-1.41m12.73-12.73l1.41-1.41M2 12h2m16 0h2m-15.48 6.07l1.41-1.41m12.73-12.73l1.41-1.41"/>';
+
+  function setTheme(theme) {
+    if (theme === 'light') {
+      htmlEl.setAttribute('data-theme', 'light');
+      if (themeIcon) themeIcon.innerHTML = sunSVG;
+      if (themeIconMobile) themeIconMobile.innerHTML = sunSVG;
+      if (themeBtn) themeBtn.setAttribute('title', '切换暗色主题');
+      if (themeBtnMobile) themeBtnMobile.setAttribute('title', '切换暗色主题');
+    } else {
+      htmlEl.removeAttribute('data-theme');
+      if (themeIcon) themeIcon.innerHTML = moonSVG;
+      if (themeIconMobile) themeIconMobile.innerHTML = moonSVG;
+      if (themeBtn) themeBtn.setAttribute('title', '切换亮色主题');
+      if (themeBtnMobile) themeBtnMobile.setAttribute('title', '切换亮色主题');
+    }
+    try { localStorage.setItem('theme', theme); } catch(e) {}
+  }
+
+  try {
+    var saved = localStorage.getItem('theme') || 'dark';
+    setTheme(saved);
+  } catch(e) {}
+
+  if (themeBtn) {
+    themeBtn.addEventListener('click', function() {
+      var current = htmlEl.getAttribute('data-theme');
+      setTheme(current === 'light' ? 'dark' : 'light');
+    });
+  }
+  if (themeBtnMobile) {
+    themeBtnMobile.addEventListener('click', function() {
+      var current = htmlEl.getAttribute('data-theme');
+      setTheme(current === 'light' ? 'dark' : 'light');
+    });
+  }
 
   // ── Mermaid click-to-zoom ──────────────────────────
   document.addEventListener('click', function(e) {
