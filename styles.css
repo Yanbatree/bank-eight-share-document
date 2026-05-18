@@ -182,17 +182,6 @@ body {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.sidebar-header > a {
-  max-width: calc(100% - 108px);
-  min-width: 0;
-  flex-shrink: 1;
-}
-.sidebar-header > a span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .sidebar-header svg { width: 22px; height: 22px; flex-shrink: 0; }
 
 .sidebar-header span {
@@ -260,30 +249,28 @@ body {
 
 /* ── Theme toggle ─────────────────────────────────────── */
 .theme-toggle {
-  position: absolute;
-  top: 10px;
-  right: 40px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 5px 0 10px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.10);
-  border-radius: 14px;
-  color: #94a3b8;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-4);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   font-weight: 500;
   white-space: nowrap;
   font-family: var(--font-sans);
   transition: all var(--duration-fast) var(--ease-out);
-  z-index: 1;
 }
 .theme-toggle:hover {
-  background: rgba(255,255,255,0.10);
-  border-color: rgba(255,255,255,0.18);
-  color: #cbd5e1;
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.14);
+  color: var(--text-primary);
 }
 .theme-toggle-icon-circle {
   display: flex;
@@ -305,12 +292,12 @@ body {
 /* Light theme overrides */
 [data-theme="light"] .theme-toggle {
   background: rgba(0,0,0,0.03);
-  border-color: rgba(0,0,0,0.08);
+  border-color: rgba(0,0,0,0.06);
   color: #475569;
 }
 [data-theme="light"] .theme-toggle:hover {
   background: rgba(0,0,0,0.06);
-  border-color: rgba(0,0,0,0.12);
+  border-color: rgba(0,0,0,0.10);
   color: #334155;
 }
 [data-theme="light"] .theme-toggle-icon-circle {
