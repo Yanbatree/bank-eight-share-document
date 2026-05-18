@@ -1,6 +1,7 @@
 // ============================================================
 //  Global Navigation Sidebar — Shared across all module pages
-//  Injects persistent sidebar: all 11 modules + home + page TOC
+//  Desktop: fixed left sidebar
+//  Mobile: hamburger → slide-in drawer + overlay backdrop
 // ============================================================
 
 (function() {
@@ -40,6 +41,14 @@
            pathname.indexOf(href.replace(/\.html$/, '')) !== -1;
   }
 
+  // ── Inject hamburger button & overlay (mobile-only) ──
+  var hamburgerHTML = '<button class="hamburger" aria-label="菜单" id="hamburger-btn">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    + '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>'
+    + '</svg></button>'
+    + '<div class="sidebar-overlay" id="sidebar-overlay"></div>';
+  document.body.insertAdjacentHTML('afterbegin', hamburgerHTML);
+
   // ── Build sidebar HTML ──────────────────────────────
   var html = '<nav class="sidebar" id="global-nav">';
 
@@ -53,8 +62,7 @@
   html += '<div class="sidebar-section">';
   html += '<div class="sidebar-section-label">全部模块</div>';
   MODULES.forEach(function(m) {
-    // Simple active detection: check if current path contains the module's folder name
-    var hrefFolder = m.href.split('/')[0]; // e.g. "01-MySQL" or "index.html"
+    var hrefFolder = m.href.split('/')[0];
     var active = (hrefFolder === 'index.html') ? isRoot : (pathname.indexOf('/' + hrefFolder + '/') !== -1);
 
     html += '<a href="' + resolveHref(m.href) + '"';
@@ -78,6 +86,34 @@
   var oldNav = document.querySelector('.sidebar');
   if (oldNav) oldNav.remove();
   document.body.insertAdjacentHTML('afterbegin', html);
+
+  // ── Mobile: hamburger toggle logic ──────────────────
+  var sidebar = document.getElementById('global-nav');
+  var hamburgerBtn = document.getElementById('hamburger-btn');
+  var overlay = document.getElementById('sidebar-overlay');
+
+  function openSidebar() {
+    sidebar.classList.add('open');
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+    document.body.style.overflow = '';
+  }
+
+  hamburgerBtn.addEventListener('click', function() {
+    if (sidebar.classList.contains('open')) { closeSidebar(); }
+    else { openSidebar(); }
+  });
+
+  overlay.addEventListener('click', closeSidebar);
+
+  // Close sidebar when tapping any nav link
+  sidebar.addEventListener('click', function(e) {
+    if (e.target.tagName === 'A') { closeSidebar(); }
+  });
 
   // ── Build page TOC from existing h2/h3 headings ────
   function buildTOC() {

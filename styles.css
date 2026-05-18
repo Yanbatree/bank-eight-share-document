@@ -440,3 +440,179 @@ pre code {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+
+/* ── Mobile chrome: hidden on desktop ──────────────────── */
+.hamburger { display: none; }
+.sidebar-overlay { display: none; }
+
+/* ============================================================
+   MOBILE — 768px and below
+   Overlay sidebar + larger touch targets + readable sizing
+   Desktop styles above are untouched
+   ============================================================ */
+@media (max-width: 768px) {
+
+  /* Show mobile chrome */
+  .hamburger { display: flex; }
+  .sidebar-overlay { display: block; }
+
+  /* ── Base sizing ──────────────────────────────────────── */
+  html { font-size: 17px; }
+
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* ── Hamburger button ─────────────────────────────────── */
+  .hamburger {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 100;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .hamburger svg { width: 22px; height: 22px; stroke: var(--text-primary); }
+  .hamburger:active { opacity: 0.6; }
+
+  /* ── Overlay backdrop ─────────────────────────────────── */
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 29;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-normal) var(--ease-out);
+  }
+  .sidebar-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── Sidebar: slide-in drawer ─────────────────────────── */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform var(--duration-slow) var(--ease-out);
+    z-index: 30;
+    width: 280px;
+    padding: var(--space-5);
+    padding-top: 56px;            /* clear hamburger */
+    box-shadow: var(--shadow-xl);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar a {
+    padding: 10px var(--space-3);
+    font-size: 0.9375rem;
+    margin-bottom: 2px;
+  }
+  .sidebar-section-label {
+    font-size: 0.7rem;
+    padding: var(--space-2) 0;
+  }
+
+  /* ── Main content: full width ─────────────────────────── */
+  .main {
+    margin-left: 0;
+    padding: 56px var(--space-4) var(--space-8);
+    max-width: 100%;
+  }
+
+  /* Landing container */
+  .container {
+    padding: 56px var(--space-4) var(--space-8);
+  }
+
+  /* ── Landing hero ─────────────────────────────────────── */
+  .hero-title { font-size: 1.6rem; }
+  .hero-sub   { font-size: 0.875rem; margin-bottom: var(--space-8); }
+
+  /* ── Landing grid: 1 column ───────────────────────────── */
+  .grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+  .topic-card {
+    padding: 18px 16px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .topic-card .icon {
+    width: 36px; height: 36px;
+  }
+  .topic-card .icon svg {
+    width: 20px; height: 20px;
+  }
+  .topic-card .title {
+    font-size: 1rem;
+    order: 1;
+    flex: 1;
+  }
+  .topic-card .desc {
+    font-size: 0.8rem;
+    order: 2;
+    width: 100%;
+  }
+  .topic-card .badge {
+    order: 3;
+    margin-left: auto;
+  }
+
+  /* ── Headings ─────────────────────────────────────────── */
+  h1 { font-size: 1.5rem; margin-bottom: var(--space-5); }
+  h2 { font-size: 1.2rem; margin: var(--space-8) 0 var(--space-3); padding: var(--space-2) var(--space-4); }
+  h3 { font-size: 1.05rem; margin: var(--space-6) 0 var(--space-2); }
+
+  /* ── Cards & highlights ───────────────────────────────── */
+  .card { padding: var(--space-4); }
+  .highlight { padding: var(--space-3) var(--space-4); font-size: 0.85rem; }
+
+  /* ── Tables: scroll horizontally ──────────────────────── */
+  table {
+    font-size: 0.8rem;
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  thead th, tbody td { padding: var(--space-2) var(--space-3); }
+  tbody td:first-child { white-space: nowrap; }
+
+  /* ── Code ─────────────────────────────────────────────── */
+  pre { padding: var(--space-3); font-size: 0.78rem; }
+  code { font-size: 0.8rem; }
+
+  /* ── Mermaid: scrollable ──────────────────────────────── */
+  .mermaid {
+    padding: var(--space-3);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: 0.75rem;
+  }
+
+  /* ── Nav footer ───────────────────────────────────────── */
+  .nav-bottom { margin-top: var(--space-8); }
+  .nav-bottom a {
+    font-size: 0.9rem;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* ── Footer note ──────────────────────────────────────── */
+  .footer-note { font-size: 0.8rem; }
+
+  /* ── Scrollbar: thinner ───────────────────────────────── */
+  ::-webkit-scrollbar { width: 3px; height: 3px; }
+}
