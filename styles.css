@@ -230,50 +230,51 @@ body {
 /* ── Sidebar collapse toggle ──────────────────────────── */
 .sidebar-toggle {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 32px; height: 32px;
+  top: 12px;
+  right: 8px;
+  width: 28px; height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-hover);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
   padding: 0;
+  z-index: 1;
 }
-.sidebar-toggle:hover {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-  background: var(--accent-soft);
-}
-.sidebar-toggle svg { width: 16px; height: 16px; }
+.sidebar-toggle:hover { color: var(--text-primary); }
+.sidebar-toggle svg { width: 15px; height: 15px; }
 
 /* ── Theme toggle ─────────────────────────────────────── */
 .theme-toggle {
   position: absolute;
   top: 10px;
-  right: 48px;
-  width: 32px; height: 32px;
+  right: 40px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--surface-hover);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  background: rgba(251,191,36,0.2);
+  border: 1px solid rgba(251,191,36,0.4);
+  border-radius: 14px;
+  color: #fbbf24;
   cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  font-family: var(--font-sans);
   transition: all var(--duration-fast) var(--ease-out);
-  padding: 0;
+  z-index: 1;
 }
 .theme-toggle:hover {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-  background: var(--accent-soft);
+  background: rgba(251,191,36,0.35);
+  border-color: rgba(251,191,36,0.6);
 }
-.theme-toggle svg { width: 16px; height: 16px; }
+.theme-toggle svg { width: 14px; height: 14px; stroke: #fbbf24; }
+.theme-toggle-label { color: #fbbf24; }
 .theme-toggle-mobile { display: none; }
 
 /* ── Collapsed sidebar ─────────────────────────────────── */

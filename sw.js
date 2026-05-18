@@ -1,4 +1,4 @@
-const CACHE = 'bank-baguwen-v7';
+const CACHE = 'bank-baguwen-v8';
 
 const ASSETS = [
   // Root
