@@ -664,6 +664,162 @@ pre code {
   background: var(--accent-soft);
 }
 
+/* ── Expandable Table Rows ─────────────────────────────── */
+.row-expandable {
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.row-expandable:hover {
+  background: var(--surface-hover) !important;
+}
+.row-expandable td:first-child {
+  position: relative;
+  padding-left: 24px !important;
+}
+.row-expandable td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-90deg);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-out);
+  opacity: 0.5;
+}
+.row-expandable:hover td:first-child::before {
+  opacity: 1;
+}
+.row-expandable.expanded td:first-child::before {
+  transform: translateY(-50%) rotate(0deg);
+  opacity: 1;
+  border-top-color: var(--accent);
+}
+.row-expandable.expanded td {
+  color: var(--text-primary) !important;
+}
+
+.detail-tr {
+  display: none;
+}
+.detail-tr.show {
+  display: table-row;
+  animation: detailSlideIn 0.25s var(--ease-out);
+}
+@keyframes detailSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.detail-tr td {
+  padding: 0 var(--space-4) var(--space-4) var(--space-4) !important;
+  border-bottom: 1px solid var(--border-accent) !important;
+  background: var(--surface-hover);
+}
+.detail-content {
+  background: var(--surface-code);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-secondary);
+}
+.detail-content strong { color: var(--accent); }
+.detail-content p { margin-bottom: var(--space-2); }
+.detail-content p:last-child { margin-bottom: 0; }
+.detail-content ul, .detail-content ol {
+  padding-left: var(--space-5);
+  margin: var(--space-2) 0;
+}
+.detail-content li { margin-bottom: 2px; }
+.detail-content code {
+  background: var(--surface-card);
+  border-color: var(--border-strong);
+}
+
+/* ── Expandable Diagrams ───────────────────────────────── */
+.diagram-group {
+  margin: var(--space-5) 0;
+}
+.diagram-group .mermaid {
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  margin-bottom: 0;
+}
+.diagram-group .mermaid.has-detail {
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 4px 10px;
+  background: var(--surface-code);
+  border: 1px solid var(--border-subtle);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-family: var(--font-sans);
+  transition: all var(--duration-fast) var(--ease-out);
+  width: 100%;
+  text-align: center;
+}
+.detail-toggle:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--border-accent);
+}
+.detail-toggle .toggle-arrow {
+  display: inline-block;
+  transition: transform var(--duration-fast) var(--ease-out);
+  font-size: 0.6rem;
+}
+.detail-toggle.expanded .toggle-arrow {
+  transform: rotate(180deg);
+}
+
+.detail-panel {
+  display: none;
+  background: var(--surface-code);
+  border: 1px solid var(--border-default);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-secondary);
+  animation: detailSlideIn 0.25s var(--ease-out);
+}
+.detail-panel.show { display: block; }
+.detail-panel strong { color: var(--accent); }
+.detail-panel p { margin-bottom: var(--space-2); }
+.detail-panel p:last-child { margin-bottom: 0; }
+.detail-panel ul, .detail-panel ol {
+  padding-left: var(--space-5);
+  margin: var(--space-2) 0;
+}
+.detail-panel li { margin-bottom: 2px; }
+.detail-panel code {
+  background: var(--surface-card);
+  border-color: var(--border-strong);
+}
+
+/* Wrapper for standalone mermaid with detail (no diagram-group) */
+.mermaid + .detail-toggle {
+  margin-top: 0;
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+.mermaid + .detail-toggle + .detail-panel {
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
 /* ── Utilities ─────────────────────────────────────────── */
 .sr-only {
   position: absolute; width: 1px; height: 1px;
@@ -909,6 +1065,21 @@ pre code {
   /* ── Code ─────────────────────────────────────────────── */
   pre { padding: var(--space-3); font-size: 0.78rem; }
   code { font-size: 0.8rem; }
+
+  /* ── Expandable rows: larger touch targets ──────────── */
+  .row-expandable td:first-child {
+    padding-left: 22px !important;
+  }
+  .row-expandable td:first-child::before {
+    left: 2px;
+  }
+  .detail-tr td { padding: 0 var(--space-2) var(--space-3) var(--space-2) !important; }
+  .detail-content { padding: var(--space-3); font-size: 0.78rem; }
+  .detail-toggle {
+    padding: 8px 10px;
+    font-size: 0.7rem;
+  }
+  .detail-panel { padding: var(--space-3); font-size: 0.8rem; }
 
   /* ── Mermaid: scrollable + tap hint ──────────────────── */
   .mermaid {

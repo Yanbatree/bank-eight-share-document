@@ -46,6 +46,16 @@ graph TD
         Note["创建和组装由容器负责<br/>应用程序被动接收"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>IoC 容器本质是一个"超级工厂"：</strong>
+<p>Spring IoC 容器的核心是 <code>BeanFactory</code> 接口（底层容器）和 <code>ApplicationContext</code> 接口（高级容器，继承 BeanFactory 并增加了国际化、事件发布、资源加载等）。容器在启动时读取 XML 配置 / Java 注解 / 组件扫描，创建所有 Bean 定义（BeanDefinition），然后根据定义实例化对象并注入依赖。</p>
+<p>容器内部通过<strong>反射 + 依赖图</strong>来完成依赖注入：先分析每个 Bean 的依赖关系（构造器参数 / @Autowired 字段），构建依赖图，按拓扑顺序创建——无依赖的 Bean 先创建，有依赖的 Bean 等依赖就绪后再创建。</p>
+<strong>三种注入方式的优劣比较：</strong>
+<ul><li><strong>构造器注入</strong>（推荐）：依赖在创建时就确定，字段可设 final，对象创建后不可变（不可变对象天然线程安全）。强制依赖不可能遗漏（编译期保证）。单元测试友好——new 对象时传入 mock。Spring 官方推荐。</li>
+<li><strong>Setter 注入</strong>：允许依赖在创建后变更（可选依赖适用）。但无法保证依赖不为 null（需要加 @Autowired(required=false)）。允许循环依赖（见下文三级缓存）。</li>
+<li><strong>字段注入</strong>（@Autowired 直接加字段上）：代码最简洁但问题最多——隐藏依赖（看类定义不知道需要什么依赖），依赖容器（脱离容器无法实例化），违反单一职责（容易注入太多依赖），测试困难（必须用反射或启动容器）。</li></ul>
+</div>
 
 <div class="card">
 <strong>IoC (Inversion of Control)</strong>：对象的创建、管理、装配权从程序员反转给 Spring 容器。<br/>
@@ -66,15 +76,41 @@ flowchart TD
     G --> H["⑧ @PreDestroy / destroy-method"]
     H --> I["⑨ Bean 销毁"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>每一步的具体用途：</strong>
+<ul><li><strong>实例化：</strong>通过反射调用构造器创建 Bean 实例（包括 FactoryBean 的 getObject()）。此时 Bean 属性为空。</li>
+<li><strong>属性赋值：</strong>容器根据 BeanDefinition 中的属性值进行依赖注入——先按名称再按类型匹配依赖 Bean。</li>
+<li><strong>Aware 回调：</strong>如果 Bean 实现了 Aware 接口（如 BeanNameAware 可以拿到自己的 Bean 名称，ApplicationContextAware 可以拿到容器引用），容器在此阶段调用。这里让 Bean 感知到容器环境。</li>
+<li><strong>BeanPostProcessor：</strong>这是 Spring 最强大的扩展点。before 在 init 之前调用（可以修改 Bean），after 在 init 之后调用（可以返回代理对象——AOP 就是在这里发生的）。注意 BeanPostProcessor 对所有 Bean 生效。</li>
+<li><strong>@PostConstruct / init-method：</strong>Bean 初始化完成后的业务逻辑回调——资源初始化、数据预热、连接池建立等。</li>
+</ul>
+<strong>实际应用——如何利用 BeanPostProcessor：</strong>
+<p>AOP 的代理就是在 BeanPostProcessor.after 中生成的（AbstractAutoProxyCreator）。如果你需要给特定注解标记的 Bean 统一添加某些行为（如日志、监控），自定义 BeanPostProcessor 是最干净的实现方式，无需修改原有业务代码。</p>
+</div>
 
 <div class="card">
 <strong>Bean 作用域：</strong>
 <table>
 <tr><th>作用域</th><th>说明</th></tr>
-<tr><td><strong>singleton</strong></td><td>容器中只有一个实例（默认）</td></tr>
-<tr><td><strong>prototype</strong></td><td>每次获取都创建新实例</td></tr>
-<tr><td>request</td><td>每个 HTTP 请求一个实例（Web）</td></tr>
-<tr><td>session</td><td>每个 HTTP Session 一个实例（Web）</td></tr>
+<tr class="row-expandable"><td><strong>singleton</strong></td><td>容器中只有一个实例（默认）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>Singleton 是 Spring 的默认作用域。容器中同 ID 的 Bean 只创建一次，之后每次获取都返回同一个实例。这意味着<strong>所有使用者共享同一个 Bean 对象</strong>——如果 Bean 有可变的状态（如成员变量记录计数器），就会产生线程安全问题。Spring 不处理 Bean 的线程安全（它不管 Bean 内部状态），应该设计 Bean 为无状态（Service 层），或者使用 ThreadLocal、锁等机制自行保证。</p>
+<p>Singleton Bean 在容器启动时就初始化（默认），可以通过 <code>@Lazy</code> 延迟到第一次获取时才创建。好处是减少启动时间，坏处是运行时才发现配置错误。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>prototype</strong></td><td>每次获取都创建新实例</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>每次调用 <code>getBean()</code> 或 DI 注入时，Spring 都会创建一个全新的 Bean 实例。注意：<strong>Spring 不管理 Prototype Bean 的完整生命周期</strong>——它只负责创建和初始化，之后的销毁（@PreDestroy）不会自动调用，需要使用者自行处理。</p>
+<p>适用场景：有状态的 Bean（如每次处理不同数据），或者某个 Bean 的创建代价高且不是所有场景都需要（@Lookup 方法注入）。如果 Singleton Bean 注入了 Prototype Bean，注入的那个 Prototype Bean 将保持同一个实例（因为 Singleton 只初始化一次），需要使用 @Lookup 或 ObjectFactory 来每次获取新实例。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>request</td><td>每个 HTTP 请求一个实例（Web）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>仅 WebApplicationContext 可用。每个 HTTP 请求到达时创建新实例，请求结束后销毁。Spring MVC 的 Controller 默认是 Singleton，但可以通过 @Scope("request") 使其变为 Request 作用域。实现原理：Request 作用域的 Bean 实际在 Servlet 容器的 request attributes 中存放，Spring 通过 RequestContextHolder 获取当前请求并定位 Bean。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>session</td><td>每个 HTTP Session 一个实例（Web）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>每个 HTTP Session 创建独立实例（与用户绑定）。由于 Session 可能被序列化（分布式 Session 存 Redis 或 Session 持久化），Bean 需要实现 Serializable。Singleton Bean 注入 Session Bean 时，Spring 会注入一个<strong>代理对象</strong>（CGLIB 或 JDK 代理），每次方法调用时代理从当前 Session 中找到真正的目标 Bean 并转发。这就是为什么虽然注入时机只有一次，但每个用户拿到的 Bean 不同。</p>
+</div></td></tr>
 </table>
 <strong>循环依赖解决：</strong>三级缓存（singletonObjects → earlySingletonObjects → singletonFactories）。只有 singleton 的 setter 注入才能自动解决，构造器注入不行。
 </div>
@@ -96,16 +132,41 @@ graph LR
     A --> C
     B --> D
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>切点表达式（Pointcut Expression）详解：</strong>
+<p>切点通过表达式语言来精确描述"哪些方法需要被增强"。最常用的是 <code>execution()</code>，语法：<code>execution([修饰符] 返回类型 [包.类.]方法(参数) [throws 异常])</code>。例如 <code>execution(* com.example.service.*.*(..))</code> 表示"service 包下所有类的所有方法，任意返回类型，任意参数"。</p>
+<p>其他切点指示符：<code>within()</code>（按类匹配）、<code>@annotation()</code>（按方法上的注解匹配，如 @Transactional）、<code>@within()</code>（按类上的注解匹配）、<code>args()</code>（按方法参数类型匹配）、<code>bean()</code>（按 Spring Bean 名称匹配）。多个可以 &&（与）、||（或）、!（非）组合。</p>
+<strong>AOP 的三种织入时机：</strong>
+<ul><li><strong>编译期织入（AspectJ）：</strong>在 .java 编译成 .class 时插入切面代码。需要专门的编译器（ajc）。性能最好，但侵入构建流程。</li>
+<li><strong>类加载期织入（AspectJ）：</strong>JVM 加载 .class 时通过 ClassLoader 修改字节码。需要 -javaagent 参数。</li>
+<li><strong>运行时织入（Spring AOP）：</strong>通过运行时的动态代理实现。最灵活，不需要修改编译/加载流程，但有轻微性能开销（多一层代理调用），且只能拦截 Bean 的 public 方法。</li></ul>
+</div>
 
 <div class="card">
 <strong>通知类型：</strong>
 <table>
 <tr><th>类型</th><th>时机</th></tr>
-<tr><td>@Before</td><td>目标方法执行前</td></tr>
-<tr><td>@After</td><td>目标方法执行后（无论是否异常）</td></tr>
-<tr><td>@AfterReturning</td><td>目标方法正常返回后</td></tr>
-<tr><td>@AfterThrowing</td><td>目标方法抛出异常后</td></tr>
-<tr><td>@Around</td><td>环绕，可控制方法是否执行</td></tr>
+<tr class="row-expandable"><td>@Before</td><td>目标方法执行前</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>前置通知在目标方法调用前执行，可用于参数校验（检查参数格式）、权限检查（判断是否有权限调用）、日志记录（记录入参）。注意：如果前置通知抛出异常，目标方法不会执行（相当于被拦截了）。可以通过 JointPoint.getArgs() 获取方法参数，甚至修改参数（但只能改引用类型的内部状态，不能替换参数本身）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@After</td><td>目标方法执行后（无论是否异常）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@After 类似于 finally 块的语义——无论目标方法是正常返回还是抛出异常，都会执行。常用于资源清理（关闭流、释放连接）。但@After 的时机在 @AfterReturning 和 @AfterThrowing 之前（执行链：@Before → 目标方法 → @After → @AfterReturning/@AfterThrowing → @Around 的 after 部分）。注意 @After 不能获取目标方法的返回值（方法结束了但返回值还未被后续通知处理）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@AfterReturning</td><td>目标方法正常返回后</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>只在目标方法正常返回（没有抛异常）时执行。可以通过 <code>@AfterReturning(returning="result")</code> 获取并修改目标方法的返回值。典型用途：对返回值做统一包装（如把所有 Controller 的返回结果包装成 ResponseVO 格式），或者对结果做后处理（如脱敏、格式化）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@AfterThrowing</td><td>目标方法抛出异常后</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>异常通知可以捕获并转换异常类型（如把 SQLException 包装成业务异常），或者记录异常日志。通过 <code>@AfterThrowing(throwing="ex")</code> 获取抛出的异常对象。注意：@AfterThrowing 不能吞掉异常（不能阻止异常继续向外抛）——只能观察和记录。如果需要完全拦截异常，要用 @Around 的 try-catch。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@Around</td><td>环绕，可控制方法是否执行</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@Around 是最强大的通知类型，可以在方法调用前后自定义逻辑，可以通过 <code>ProceedingJoinPoint.proceed()</code> 控制是否执行目标方法。proceed() 会依次经过拦截器链中的后续通知（责任链模式）。典型用途：事务管理（@Transactional 就是通过 @Around 实现的——begin, proceed, commit/rollback）、性能监控（记录方法执行时间）、缓存（先查缓存，有则返回不走业务逻辑，无则 proceed 并放入缓存）、重试（proceed 失败后重试 N 次）。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -123,6 +184,16 @@ graph TD
     end
     Note["Spring Boot 2.x 默认 CGLIB<br/>Spring Boot 1.x 默认 JDK 动态代理"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>JDK 动态代理的内部原理：</strong>
+<p>Proxy.newProxyInstance() 在运行时生成一个实现了目标接口的代理类（$Proxy0）。这个代理类持有一个 InvocationHandler，所有对代理对象的方法调用（无论是什么方法）都会转发给 InvocationHandler.invoke()。invoke() 方法中通过反射调用目标对象的实际方法，在前后插入增强逻辑。</p>
+<p>可以通过 <code>System.getProperties().put("sun.misc.ProxyGenerator.saveGeneratedFiles", "true")</code> 将生成的代理类保存到磁盘，看到实际的 $Proxy 源代码。</p>
+<strong>CGLIB 的核心——Enhancer 和 MethodInterceptor：</strong>
+<p>CGLIB 使用 ASM 字节码框架在运行时生成目标类的子类，覆盖所有非 final 方法。每个被覆盖的方法内部通过 MethodInterceptor.intercept() 回调来插入增强逻辑。由于生成的是子类（通过继承），有两个限制：1) 不能代理 final 类/方法；2) 子类的构造器调用时可能调用被覆盖的方法（父类构造器中的方法调用会走到子类的代理逻辑上，但此时 Bean 还未初始化完成，可能出错）。</p>
+<strong>为什么 Spring Boot 2.x 默认改为 CGLIB？</strong>
+<p>JDK 代理要求目标类必须实现接口，但现代 Spring Boot 应用中很多 Service 直接是具体类（没有接口）。改默认后避免了"忘了写接口导致 AOP 不生效"的问题，且 CGLIB 经过多年优化，性能已经和 JDK 代理差异不大。</p>
+</div>
 
 <div class="highlight">
 <strong>JDK 动态代理 vs CGLIB：</strong>
@@ -139,13 +210,37 @@ graph TD
 <div class="card">
 <table>
 <tr><th>传播行为</th><th>说明</th><th>场景</th></tr>
-<tr><td><strong>REQUIRED</strong></td><td>有事务则加入，没有则新建（<strong>默认</strong>）</td><td>最常用</td></tr>
-<tr><td><strong>REQUIRES_NEW</strong></td><td>总是新建事务，挂起当前事务</td><td>日志记录（独立提交）</td></tr>
-<tr><td><strong>NESTED</strong></td><td>嵌套事务，内层回滚不影响外层</td><td>Savepoint 机制</td></tr>
-<tr><td>SUPPORTS</td><td>有事务则加入，没有则非事务执行</td><td>查询</td></tr>
-<tr><td>MANDATORY</td><td>必须在事务中，否则抛异常</td><td>强制事务</td></tr>
-<tr><td>NEVER</td><td>不能在事务中，否则抛异常</td><td>—</td></tr>
-<tr><td>NOT_SUPPORTED</td><td>非事务执行，有则挂起</td><td>—</td></tr>
+<tr class="row-expandable"><td><strong>REQUIRED</strong></td><td>有事务则加入，没有则新建（<strong>默认</strong>）</td><td>最常用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>REQUIRED 是最自然的事务语义：调用者如果有事务，被调用方法自动<strong>融入</strong>到调用者的事务中（共用同一个数据库连接），任何一方回滚都导致整个事务回滚。如果调用者没有事务，被调用方法自己新建独立事务。这是大多数业务逻辑的合理默认选择——一个业务流程中的多个数据操作应该在同一个事务中。</p>
+<p><strong>注意：</strong>REQUIRED 意味着被调用方法的回滚会导致调用者事务也回滚——即使调用者 try-catch 了被调用方法的异常（因为事务已被标记为 rollback-only）。这是常见的"事务异常"——外层 try-catch 了 RuntimeException，但事务已经被标记为需要回滚，commit 时抛 UnexpectedRollbackException。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>REQUIRES_NEW</strong></td><td>总是新建事务，挂起当前事务</td><td>日志记录（独立提交）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>REQUIRES_NEW 创建完全独立的事务——与调用者的事务互不影响。内部事务提交/回滚不影响外部事务，反之亦然。实现原理：Spring 在事务管理器中为内部方法获取新的数据库连接（或者在同一连接上使用 savepoint），外部连接被挂起（不释放，继续持有锁）。</p>
+<p>典型场景：无论主业务成功还是失败，操作日志都必须记录（不能因为主业务回滚导致日志也没了）。也用于需要独立提交的场景（如扣款后立即记账，不允许记账失败导致扣款也回滚）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>NESTED</strong></td><td>嵌套事务，内层回滚不影响外层</td><td>Savepoint 机制</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>NESTED 与 REQUIRES_NEW 的区别：NESTED 不是独立的物理事务，而是<strong>外层事务中的一个 Savepoint</strong>。内层事务回滚时只回退到这个 Savepoint，外层事务继续执行；但外层事务回滚时，内层事务也一起回滚。REQUIRES_NEW 则是完全独立——外层回滚不影响内层。</p>
+<p>NESTED 只在 JDBC 环境下生效（底层依赖 java.sql.Savepoint）。JPA/Hibernate 不支持 NESTED。REQUIRES_NEW 适用于所有事务管理器。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>SUPPORTS</td><td>有事务则加入，没有则非事务执行</td><td>查询</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>SUPPORTS 是"随缘"模式——调用者在事务中我就在事务中，调用者不在我也不强制。适合纯查询方法——有事务时能读到一致性数据（RR 级别），没有事务时也能工作（不为了一个查询新建事务开销）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>MANDATORY</td><td>必须在事务中，否则抛异常</td><td>强制事务</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>MANDATORY 强制要求在已有事务中执行，如果调用者没有事务则直接抛异常。用于确保数据操作一定在事务上下文中执行（如扣款操作不能不在事务中）。相当于是一个防护措施——如果有人单独调了这个方法忘了加事务，直接报错提醒而非静默非事务执行。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>NEVER</td><td>不能在事务中，否则抛异常</td><td>—</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>NEVER 与 MANDATORY 相反——<strong>禁止</strong>在事务中调用此方法。如果调用者已经在事务中，抛异常。用于部署一些不适合在事务中运行的逻辑（如发送消息、调用外部 API）——这些操作如果失败不应该回滚数据库事务。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>NOT_SUPPORTED</td><td>非事务执行，有则挂起</td><td>—</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>NOT_SUPPORTED 会主动挂起当前事务（与 REQUIRES_NEW 不同，它不创建新事务），以非事务模式执行。挂起的实现：Spring TransactionManager 把当前事务的数据库连接保存起来，给该方法分配一个不带事务的新连接，执行完后恢复原连接。如果该方法执行时间长，它会<strong>释放数据库锁</strong>（因为没有事务了），可能导致其他事务看到不一致的中间状态。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -154,14 +249,40 @@ graph TD
 <div class="card">
 <table>
 <tr><th>场景</th><th>原因</th><th>解决</th></tr>
-<tr><td>① 方法非 public</td><td>AOP 代理只能拦截 public</td><td>改为 public</td></tr>
-<tr><td>② 同类内部调用</td><td>this.method() 不走代理</td><td>注入自己 / 拆分到另一个类</td></tr>
-<tr><td>③ 异常被 try-catch 吞了</td><td>Spring 靠异常回滚</td><td>catch 中抛异常 / 手动回滚</td></tr>
-<tr><td>④ 异常类型不匹配</td><td>默认只回滚 RuntimeException</td><td>@Transactional(rollbackFor = Exception.class)</td></tr>
-<tr><td>⑤ 数据库引擎不支持</td><td>MyISAM 不支持事务</td><td>用 InnoDB</td></tr>
-<tr><td>⑥ 多线程</td><td>不同线程不同事务</td><td>—</td></tr>
-<tr><td>⑦ 传播行为设置错误</td><td>如设为 NOT_SUPPORTED</td><td>检查 propagation 设置</td></tr>
-<tr><td>⑧ 类本身没被 Spring 管理</td><td>不是 Bean，没有代理</td><td>加 @Service/@Component</td></tr>
+<tr class="row-expandable"><td>① 方法非 public</td><td>AOP 代理只能拦截 public</td><td>改为 public</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>JDK 动态代理基于接口，接口中的方法天然都是 public。CGLIB 代理基于继承子类，只能覆盖父类中所有可继承的方法（public 和 protected），不能覆盖 private 方法。但 Spring 事务拦截器在设计上限制了只拦截 public 方法——即使 CGLIB 理论上能代理 protected 方法，@Transactional 对 protected 也不生效（除非配置 expose-proxy + 使用 AspectJ 织入模式）。这是 Spring 团队的有意设计——非 public 方法意味着类内部使用，不应该有独立的事务边界。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>② 同类内部调用</td><td>this.method() 不走代理</td><td>注入自己 / 拆分到另一个类</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>this 调用的本质问题：</strong>
+<p>Spring AOP 的事务是在代理对象上实现的。当外部调用 Bean 的方法时，实际调用的是代理对象的增强方法（代理对象 → 开启事务 → 调用目标对象的实际方法 → 提交/回滚）。但在目标对象内部通过 <code>this.methodB()</code> 调用另一个方法时，this 是目标对象本身，不是代理对象——不经过代理，事务切面自然不会生效。</p>
+<p><strong>三种解决方案：</strong>1) 将 methodB 移到另一个 Bean 中（最推荐——符合单一职责）；2) 注入自己（@Autowired private MyService self，通过 self.methodB() 调用）；3) 使用 AopContext.currentProxy()（需要 @EnableAspectJAutoProxy(exposeProxy=true) 配置）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>③ 异常被 try-catch 吞了</td><td>Spring 靠异常回滚</td><td>catch 中抛异常 / 手动回滚</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring 事务管理器依赖<strong>异常抛出</strong>来触发回滚。如果方法内部 try-catch 把异常吞掉（不抛出），事务管理器不知道发生了异常，正常 commit。手动回滚方式：<code>TransactionAspectSupport.currentTransactionStatus().setRollbackOnly()</code>——标记当前事务为"需要回滚"，commit 时检测到该标记后执行回滚。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>④ 异常类型不匹配</td><td>默认只回滚 RuntimeException</td><td>@Transactional(rollbackFor = Exception.class)</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring 默认只在 unchecked exception（RuntimeException 及其子类）和 Error 时回滚。checked exception（如 IOException、SQLException 由 Exception 派生的非 RuntimeException）默认不回滚——设计理念是 checked exception 表示"预期内的异常"（如文件未找到），不应该影响事务完整性。但实际业务中通常希望任何异常都回滚，所以标准写法：<code>@Transactional(rollbackFor = Exception.class)</code>。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>⑤ 数据库引擎不支持</td><td>MyISAM 不支持事务</td><td>用 InnoDB</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring 的事务管理器只是"代理"到底层数据库的事务能力——如果数据库引擎本身不支持事务（如 MyISAM），Spring 的事务注解不会有任何效果（每个 SQL 自动自动提交 AUTOCOMMIT）。建表语句必须指定 ENGINE=InnoDB。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>⑥ 多线程</td><td>不同线程不同事务</td><td>—</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring 的事务管理是基于 <strong>ThreadLocal</strong> 的——事务上下文绑定在当前线程上。如果在事务方法内启动新的线程执行数据库操作，新线程没有事务上下文（事务不会传播到新线程）。需要用编程式事务（TransactionTemplate）在新线程中显式创建事务。这是合理的限制——分布式事务管理"跨线程的事务一致性"极度复杂且性能差。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>⑦ 传播行为设置错误</td><td>如设为 NOT_SUPPORTED</td><td>检查 propagation 设置</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>设置了 NOT_SUPPORTED（以非事务方式执行）或 SUPPORTS（调用者给了才用）、NEVER（拒绝事务）等传播行为后，自然就没有事务效果了。实际开发中传播行为通常保持 REQUIRED（默认），只有明确需要独立事务时才改 REQUIRES_NEW。传播行为是面试考点，但实际业务中默认值足够覆盖 90% 场景。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>⑧ 类本身没被 Spring 管理</td><td>不是 Bean，没有代理</td><td>加 @Service/@Component</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>如果类不是 Spring Bean（没有 @Service/@Component/@Repository 等注解，或者没被组件扫描到），Spring 不会为它创建代理对象。用 new 自己创建的实例也没有代理增强。这是最常见的新手陷阱——new 了一个 Service 对象然后调用 @Transactional 方法，事务不生效。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -177,6 +298,16 @@ graph TD
     SB --> S3["③ 内嵌 Tomcat/Jetty<br/>无需外部容器，jar 直接运行"]
     SB --> S4["④ 外部化配置<br/>application.yml, 环境变量, 命令行"]
     SB --> S5["⑤ Actuator 监控<br/>健康检查、metrics"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>自动配置的筛选机制——@Conditional 注解家族：</strong>
+<p>自动配置类不是无条件生效的，每个自动配置类上都有一组 @Conditional 条件判断：<code>@ConditionalOnClass</code>（类路径存在该类才生效）、<code>@ConditionalOnMissingBean</code>（用户没有自定义 Bean 才生效）、<code>@ConditionalOnProperty</code>（指定配置项为某值才生效）、<code>@ConditionalOnBean</code>（指定 Bean 存在才生效）。这保证了：引入依赖就自动配置（不用写代码），但用户自定义 Bean 可以覆盖默认配置（尊重用户选择）。</p>
+<p>Spring Boot 2.7 之前使用 <code>META-INF/spring.factories</code> 注册自动配置类（key=value 格式），2.7+ 改为 <code>META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports</code>（每行一个全限定类名），更简单且支持排序。</p>
+<strong>内嵌容器的实现：</strong>
+<p>Spring Boot 在 main() 中启动时，不是部署到外部 Tomcat，而是通过 new Tomcat() 在 JVM 内启动一个嵌入式 Servlet 容器。这个内嵌容器是单进程单容器架构——JAR 包自带 Tomcat，一行 java -jar 就能启动。对于传统部署（部署 WAR 到外部 Tomcat），Spring Boot 也支持——需排除内嵌容器依赖，改为 extends SpringBootServletInitializer。</p>
+<strong>外部化配置的优先级链（从高到低）：</strong>
+<p>命令行参数 > Java 系统属性 (System.getProperties()) > 操作系统环境变量 > application-{profile}.yml/properties > application.yml/properties > @PropertySource 注解 > 默认属性。Spring 通过 PropertySource 抽象统一管理，支持配置的热更新（@RefreshScope + Spring Cloud Config）。</p>
 </div>
 
 <div class="card">
@@ -194,14 +325,40 @@ graph TD
 <div class="card">
 <table>
 <tr><th>注解</th><th>作用</th></tr>
-<tr><td><code>@SpringBootApplication</code></td><td>标记主类 = @Configuration + @EnableAutoConfiguration + @ComponentScan</td></tr>
-<tr><td><code>@RestController</code></td><td>= @Controller + @ResponseBody（返回 JSON）</td></tr>
-<tr><td><code>@RequestMapping / @GetMapping / @PostMapping</code></td><td>请求映射</td></tr>
-<tr><td><code>@PathVariable / @RequestParam / @RequestBody</code></td><td>参数绑定</td></tr>
-<tr><td><code>@Autowired</code></td><td>按类型注入（配合 @Qualifier 按名称）</td></tr>
-<tr><td><code>@Value("${}")</code></td><td>读取配置文件</td></tr>
-<tr><td><code>@ConfigurationProperties</code></td><td>批量绑定配置</td></tr>
-<tr><td><code>@ConditionalOnClass / @ConditionalOnMissingBean</code></td><td>条件装配</td></tr>
+<tr class="row-expandable"><td><code>@SpringBootApplication</code></td><td>标记主类 = @Configuration + @EnableAutoConfiguration + @ComponentScan</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@SpringBootApplication 是三个注解的组合体：@SpringBootConfiguration（本质是 @Configuration，标记配置类）、@EnableAutoConfiguration（触发 Spring Boot 自动配置机制）、@ComponentScan（扫描当前包及子包中的 @Component/@Service/@Repository/@Controller 等注解，自动注册为 Bean）。默认扫描范围是<strong>主类所在包及其子包</strong>——所以主类建议放在根包下，否则子包外的组件不会被扫描到。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@RestController</code></td><td>= @Controller + @ResponseBody（返回 JSON）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@RestController 的核心效果是：Controller 方法的返回值不再被 ViewResolver 解析为视图名，而是通过 HttpMessageConverter（默认 Jackson）序列化为 JSON 写入 HTTP 响应体。在前后端分离架构中这是标配——后端只负责返回 JSON，前端独立渲染页面。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@RequestMapping / @GetMapping / @PostMapping</code></td><td>请求映射</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@RequestMapping 是最通用的映射注解，可指定 method（GET/POST/PUT/DELETE）、params（必须包含某参数）、headers（必须包含某请求头）、consumes（媒体类型限制）、produces（响应媒体类型）。@GetMapping/@PostMapping 等是其快捷方式——内部就是将 method 属性设置好。现代开发约定：查询用 @GetMapping，创建用 @PostMapping，更新用 @PutMapping，删除用 @DeleteMapping，部分更新用 @PatchMapping。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@PathVariable / @RequestParam / @RequestBody</code></td><td>参数绑定</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>三个参数绑定注解的区别：@PathVariable 从 URL 路径中取值（/user/{id}）；@RequestParam 从 URL 查询参数或表单参数取值（?id=1）；@RequestBody 从请求体中取 JSON 并反序列化为 Java 对象（通过 HttpMessageConverter）。@RequestParam 可以设 required=false（可选参数）和 defaultValue（默认值）；@RequestBody 只能用于一个参数（请求体只能读一次）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@Autowired</code></td><td>按类型注入（配合 @Qualifier 按名称）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@Autowired 先按类型（byType）匹配 Bean，如果一个类型有多个 Bean，再按名称（byName）通过字段名匹配。如果仍有多个候选，需要使用 @Qualifier("beanName") 指定具体的 Bean 名称。@Autowired(required=false) 允许依赖不存在（不抛异常）。在构造器注入中，如果只有一个构造器，@Autowired 可以省略（Spring 自动识别）。</p>
+<p>与 @Resource 的区别：@Resource 是 JSR-250 标准注解，默认先按名称（name）再按类型匹配；@Autowired 是 Spring 专属，默认按类型再按名称。两者的注入时机和异常处理也略有不同。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@Value("${}")</code></td><td>读取配置文件</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@Value 通过 SpEL (Spring Expression Language) 读取配置。支持：<code>${property.name}</code>（简单取值）、<code>${property.name:defaultValue}</code>（带默认值）、<code>#{systemProperties['user.dir']}</code>（SpEL 表达式）。常见的错误：用 @Value 注入了 static 字段（不生效——Spring 无法注入静态字段）；或者在构造器中读取 @Value 字段（值还未注入）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@ConfigurationProperties</code></td><td>批量绑定配置</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@ConfigurationProperties(prefix="app") 可以将配置文件中 app.xxx 前缀下的所有属性批量映射到 Java 对象的同名字段上，支持嵌套对象和 List/Map 等复杂类型。相比 @Value 一个一个注入，@ConfigurationProperties 更适合管理一组相关配置（如第三方 API 的 appKey、appSecret、endpoint）。需要配合 @EnableConfigurationProperties 或 @ConfigurationPropertiesScan 启用。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@ConditionalOnClass / @ConditionalOnMissingBean</code></td><td>条件装配</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@ConditionalOnClass 当类路径中存在指定类时才创建 Bean——典型的场景：类路径有 HikariDataSource 就自动配置 HikariCP 连接池（没有就不配）。@ConditionalOnMissingBean 当容器中没有指定类型的 Bean 时才创建——这是"默认配置可被覆盖"机制的核心——用户自己定义了 DataSource Bean，Spring Boot 就不会再创建一个新的。</p>
+<p>其他条件注解：@ConditionalOnProperty（根据配置值决定）、@ConditionalOnExpression（SpEL 表达式，更灵活）、@ConditionalOnJava（根据 Java 版本）、@ConditionalOnBean（存在某 Bean 时）。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -233,6 +390,22 @@ sequenceDiagram
     V-->>DS: 渲染结果
     DS-->>C: HTTP 响应
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>DispatcherServlet — 前端控制器的核心执行链：</strong>
+<p>DispatcherServlet 本质是一个 Servlet（继承 HttpServlet），通过 web.xml 或 ServletRegistrationBean 配置拦截路径（通常是 /）。所有请求进入 doService() → doDispatch()，doDispatch() 是核心调度方法：</p>
+<ol><li>根据 request 查找 Handler（HandlerMapping 返回 HandlerExecutionChain = Handler + Interceptors）</li>
+<li>查找能执行该 Handler 的 HandlerAdapter</li>
+<li>执行所有拦截器的 preHandle（任何一个返回 false 就中断）</li>
+<li>HandlerAdapter.handle() 执行 Controller 方法 → 返回 ModelAndView</li>
+<li>执行所有拦截器的 postHandle（ModelAndView 可在此修改）</li>
+<li>ViewResolver 解析 ModelAndView 中的视图名 → 渲染 View → 写入响应</li>
+<li>执行所有拦截器的 afterCompletion（无论是否异常都执行，类似 finally）</li></ol>
+<strong>@ResponseBody 的流程差异：</strong>
+<p>当 Controller 方法标注了 @ResponseBody 或类标注了 @RestController 时，返回的 ModelAndView 为 null。DispatcherServlet 检测到后跳过 ViewResolver，直接通过 HttpMessageConverter 将返回值序列化为 JSON（Jackson）写入 response body。这就是前后端分离架构下的实际路径——不存在视图渲染，只输出数据。</p>
+<strong>异常处理机制：</strong>
+<p>Controller 方法抛出的异常会被 DispatcherServlet 捕获，遍历 HandlerExceptionResolver 链（包括 @ExceptionHandler 注解的方法、@ControllerAdvice 全局异常处理、DefaultHandlerExceptionResolver）。如果所有 ExceptionResolver 都不处理，最终抛到 Servlet 容器（Tomcat），返回 500 错误页面。</p>
+</div>
 
 <div class="card">
 <strong>核心组件：</strong>
@@ -257,6 +430,20 @@ flowchart TD
     D --> E["TypeHandler<br/>参数/结果映射"]
     E --> F["JDBC 执行"]
     F --> G["数据库"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Mapper 接口为什么能直接调用——动态代理原理：</strong>
+<p>MyBatis 为每个 Mapper 接口（如 UserMapper）通过 JDK 动态代理生成代理对象。当你调用 <code>userMapper.findById(1)</code> 时，实际调用的是 MapperProxy.invoke()：</p>
+<ol><li>根据接口全限定名 + 方法名 找到对应的 MappedStatement（包含了 SQL 语句、参数映射、结果映射）</li>
+<li>创建 SqlSession → Executor → 根据 MappedStatement 执行 SQL（参数通过 TypeHandler 设置到 PreparedStatement 中）</li>
+<li>将 JDBC ResultSet 通过 TypeHandler + ResultMap 映射为 Java 对象返回</li></ol>
+<strong>Executor 三种类型的区别：</strong>
+<ul><li><strong>SIMPLE：</strong>每次请求创建新的 PreparedStatement（默认）。简单直接。</li>
+<li><strong>REUSE：</strong>缓存 PreparedStatement，同 SQL 可复用（减少预编译开销）。</li>
+<li><strong>BATCH：</strong>批量执行 UPDATE/INSERT 语句，攒到一定数量后一次 flush 到数据库（性能大幅提升，但无法获取自增 ID 等生成值）。</li></ul>
+<strong>MyBatis 插件拦截的四层：</strong>
+<p>MyBatis 通过责任链模式的 Interceptor 可以拦截四个核心对象：Executor（query/update 方法，分页插件在此拦截）、StatementHandler（prepare/parameterize，SQL 改写在此）、ParameterHandler（参数设置）、ResultSetHandler（结果映射）。分页插件 PageHelper 就是在 Executor.query() 之前，根据方言自动在原始 SQL 后面追加 LIMIT 子句。</p>
 </div>
 
 <div class="card">

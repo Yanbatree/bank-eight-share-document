@@ -353,4 +353,65 @@
     buildTOC();
   }
 
+  // ── Expandable table rows ────────────────────────────
+  function initExpandables() {
+    // Table row expand
+    document.addEventListener('click', function(ev) {
+      var row = ev.target.closest('.row-expandable');
+      if (!row) return;
+      // Don't trigger if selecting text
+      if (window.getSelection().toString()) return;
+
+      var detailTr = row.nextElementSibling;
+      if (!detailTr || !detailTr.classList.contains('detail-tr')) return;
+
+      var isExpanded = row.classList.contains('expanded');
+      // Close all other expanded rows in same table
+      var tbody = row.parentNode;
+      if (tbody) {
+        tbody.querySelectorAll('.row-expandable.expanded').forEach(function(r) {
+          if (r !== row) {
+            r.classList.remove('expanded');
+            var d = r.nextElementSibling;
+            if (d && d.classList.contains('detail-tr')) d.classList.remove('show');
+          }
+        });
+      }
+      // Toggle this row
+      if (isExpanded) {
+        row.classList.remove('expanded');
+        detailTr.classList.remove('show');
+      } else {
+        row.classList.add('expanded');
+        detailTr.classList.add('show');
+      }
+    });
+
+    // Diagram detail toggle
+    document.addEventListener('click', function(ev) {
+      var btn = ev.target.closest('.detail-toggle');
+      if (!btn) return;
+
+      var panel = btn.nextElementSibling;
+      if (!panel || !panel.classList.contains('detail-panel')) return;
+
+      var isExpanded = btn.classList.contains('expanded');
+      if (isExpanded) {
+        btn.classList.remove('expanded');
+        panel.classList.remove('show');
+        btn.innerHTML = btn.innerHTML.replace('收起详解', '展开详解').replace('▼', '▶');
+      } else {
+        btn.classList.add('expanded');
+        panel.classList.add('show');
+        btn.innerHTML = btn.innerHTML.replace('展开详解', '收起详解').replace('▶', '▼');
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initExpandables);
+  } else {
+    initExpandables();
+  }
+
 })();

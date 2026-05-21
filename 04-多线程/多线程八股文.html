@@ -36,11 +36,28 @@
 <div class="card">
 <table>
 <tr><th></th><th>进程</th><th>线程</th></tr>
-<tr><td>定义</td><td>程序的一次执行实例，资源分配的基本单位</td><td>CPU 调度的基本单位</td></tr>
-<tr><td>资源</td><td>独立的内存空间（堆、方法区）</td><td>共享进程的堆和方法区，独享栈和 PC</td></tr>
-<tr><td>通信</td><td>复杂（管道、消息队列、共享内存、Socket）</td><td>简单（共享内存、wait/notify）</td></tr>
-<tr><td>开销</td><td>创建/切换开销大</td><td>创建/切换开销小</td></tr>
-<tr><td>独立性</td><td>一个进程崩溃不影响其他</td><td>一个线程崩溃可能导致整个进程崩溃</td></tr>
+<tr class="row-expandable"><td>定义</td><td>程序的一次执行实例，资源分配的基本单位</td><td>CPU 调度的基本单位</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程是操作系统进行资源分配（内存、文件句柄、设备）的最小单元，每个进程有独立的地址空间。线程是 CPU 调度的最小单元，一个进程内的多个线程共享该进程的地址空间。JVM 本身就是一个进程，main 线程和 GC 线程都在其中。</p>
+<p><strong>本质区别：</strong>进程是"拥有资源"的单位，线程是"使用 CPU"的单位。这也是为什么线程切换开销更小——线程切换不需要切换地址空间（页表不变），只需切换寄存器、栈指针和 PC。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>资源</td><td>独立的内存空间（堆、方法区）</td><td>共享进程的堆和方法区，独享栈和 PC</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>线程独享虚拟机栈和程序计数器，因为每个线程的执行路径不同——各自的调用栈和当前执行位置必须独立。堆和方法区共享，这既是便利（线程间通信方便）也是风险（并发安全问题）。</p>
+<p><strong>JVM 视角：</strong>每个线程有自己的 JVM 栈（存栈帧）、本地方法栈和 PC 寄存器。堆上 new 出来的对象所有线程都能访问，这就是为什么需要 synchronized 和 volatile。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>通信</td><td>复杂（管道、消息队列、共享内存、Socket）</td><td>简单（共享内存、wait/notify）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程间通信（IPC）涉及内核态切换——管道需要内核缓冲区中转，消息队列需要内核维护，Socket 要走网络协议栈。线程间通过读写进程堆上的共享变量即可通信，但需要同步机制（synchronized、volatile、Lock）来保证可见性和原子性。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>开销</td><td>创建/切换开销大</td><td>创建/切换开销小</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程创建需要分配独立的地址空间、复制页表、加载程序。进程切换需要保存/恢复完整上下文（包括页表、TLB 刷新），TLB 刷新的代价尤其大——缓存全部失效。线程切换只需保存/恢复寄存器和栈指针，页表不变。所以线程也被称为"轻量级进程"。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>独立性</td><td>一个进程崩溃不影响其他</td><td>一个线程崩溃可能导致整个进程崩溃</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程间地址空间隔离是操作系统提供的核心保护——A 进程无法访问 B 进程的内存，一个进程的野指针不会破坏另一个进程的数据。线程共享地址空间，一个线程的未捕获异常（如 NullPointerException）如果传播到线程的 run() 方法外并不会直接杀死 JVM，但如果线程破坏了共享数据（如写坏堆内存），会影响所有线程。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -59,16 +76,45 @@ stateDiagram-v2
     RUNNABLE --> TERMINATED : run() 结束
     TERMINATED --> [*]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>RUNNABLE 为什么包含"就绪"和"运行"两种状态？</strong>
+<p>Java 将操作系统层面的 Ready（就绪，等待 CPU 时间片）和 Running（正在执行）合并为 RUNNABLE。这是因为 Java 是跨平台的，不同操作系统的线程状态模型不同。当你调用 thread.getState() 返回 RUNNABLE 时，线程可能在运行也可能在等待 CPU 调度。</p>
+<strong>BLOCKED vs WAITING 的关键区别：</strong>
+<p>BLOCKED 是<strong>被动</strong>等待——线程试图进入 synchronized 代码块/方法，但锁被其他线程持有，JVM 将线程放入锁的 EntryList。WAITING 是<strong>主动</strong>等待——线程自己调用了 wait()/join()/park()，主动放弃 CPU 并进入 WaitSet，直到被其他线程显式唤醒。</p>
+<strong>TIMED_WAITING 的实际场景：</strong>
+<p>Thread.sleep(1000) 是面试中最常被问到的——注意 sleep 不会释放锁！如果线程在 synchronized 块内调用 sleep，其他线程仍然无法获取该锁。wait(timeout) 会释放锁，这是两者的本质区别。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th>状态</th><th>说明</th><th>进入方式</th></tr>
-<tr><td>NEW</td><td>创建但未启动</td><td>new Thread()</td></tr>
-<tr><td>RUNNABLE</td><td>就绪或运行中</td><td>start()</td></tr>
-<tr><td>BLOCKED</td><td>等待获取锁</td><td>synchronized 竞争失败</td></tr>
-<tr><td>WAITING</td><td>无限等待</td><td>wait() / join() / LockSupport.park()</td></tr>
-<tr><td>TIMED_WAITING</td><td>限时等待</td><td>sleep(ms) / wait(ms) / join(ms)</td></tr>
-<tr><td>TERMINATED</td><td>执行完毕</td><td>run() 结束或异常退出</td></tr>
+<tr class="row-expandable"><td>NEW</td><td>创建但未启动</td><td>new Thread()</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>NEW 状态的线程只是一个普通的 Java 对象——Thread 类的实例在堆上分配，但操作系统层面还没有创建对应的内核线程。此时调用 thread.getState() 返回 NEW。注意：NEW 状态没有资格被 CPU 调度，start() 是线程从 Java 对象变成内核线程的关键一步。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>RUNNABLE</td><td>就绪或运行中</td><td>start()</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>start() 方法内部调用 native 的 start0()，由 JVM 向操作系统申请创建内核线程，然后该内核线程回调 Java 的 run() 方法。这个过程涉及用户态到内核态的切换。RUNNABLE 状态的线程可能正在 CPU 上执行（Running），也可能在等待 CPU 调度（Ready）——Java 不区分这两种子状态。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>BLOCKED</td><td>等待获取锁</td><td>synchronized 竞争失败</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>只有进入 synchronized 代码块/方法时竞争失败才会进入 BLOCKED。JUC 锁（如 ReentrantLock.lock()）竞争失败时线程会进入 WAITING 或 TIMED_WAITING（底层调用 LockSupport.park()），不是 BLOCKED。这是 synchronized 和 JUC 锁在状态表现上的重要区别。</p>
+<p><strong>面试重点：</strong>当问"线程在等锁是什么状态"，答案分情况——synchronized 等锁是 BLOCKED，ReentrantLock 等锁是 WAITING。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>WAITING</td><td>无限等待</td><td>wait() / join() / LockSupport.park()</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>WAITING 状态的线程不会被分配 CPU 时间片，必须等待其他线程显式唤醒。Object.wait() 需要另一个线程调用 notify()/notifyAll()；Thread.join() 等待目标线程终止；LockSupport.park() 需要 LockSupport.unpark() 或中断来唤醒。</p>
+<p><strong>注意：</strong>wait() 必须在 synchronized 块内调用（持有对象锁），调用后释放锁。sleep() 不需要持有锁，也不释放锁。这是经典面试题。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>TIMED_WAITING</td><td>限时等待</td><td>sleep(ms) / wait(ms) / join(ms)</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>与 WAITING 的区别在于有超时机制——超时后自动回到 RUNNABLE，不需要显式唤醒。底层实现依赖操作系统的定时器中断。Thread.sleep(0) 有意义吗？有——它告诉操作系统"我让出当前时间片"，但线程仍然在 RUNNABLE 状态，可能立刻被再次调度。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>TERMINATED</td><td>执行完毕</td><td>run() 结束或异常退出</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>线程 run() 方法正常返回或抛出未捕获异常都会进入 TERMINATED。一旦终止就不能重新 start()——调用会抛出 IllegalThreadStateException。线程对象本身仍然存在（堆上），可以被 GC 的条件是没有引用指向它。线程终止后其 JVM 栈和本地方法栈被回收。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -77,10 +123,23 @@ stateDiagram-v2
 <div class="card">
 <table>
 <tr><th>方式</th><th>说明</th></tr>
-<tr><td>继承 Thread</td><td>重写 run()，调用 start()。缺点：单继承限制</td></tr>
-<tr><td>实现 Runnable</td><td>实现 run()，传给 new Thread()。推荐，任务与线程分离</td></tr>
-<tr><td>实现 Callable</td><td>call() 有<strong>返回值</strong>+抛异常。通过 FutureTask 包装</td></tr>
-<tr><td>线程池</td><td>通过 ExecutorService 提交任务，<strong>生产环境推荐</strong></td></tr>
+<tr class="row-expandable"><td>继承 Thread</td><td>重写 run()，调用 start()。缺点：单继承限制</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>继承 Thread 是最直接的方式，但将"任务"和"线程"耦合在一起（类本身就是线程），违背了单一职责原则。由于 Java 单继承，继承了 Thread 就不能再继承其他类。start() 调用 native start0() 创建操作系统线程，再由该线程回调 run()。面试中通常不推荐这种写法。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>实现 Runnable</td><td>实现 run()，传给 new Thread()。推荐，任务与线程分离</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>Runnable 将"任务逻辑"和"线程执行机制"解耦——同一个 Runnable 实例可以交给多个 Thread 执行。配合线程池使用时，线程池只接受 Runnable/Callable，继承 Thread 的方式与线程池不兼容。Java 8 之后可以用 Lambda 简化：<code>new Thread(() -> doSomething())</code>。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>实现 Callable</td><td>call() 有<strong>返回值</strong>+抛异常。通过 FutureTask 包装</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>Callable 弥补了 Runnable 两大不足：不能返回结果（run() 返回 void）和不能抛出受检异常。通过 FutureTask（实现了 RunnableFuture，同时是 Runnable 和 Future）包装后提交给线程或线程池。Future.get() 会阻塞直到任务完成并返回结果。</p>
+<p><strong>CompletableFuture：</strong>Java 8+ 的推荐方式，支持链式回调、组合多个异步任务、异常处理等，比 Future 强大得多。线程池执行 Callable 后返回 Future，但 CompletableFuture 通常配合 ForkJoinPool 使用。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>线程池</td><td>通过 ExecutorService 提交任务，<strong>生产环境推荐</strong></td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>线程池的核心优势：复用线程避免反复创建/销毁的开销（创建线程涉及内核态操作），控制并发数量防止资源耗尽，提供任务队列和拒绝策略。面试强调：生产环境绝对不能每次请求都 new Thread()——高并发下会创建大量线程导致 OOM（每个线程默认 1MB 栈空间），而且线程上下文切换会成为性能瓶颈。</p>
+</div></td></tr>
 </table>
 <strong>start() vs run()：</strong>start() 创建新线程并调用 run()；直接调用 run() 只是普通方法调用，在当前线程执行。
 </div>
@@ -104,6 +163,15 @@ graph TD
     end
     A -->|"锁升级过程"| C
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Mark Word 的精细结构（64 位 JVM）：</strong>
+<p>对象头的 Mark Word 在不同锁状态下存储不同内容。无锁状态存 hashCode（25bit）+ GC 分代年龄（4bit）+ 偏向锁标志（1bit）+ 锁标志（2bit）。偏向锁状态存线程 ID（54bit）+ epoch（2bit）+ GC 年龄（4bit）等。轻量级锁状态存指向<strong>锁记录（Lock Record）</strong>的指针——每个线程在自己的栈帧中分配 Lock Record，存放 Mark Word 的备份和对象引用，然后通过 CAS 把对象头的 Mark Word 替换为 Lock Record 指针。</p>
+<strong>Monitor 机制的深入理解：</strong>
+<p>Monitor 本质是 C++ 的 ObjectMonitor 对象（在 HotSpot 的 objectMonitor.cpp 中实现），包含 _owner（持有锁的线程指针）、_EntryList（等待获取锁的 BLOCKED 线程队列）、_WaitSet（调用了 wait() 的 WAITING 线程队列）和 _recursions（重入次数）。synchronized 重量级锁就是通过操作这些字段实现的。</p>
+<strong>monitorenter/monitorexit 字节码：</strong>
+<p>每个 synchronized 代码块编译后会生成一个 monitorenter 和两个 monitorexit 指令（一个正常退出，一个异常退出），保证锁一定能释放。synchronized 方法不是通过字节码指令，而是方法标志位 ACC_SYNCHRONIZED，JVM 在方法调用时隐式加锁。</p>
+</div>
 
 <div class="highlight">
 <strong>synchronized 代码块：</strong>编译为 monitorenter / monitorexit 字节码指令，操作对象头的 Mark Word。<br/>
@@ -119,13 +187,34 @@ graph LR
     C -->|"自旋超过阈值/竞争激烈"| D["重量级锁<br/>Heavyweight Lock"]
     Note["不可降级"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>锁升级的触发条件细节：</strong>
+<p><strong>偏向锁获取：</strong>当线程第一次获取锁时，检查 Mark Word 的偏向锁标志。如果是"可偏向"状态（标志=1 且线程 ID 为空），直接用 CAS 把当前线程 ID 写入 Mark Word。成功后 Mark Word 存了线程 ID——此后同一线程再次获取锁只需比对线程 ID，无需任何同步操作（零开销）。</p>
+<p><strong>偏向锁撤销 → 轻量级锁：</strong>当另一个线程尝试获取偏向锁时，需要撤销偏向。撤销过程在全局安全点（SafePoint，所有线程暂停）执行：检查持有偏向锁的线程是否还活着、是否还在同步块内。如果还在，升级为轻量级锁；如果已经退出，回退到无锁状态再重新偏向。</p>
+<p><strong>轻量级锁膨胀 → 重量级锁：</strong>轻量级锁通过自旋等待（默认自旋 10 次，JDK 6 引入自适应自旋——根据上次自旋结果动态调整）。如果自旋超过阈值或等待队列中有第三个线程竞争，锁膨胀为重量级——JVM 为对象创建 ObjectMonitor（包含 _EntryList 和 _WaitSet），将 BLOCKED 线程挂起（进入内核态阻塞）。</p>
+<strong>为什么锁不能降级？</strong>
+<p>降级在工程上极其困难——重量级锁期间可能有线程在 _EntryList/_WaitSet 中等待，如果突然降级为轻量级，这些等待线程的状态无法安全转换。HotSpot 的实现选择了"只升不降"的简单策略。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th>锁状态</th><th>原理</th><th>适用场景</th></tr>
-<tr><td><strong>偏向锁</strong></td><td>Mark Word 存线程 ID，同一线程再次获取无需 CAS</td><td>一个线程反复获取同一锁</td></tr>
-<tr><td><strong>轻量级锁</strong></td><td>CAS 替换 Mark Word，失败则自旋等待</td><td>线程交替执行，竞争不激烈</td></tr>
-<tr><td><strong>重量级锁</strong></td><td>膨胀为 Monitor，未获取到锁的线程阻塞（切换内核态）</td><td>竞争激烈</td></tr>
+<tr class="row-expandable"><td><strong>偏向锁</strong></td><td>Mark Word 存线程 ID，同一线程再次获取无需 CAS</td><td>一个线程反复获取同一锁</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>偏向锁的设计前提是"大多数锁只会被一个线程访问"。通过在线程 ID 上"贴标签"来避免同步开销。如果场景确实是单线程重复获取（如 StringBuffer 的 append），偏向锁几乎没有性能开销。JDK 15 开始默认禁用偏向锁（-XX:-UseBiasedLocking），因为现代高并发应用中偏向锁的撤销代价往往超过了收益。</p>
+<p><strong>锁撤销的成本：</strong>撤销偏向锁需要在 SafePoint 暂停所有线程，这本身就是一个 STW 操作。如果锁竞争频繁，反复撤销的开销比不用偏向锁还大。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>轻量级锁</strong></td><td>CAS 替换 Mark Word，失败则自旋等待</td><td>线程交替执行，竞争不激烈</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>轻量级锁假设"获取锁的线程很快会释放"——所以用自旋（忙等待 CPU）而不是阻塞（挂起线程、切内核态）。自旋适合锁持有时间短的场景（ns~μs 级），因为自旋消耗 CPU 但不切换上下文。如果锁持有时间长（ms 级），自旋会浪费大量 CPU，不如直接阻塞。</p>
+<p><strong>自适应自旋：</strong>JVM 根据同一锁上一次的自旋结果决定这次自旋次数——上次自旋成功了，这次多自旋几次；上次失败了，这次少自旋或直接阻塞。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>重量级锁</strong></td><td>膨胀为 Monitor，未获取到锁的线程阻塞（切换内核态）</td><td>竞争激烈</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>重量级锁依赖操作系统的互斥量（mutex），涉及内核态的线程挂起和唤醒。线程从 BLOCKED 恢复到 RUNNABLE 需要两次上下文切换（用户态→内核态→用户态），加上线程调度的时间，延迟通常在 μs~ms 级别。对于竞争激烈的场景，与其让所有线程自旋消耗 CPU，不如让它们阻塞等待。</p>
+<p><strong>面试追问：</strong>一个锁从偏向升级到重量级，Mark Word 经历了哪些变化？→ 线程 ID（偏向）→ Lock Record 指针（轻量级）→ ObjectMonitor 指针（重量级）→ 锁标志位从 01 → 01（偏向）→ 00（轻量级）→ 10（重量级）。</p>
+</div></td></tr>
 </table>
 <strong>为什么要升级？</strong>大多数情况下锁不会有竞争，用重量级锁每次都要切内核态开销太大。逐步升级是"乐观"策略。
 </div>
@@ -158,6 +247,17 @@ sequenceDiagram
     T->>M: ③ CAS(V, A, B): V == A ? V=B : fail
     M-->>T: 成功（V 仍是 A）或者失败重试
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>CAS 的 CPU 指令级实现：</strong>
+<p>CAS 不是 Java 特有的概念，它是 CPU 提供的原子指令。x86 上是 <code>CMPXCHG</code> 指令（带 LOCK 前缀保证多核原子性），ARM 上是 <code>LDREX/STREX</code>（Load-Link/Store-Conditional）。JVM 通过 Unsafe 类的 <code>compareAndSwapInt/Object/Long</code> 方法调用这些 CPU 指令。</p>
+<strong>CAS 的三大问题：</strong>
+<ul><li><strong>ABA 问题：</strong>值从 A 变 B 再变 A，CAS 只比较值不知道中间变过</li>
+<li><strong>自旋开销：</strong>高竞争下 CAS 频繁失败导致大量 CPU 自旋，性能甚至不如直接加锁</li>
+<li><strong>只能保证一个共享变量的原子性：</strong>AtomicReference 可以把多个变量封装为对象来间接解决</li></ul>
+<strong>银行场景中的 ABA 问题实例：</strong>
+<p>假设账户余额从 100 元被消费为 50 元（提现），然后又存入 50 元变回 100 元。另一个线程用 CAS 扣款时发现余额仍是 100，以为没变过，但实际上中间发生过交易。用 AtomicStampedReference 加版本号可以检测到这种变化。</p>
+</div>
 
 <div class="card">
 <strong>CAS（Compare And Swap）</strong>：CPU 级别的原子指令，JVM 通过 Unsafe 类调用。
@@ -180,6 +280,18 @@ graph TD
     A -->|"state=0: 未占用<br/>state=1: 已占用<br/>state>1: 重入"| C["ReentrantLock / Semaphore 等基于此实现"]
     B --> D["公平锁: 先检查队列再 CAS<br/>非公平锁: 直接 CAS，失败再入队"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>AQS 的模板方法模式：</strong>
+<p>AQS 使用了经典的模板方法设计模式——它定义了获取锁和释放锁的顶层框架逻辑（入队、出队、阻塞、唤醒），但把具体的 <code>tryAcquire</code> 和 <code>tryRelease</code> 留给子类实现。ReentrantLock 的 Sync（FairSync/NonfairSync）实现 tryAcquire 时分别处理公平和非公平策略。Semaphore 的 Sync 在 tryAcquire 中操作的是"许可数"而非"重入计数"。</p>
+<strong>CLH 队列的入队过程：</strong>
+<p>当线程获取锁失败时，AQS 用 CAS（compareAndSetTail）把当前线程包装成 Node 加入队列尾部。入队后，前驱节点如果是 head（即当前线程是第一个等待者），会自旋尝试获取锁；否则通过 LockSupport.park() 挂起。释放锁时唤醒后继节点的线程。</p>
+<strong>state 在不同实现中的含义：</strong>
+<ul><li>ReentrantLock：state=0 未锁，state>=1 已锁（>=2 表示重入次数）</li>
+<li>Semaphore：state 表示剩余许可数</li>
+<li>CountDownLatch：state 表示还需要 countDown 的次数</li>
+<li>ReentrantReadWriteLock：高 16 位是读锁计数，低 16 位是写锁重入次数</li></ul>
+</div>
 
 <div class="highlight">
 <strong>AQS = AbstractQueuedSynchronizer</strong>，JUC 包的基石。ReentrantLock、Semaphore、CountDownLatch、ReentrantReadWriteLock 都基于它。
@@ -190,11 +302,31 @@ graph TD
 <div class="card">
 <table>
 <tr><th>特性</th><th>说明</th></tr>
-<tr><td>可重入</td><td>同一线程可多次获取同一把锁，state 递增，释放时递减</td></tr>
-<tr><td>公平/非公平</td><td>公平：先入队先获取。非公平：新来的直接 CAS 尝试（性能更好，默认）</td></tr>
-<tr><td>可中断</td><td><code>lockInterruptibly()</code> 等待时可响应中断</td></tr>
-<tr><td>可超时</td><td><code>tryLock(timeout, unit)</code> 超时返回 false</td></tr>
-<tr><td>多条件</td><td>一个 Lock 可创建多个 Condition，精确唤醒</td></tr>
+<tr class="row-expandable"><td>可重入</td><td>同一线程可多次获取同一把锁，state 递增，释放时递减</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>可重入性的实现依赖 AQS 的 state + exclusiveOwnerThread。获取锁时：如果当前线程 == exclusiveOwnerThread，state += 1（不阻塞）；如果当前线程 != exclusiveOwnerThread，state > 0 时入队等待。释放锁时 state -= 1，state == 0 时才真正释放（exclusiveOwnerThread 置 null 并唤醒后继节点）。</p>
+<p><strong>可重入的意义：</strong>允许递归调用加锁方法、子类调用父类加锁方法时不产生死锁。synchronized 也是可重入的（Monitor 的 _recursions 字段记录重入次数）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>公平/非公平</td><td>公平：先入队先获取。非公平：新来的直接 CAS 尝试（性能更好，默认）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p><strong>非公平锁为什么性能更好？</strong>当锁刚释放时，如果有一个新线程刚好来获取，可以直接用 CAS 拿到（避免了线程挂起/唤醒的上下文切换开销）。公平锁每次都要检查队列里有没有等待者——如果有，即使锁刚好空闲也要把自己加入队尾并让队首线程获取，多了一次上下文切换。</p>
+<p><strong>非公平锁的饥饿风险：</strong>在高并发场景下，队列中等待的线程可能一直获取不到锁（每次锁释放都被新来的线程"插队"抢走），产生线程饥饿。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>可中断</td><td><code>lockInterruptibly()</code> 等待时可响应中断</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>synchronized 获取锁时线程被阻塞在 BLOCKED 状态，无法响应中断（interrupt() 只能设置中断标志，不会抛出 InterruptedException）。ReentrantLock.lockInterruptibly() 在 AQS 排队等待时如果被中断，会抛出 InterruptedException 并取消等待。</p>
+<p><strong>应用场景：</strong>需要支持超时取消的任务（如用户在界面上点了"取消"按钮，后台线程等待获取锁时应该能响应取消操作）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>可超时</td><td><code>tryLock(timeout, unit)</code> 超时返回 false</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>tryLock(timeout, unit) 内部在 AQS 的 doAcquireNanos() 中实现——先尝试获取锁，失败后计算剩余超时时间，用 LockSupport.parkNanos(remainingNanos) 挂起。如果期间被唤醒但还没获取到锁，重新计算剩余时间继续。超时后返回 false，线程继续执行其他逻辑（降级处理）。</p>
+<p>tryLock()（无参数）立即返回——能拿到返回 true，拿不到直接返回 false，不等待、不排队。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>多条件</td><td>一个 Lock 可创建多个 Condition，精确唤醒</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>synchronized 只能配合一个 wait/notify 条件（使用对象本身的 Monitor），所有等待线程都在同一个 WaitSet 中，notifyAll() 会唤醒所有等待线程。ReentrantLock 可以创建多个 Condition（如 notFull 和 notEmpty），实现精确唤醒——生产者只唤醒消费者，消费者只唤醒生产者。</p>
+<p><strong>典型应用：</strong>有界阻塞队列 ArrayBlockingQueue 使用一个 ReentrantLock + 两个 Condition（notFull/notEmpty）实现精确的生产者-消费者协调，避免无效唤醒。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -203,13 +335,34 @@ graph TD
 <div class="card">
 <table>
 <tr><th></th><th>synchronized</th><th>ReentrantLock</th></tr>
-<tr><td>实现</td><td>JVM 层面，monitor 机制</td><td>JDK 层面，AQS + CAS</td></tr>
-<tr><td>释放</td><td>自动释放（代码块结束/异常）</td><td><strong>手动释放</strong>（finally 中 unlock）</td></tr>
-<tr><td>公平</td><td>非公平</td><td>可选公平/非公平</td></tr>
-<tr><td>可中断</td><td>不可中断</td><td>可中断</td></tr>
-<tr><td>条件</td><td>一个 wait/notify</td><td>多个 Condition</td></tr>
-<tr><td>性能</td><td>JDK 1.6+ 优化后差距不大</td><td>竞争激烈时略好</td></tr>
-<tr><td>建议</td><td>优先使用（简单、不易出错）</td><td>需要高级特性时使用</td></tr>
+<tr class="row-expandable"><td>实现</td><td>JVM 层面，monitor 机制</td><td>JDK 层面，AQS + CAS</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>synchronized 是 Java 关键字，实现逻辑在 HotSpot C++ 源码中（ObjectMonitor、锁升级、偏向锁撤销等）。ReentrantLock 是纯 Java 实现（依赖 Unsafe 的 CAS），用户可以阅读源码理解。两者的性能在 JDK 1.6 锁优化后差距已不大——轻量级锁和偏向锁的引入使 synchronized 在非竞争场景下几乎零开销。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>释放</td><td>自动释放（代码块结束/异常）</td><td><strong>手动释放</strong>（finally 中 unlock）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>自动释放是 synchronized 的最大优势——不会因为忘记释放锁而导致死锁。但也是劣势——你无法控制释放时机（不能跨方法持有锁，不能根据条件决定是否释放）。ReentrantLock 必须 finally unlock，但给了你灵活性——可以先获取锁 A 再释放锁 A 再获取锁 B（链式获取），而不需要嵌套同步块。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>公平</td><td>非公平</td><td>可选公平/非公平</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>synchronized 的 EntryList 不保证 FIFO 顺序——被唤醒的线程和新来的线程一起竞争锁。如果对公平性有要求（如银行系统的排队业务），ReentrantLock(true) 是更好的选择。但公平锁的性能通常比非公平锁差一个数量级。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>可中断</td><td>不可中断</td><td>可中断</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>synchronized 获取锁的线程处于 BLOCKED 状态，interrupt() 只能设置中断标志位但不会让线程从 BLOCKED 状态出来。这意味着如果持有锁的线程陷入死循环或长时间阻塞，等锁的线程永远无法被取消。ReentrantLock.lockInterruptibly() 的设计就是为了解决这个痛点。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>条件</td><td>一个 wait/notify</td><td>多个 Condition</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Object.wait()/notify() 基于对象本身的 Monitor，每个对象只有一个 WaitSet。Condition 把不同的等待条件分离到不同的等待队列中——Condition.await() 对应 Object.wait()，Condition.signal() 对应 Object.notify()，signalAll() 对应 notifyAll()。多个 Condition 让生产者-消费者模型更加清晰高效。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>性能</td><td>JDK 1.6+ 优化后差距不大</td><td>竞争激烈时略好</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>JDK 1.6 锁优化（偏向锁、轻量级锁、自旋锁、自适应自旋、锁消除、锁粗化）后，两者的性能差距从"数量级"缩小到"微调级"。实际上，许多 benchmark 显示在特定场景下 synchronized 甚至更快（因为 JIT 可以对 synchronized 做更多优化，如锁消除和锁粗化）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>建议</td><td>优先使用（简单、不易出错）</td><td>需要高级特性时使用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Java 官方推荐：能用 synchronized 就用 synchronized，需要下面任一特性时才用 ReentrantLock：可中断的锁获取、超时获取、公平锁、多条件变量、非块结构的锁（如链式加锁、锁转交读锁）。并发编程的复杂性是 bug 的主要来源，简单往往比灵活更重要。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -230,6 +383,16 @@ graph TD
         TL --> E2
     end
     Note["每个 Thread 有自己的 ThreadLocalMap<br/>ThreadLocal 只是 key"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>ThreadLocal 为什么可能内存泄漏：</strong>
+<p>ThreadLocalMap 的 Entry 继承了 WeakReference，Key（ThreadLocal 对象）是弱引用，Value 是强引用。当 ThreadLocal 对象没有外部强引用时，GC 会回收 Key，但 Value 仍然被 Entry 强引用着——此时 Key 变成 null，Value 永远无法被访问也无法被回收。只有线程退出时 ThreadLocalMap 才被清理。</p>
+<p><strong>线程池场景下的内存泄漏风险：</strong>线程池中的线程是复用的，不会退出，ThreadLocalMap 一直存在。如果不在任务完成后调用 remove()，Value 会一直累积占用内存，最终导致 OOM。实际生产中的表现为：运行一段时间后堆内存逐渐升高，dump 分析发现大量 ThreadLocal 相关的 Value 对象无法回收。</p>
+<strong>InheritableThreadLocal 的传递机制与陷阱：</strong>
+<p>Thread 构造函数会检查父线程的 inheritableThreadLocals 并复制到子线程。但线程池中线程是预创建的，调用 submit 时只是提交任务，不会再次复制。因此线程池下父子线程间传递 ThreadLocal 值会"丢失"——解决方案是使用阿里的 TransmittableThreadLocal（TTL），在 submit 时显式传递上下文。</p>
+<strong>ThreadLocal 底层数据结构：</strong>
+<p>ThreadLocalMap 不是普通的 Map——它使用<strong>开放地址法</strong>（线性探测）解决冲突，而不是链表/红黑树。因为 ThreadLocal 数量通常很少，开放地址法更简单高效。Entry[] 数组的初始容量 16，负载因子 2/3，扩容时翻倍。</p>
 </div>
 
 <div class="card">
@@ -264,16 +427,39 @@ flowchart TD
     F -->|"是"| G["创建非核心线程执行"]
     F -->|"否"| H["执行拒绝策略"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>流程设计的巧妙之处——先排队再扩容：</strong>
+<p>线程池的处理逻辑是：核心线程 → 队列 → 非核心线程 → 拒绝。很多人不理解为什么不是"核心 → 非核心 → 队列"。答案是：这样可以<strong>平滑处理流量突增</strong>。如果直接创建非核心线程，瞬时流量可能会创建大量线程然后很快释放，浪费资源。先排队给系统一个缓冲，队列满了再说明是持续高负载，才值得创建额外线程。</p>
+<strong>核心线程的创建与回收：</strong>
+<p>默认情况下核心线程不会被回收（即使空闲），但可以设置 <code>allowCoreThreadTimeOut(true)</code> 让核心线程在空闲超过 keepAliveTime 后也终止。线程的"创建"本质上是调用 threadFactory.newThread()，然后调用 thread.start()——不是简单的对象 new，而是创建操作系统线程。</p>
+<strong>线程回收逻辑：</strong>
+<p>Worker 线程在 run() 方法中通过一个 while 循环从 workQueue 拉取任务（getTask()）。如果队列为空且非核心线程空闲时间超过 keepAliveTime，getTask() 返回 null，Worker 退出循环并销毁。核心线程（默认）在 getTask() 中调用 workQueue.take()（无超时阻塞），而非核心线程调用 workQueue.poll(keepAliveTime, unit)。</p>
+</div>
 
 <h3 id="three-4">4. 四种拒绝策略</h3>
 
 <div class="card">
 <table>
 <tr><th>策略</th><th>行为</th></tr>
-<tr><td><strong>AbortPolicy</strong></td><td>抛 RejectedExecutionException（<strong>默认</strong>）</td></tr>
-<tr><td><strong>CallerRunsPolicy</strong></td><td>由提交任务的线程自己执行（提交速度变慢，自然降级）</td></tr>
-<tr><td><strong>DiscardPolicy</strong></td><td>直接丢弃新任务，不抛异常</td></tr>
-<tr><td><strong>DiscardOldestPolicy</strong></td><td>丢弃队列中最旧的任务，然后提交新任务</td></tr>
+<tr class="row-expandable"><td><strong>AbortPolicy</strong></td><td>抛 RejectedExecutionException（<strong>默认</strong>）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>默认策略，也是最"安全"的——直接告诉调用方"系统忙，无法处理"。调用方可以感知到拒绝并自行处理（重试、降级、记录日志）。缺点是如果调用方没有 catch 异常，会导致上层任务失败。适合"宁可失败也不丢数据"的场景。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>CallerRunsPolicy</strong></td><td>由提交任务的线程自己执行（提交速度变慢，自然降级）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>CallerRunsPolicy 是"优雅降级"的经典实现——当线程池满时，提交任务的线程（通常是 Tomcat 的 worker 线程或 RPC 线程）自己执行任务。这意味着提交线程会被暂时占用，无法继续提交新任务，从而<strong>自然降低任务到达速率</strong>。这是一种"反向压力"（Back Pressure）机制。</p>
+<p><strong>双刃剑：</strong>如果提交线程是处理用户请求的关键线程，执行任务耗时过长会导致该请求超时。而且可能让调用线程也变慢，导致连锁反应。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>DiscardPolicy</strong></td><td>直接丢弃新任务，不抛异常</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>最"危险"的策略——任务被静默丢弃，调用方无感知。通常需要搭配监控（记录丢弃数量）和告警。适用于"可丢弃的非关键任务"——比如给用户推送通知、发送非关键性日志等场景。生产环境中使用需要非常谨慎。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>DiscardOldestPolicy</strong></td><td>丢弃队列中最旧的任务，然后提交新任务</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>与 DiscardPolicy 不同，它优先丢弃"等最久的"任务而不是"最新的"任务。适用场景：队列中的旧任务即使执行了也可能意义不大（如实时性要求高的查询，等待超过 1 秒就没意义了），不如让新请求进来得到快速响应。</p>
+<p><strong>注意：</strong>如果使用优先级队列（PriorityBlockingQueue），"最旧"不一定是"优先级最低"，可能导致低优先级任务被无限期推迟。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -289,10 +475,22 @@ flowchart TD
 <strong>常见线程池：</strong>
 <table>
 <tr><th>类型</th><th>特点</th><th>风险</th></tr>
-<tr><td>newFixedThreadPool</td><td>固定核心=最大，无界队列</td><td>OOM</td></tr>
-<tr><td>newCachedThreadPool</td><td>核心=0，最大=MAX，SynchronousQueue</td><td>无限创建线程 OOM</td></tr>
-<tr><td>newScheduledThreadPool</td><td>定时/周期任务</td><td>—</td></tr>
-<tr><td>newSingleThreadExecutor</td><td>单线程，顺序执行</td><td>OOM</td></tr>
+<tr class="row-expandable"><td>newFixedThreadPool</td><td>固定核心=最大，无界队列</td><td>OOM</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>核心线程数和最大线程数相等（都是 nThreads），使用 LinkedBlockingQueue 作为工作队列（默认容量 Integer.MAX_VALUE，约 21 亿）。队列理论上永远不会满，所以永远不会创建非核心线程，也永远不会触发拒绝策略。风险：高并发下任务大量堆积在无界队列中，最终撑爆堆内存导致 OOM。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>newCachedThreadPool</td><td>核心=0，最大=MAX，SynchronousQueue</td><td>无限创建线程 OOM</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>核心线程=0，最大线程=Integer.MAX_VALUE，使用 SynchronousQueue（不存储任务，提交=直接交给线程执行）。只要有任务且无线程可用就创建新线程，线程空闲 60 秒后回收。适合大量短任务的场景。风险：任务到达速度超过线程执行速度时，会无限创建线程直到 OOM。每个线程默认 1MB 栈空间，10000 个线程就 10GB 内存。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>newScheduledThreadPool</td><td>定时/周期任务</td><td>—</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>基于 ScheduledThreadPoolExecutor，使用 DelayedWorkQueue（基于堆的优先级队列，按执行时间排序）。支持 schedule（延迟执行）、scheduleAtFixedRate（固定频率，以上一次开始时间计算）和 scheduleWithFixedDelay（固定间隔，以上一次结束时间计算）。底层也是 ThreadPoolExecutor，核心线程不会回收。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>newSingleThreadExecutor</td><td>单线程，顺序执行</td><td>OOM</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>核心线程=最大线程=1，使用 LinkedBlockingQueue（无界）。保证任务按提交顺序串行执行。适合需要顺序性保证的场景（如日志写入、事件处理）。风险与 FixedThreadPool 相同——无界队列可能导致 OOM。如果单线程执行过程中抛出异常，线程池会创建新线程继续执行后续任务。</p>
+</div></td></tr>
 </table>
 <strong>阿规/银行规范：</strong>不用 Executors，手动 new ThreadPoolExecutor。
 </div>

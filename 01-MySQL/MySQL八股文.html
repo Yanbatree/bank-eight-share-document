@@ -27,7 +27,7 @@
 
 <div class="main">
 
-<h1>🐬 MySQL 八股文</h1>
+<h1>MySQL 八股文</h1>
 
 <!-- ==================== 一、索引 ==================== -->
 <h2 id="one-1">一、索引</h2>
@@ -41,14 +41,47 @@ graph TD
     B --> D["好处: 树更矮，IO 更少"]
     C --> E["好处: 范围查询只需遍历链表"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么不用二叉树/红黑树？</strong>
+<p>二叉树在数据量大时高度会非常高（例如 1000 万行 → 树高约 23 层），每次查询需要 ~23 次 IO。B+ 树每个节点是一个页（16KB），可以存放成百上千个索引键，高度通常只有 3-4 层，IO 次数大幅降低。</p>
+<strong>为什么不用哈希索引？</strong>
+<p>哈希索引 O(1) 只能做等值查询，无法处理范围查询（WHERE id > 100）、排序（ORDER BY）、模糊匹配（LIKE 'abc%'）。而实际业务中范围查询非常常见。</p>
+<strong>为什么不用 B 树？</strong>
+<p>B 树的非叶子节点也存完整数据，导致每个页能存的键更少，树更高。B+ 树非叶子节点只存键，页内键密度大，树更矮。且 B+ 树叶子节点的双向链表天然支持范围查询。</p>
+<strong>InnoDB 中 B+ 树的实际结构</strong>
+<p>InnoDB 中 B+ 树就是聚簇索引的物理结构。叶子页之间通过双向指针连接，页内记录通过单向指针连接，形成有序链表。每次插入/删除可能触发页分裂/合并。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th>对比</th><th>哈希索引</th><th>B 树</th><th>B+ 树</th></tr>
-<tr><td>等值查询</td><td>✅ O(1)</td><td>✅ O(logN)</td><td>✅ O(logN)</td></tr>
-<tr><td>范围查询</td><td>❌ 不支持</td><td>✅ 需中序遍历</td><td>✅ 叶子链表直接扫</td></tr>
-<tr><td>排序</td><td>❌</td><td>⚠️ 复杂</td><td>✅ 天然有序</td></tr>
-<tr><td>树高度</td><td>—</td><td>较高（节点存数据）</td><td>更矮（节点只存键）</td></tr>
+<tr class="row-expandable"><td>等值查询</td><td>O(1)</td><td>O(logN)</td><td>O(logN)</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>等值查询详解：</strong>
+<p>哈希索引通过哈希函数直接定位到桶，再在桶内遍历链表（如果哈希冲突多会退化），等值查询理论 O(1)。但 InnoDB 的自适应哈希索引（AHI）只在热点页上建立哈希索引。</p>
+<p>B/B+ 树等值查询从根节点开始，每次通过二分查找确定下一层节点，直到叶子节点。B+ 树因为非叶子只存键，每次 IO 能覆盖更多数据范围，实际 IO 次数更少。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>范围查询</td><td>不支持</td><td>需中序遍历</td><td>叶子链表直接扫</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>范围查询是关键区分点：</strong>
+<p>实际业务中超过 70% 的查询包含范围条件（时间范围、ID 范围、分页等）。B+ 树只需找到第一个匹配的叶子节点，然后沿着双向链表向后扫描即可，非常高效。</p>
+<p>B 树需要在中序遍历中不断回溯父节点，路径更长、IO 更多。哈希索引完全无法处理范围查询（因为哈希值不保序）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>排序</td><td>不支持</td><td>复杂</td><td>天然有序</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>排序与 ORDER BY 的关系：</strong>
+<p>B+ 树叶子节点本身就是有序链表，执行 ORDER BY 时如果走索引，可以直接利用这个有序性，不需要额外的 filesort 操作。</p>
+<p>哈希索引的数据是无序存放的，任何排序都需要额外排序。B 树虽然数据总体有序，但叶子节点不互联，排序遍历需要中序遍历 + 栈辅助。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>树高度</td><td>—</td><td>较高（节点存数据）</td><td>更矮（节点只存键）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>树高度直接影响 IO 次数：</strong>
+<p>InnoDB 默认页大小 16KB。假设一行数据约 1KB，索引键 8 字节 + 指针 6 字节：</p>
+<ul><li>B 树：每个节点存完整行（1KB），一页约 16 行 → 扇出约 16 → 1000 万行需约 6 层</li>
+<li>B+ 树：非叶子节点只存键（14 字节），一页约 1170 个键 → 扇出约 1170 → 1000 万行仅需 3 层</li></ul>
+<p>每次 IO 可能是一次磁盘随机读（~10ms），3 层 vs 6 层意味着 30ms vs 60ms 的差距。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -61,12 +94,21 @@ graph TD
 <div class="mermaid">
 graph LR
     subgraph 聚簇索引
-        A["主键索引树<br/>叶子存&lt;b&gt;完整行数据&lt;/b&gt;"]
+        A["主键索引树<br/>叶子存<b>完整行数据</b>"]
     end
     subgraph 非聚簇索引
-        B["二级索引树<br/>叶子存&lt;b&gt;主键值&lt;/b&gt;"]
+        B["二级索引树<br/>叶子存<b>主键值</b>"]
     end
     B -->|"回表"| A
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>聚簇索引的物理含义：</strong>
+<p>聚簇索引的叶子节点就是数据页本身——数据和索引存在一起。InnoDB 按主键顺序存放数据，所以主键最好是自增的（避免页分裂）。如果没有显式定义主键，InnoDB 会选择第一个非空唯一索引，或者自动生成隐藏的 row_id。</p>
+<strong>非聚簇索引为什么需要回表：</strong>
+<p>二级索引的叶子存的是主键值 + 索引列，不包含完整行数据。当查询列超出索引覆盖范围时，需要用拿到的主键值再去聚簇索引查一次——这就是 <strong>回表</strong>。回表是一次额外的 B+ 树搜索，可能触发随机 IO。</p>
+<strong>MyISAM 的区别：</strong>
+<p>MyISAM 没有聚簇索引，所有索引的叶子都存的是数据文件的物理地址（行号），数据和索引分离存放。所以 MyISAM 的主键和二级索引查询效率一样，但范围查询没有 B+ 树链表优势。</p>
 </div>
 
 <div class="card">
@@ -82,15 +124,24 @@ sequenceDiagram
     participant Index2 as 二级索引(name)
     participant PK as 聚簇索引(id)
 
-    Note over Query,PK: ❌ 回表场景：SELECT * FROM user WHERE name='张三'
+    Note over Query,PK: 回表场景：SELECT * FROM user WHERE name='张三'
     Query->>Index2: 查 name='张三'
     Index2-->>Query: 得到主键 id=100
     Query->>PK: 用 id=100 查完整行
     PK-->>Query: 返回整行数据
 
-    Note over Query,PK: ✅ 覆盖索引：SELECT id,name FROM user WHERE name='张三'
+    Note over Query,PK: 覆盖索引：SELECT id,name FROM user WHERE name='张三'
     Query->>Index2: 查 name='张三'
     Index2-->>Query: 直接返回 id, name，不回表！
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>回表的代价：</strong>
+<p>回表意味着多一次完整的 B+ 树搜索，从根到叶子多一轮 IO。如果查询返回很多行（比如 LIMIT 1000），每行都要回表一次，变成 N+1 问题。优化器可能会因此放弃索引走全表扫描（当回表代价 > 全表扫描代价时）。</p>
+<strong>覆盖索引的极致优化：</strong>
+<p>EXPLAIN 的 Extra 列显示 <code>Using index</code> 即代表覆盖索引——查询完全在索引树内完成，不需要回表。这是最好的查询方式。常见做法：为高频查询建立"宽"联合索引，把所有需要的列都包含进去。</p>
+<strong>ICP 与覆盖索引的关系：</strong>
+<p>索引下推（ICP）是在回表之前的过滤优化——先在索引层过滤掉不满足条件的行，只对符合条件的行回表。但它仍然需要回表，只是减少回表次数。覆盖索引则完全消除了回表。两者可以配合使用。</p>
 </div>
 
 <div class="highlight">
@@ -107,6 +158,17 @@ graph LR
         Z["索引 (a,b,c)"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么非要最左列？</strong>
+<p>联合索引按 (a, b, c) 的顺序排序——先按 a 排，a 相同再按 b 排，b 相同再按 c 排。类似于字典先按拼音首字母排序。如果你跳过 a 直接查 b，索引就相当于未排序的乱序数据，无法用二分查找定位。</p>
+<strong>实际案例分析：</strong>
+<ul><li><code>WHERE a=1 AND c=3</code> → 只用到了 a 列索引（找到 a=1 的所有行，然后逐行过滤 c=3）</li>
+<li><code>WHERE a=1 AND b>2 AND c=3</code> → 用到了 a 和 b（范围查询会让后续列失效，c=3 需要回表过滤）</li>
+<li><code>WHERE a=1 AND b=2 ORDER BY c</code> → 完美——a,b 定位，c 直接利用索引排序</li></ul>
+<strong>如何利用这个原则优化 SQL？</strong>
+<p>把等值查询列放前面、范围查询列放后面、排序/分组列按顺序放。例如 <code>(status, user_id, create_time)</code> 适合 <code>WHERE status=1 AND user_id>100 ORDER BY create_time</code>。</p>
+</div>
 
 <div class="card">
 <strong>命中</strong>：<code>WHERE a=1</code> / <code>WHERE a=1 AND b=2</code> / <code>WHERE a=1 AND b=2 AND c=3</code><br/>
@@ -119,12 +181,35 @@ graph LR
 <div class="card">
 <table>
 <tr><th>场景</th><th>示例</th><th>原因</th></tr>
-<tr><td>!= / &lt;&gt;</td><td><code>WHERE status != 1</code></td><td>无法精确定位范围</td></tr>
-<tr><td>LIKE 前导模糊</td><td><code>WHERE name LIKE '%张'</code></td><td>无法二分定位起点</td></tr>
-<tr><td>列上有函数/运算</td><td><code>WHERE YEAR(time)=2024</code></td><td>破坏了索引值</td></tr>
-<tr><td>隐式类型转换</td><td><code>WHERE phone=13800138000</code> (phone是varchar)</td><td>MySQL 对索引列做了隐式转换</td></tr>
-<tr><td>OR 不全有索引</td><td><code>WHERE a=1 OR b=2</code>（b 没索引）</td><td rowspan="2">优化器认为全表更快</td></tr>
-<tr><td>违反最左前缀</td><td>联合索引 (a,b) 只查 b</td></tr>
+<tr class="row-expandable"><td>!= / &lt;&gt;</td><td><code>WHERE status != 1</code></td><td>无法精确定位范围</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>!= 意味着"除了 1 以外的所有值"，这不是一个连续区间，B+ 树无法定位一个起点然后向后扫描。优化器计算后发现大部分行都满足条件（如果只有 0/1 两个值还好，但如果有 0-100，!=1 返回 99% 数据），走全表扫描比索引+回表更快。</p>
+<p><strong>例外：</strong>如果结合其他等值条件（WHERE status != 1 AND user_id = 100），且 user_id 上有索引，优化器可能会走 user_id 索引。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>LIKE 前导模糊</td><td><code>WHERE name LIKE '%张'</code></td><td>无法二分定位起点</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>B+ 树按字符串字典序排序，'%张' 表示任意字符开头的字符串，优化器不知道从哪个位置开始扫描（可能是 'a张'、'b张'、'c张'...），所以放弃索引。</p>
+<p><strong>LIKE '张%' 可以走索引：</strong>因为知道以 '张' 开头，可以定位到 '张' 在 B+ 树中的位置，然后顺序扫描。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>列上有函数/运算</td><td><code>WHERE YEAR(time)=2024</code></td><td>破坏了索引值</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>索引存的是 time 列的原始值（如 '2024-03-15 10:30:00'），但 WHERE 条件是对 YEAR(time) 的结果（2024）进行匹配。优化器无法把索引值和函数结果对应起来。</p>
+<p><strong>解决方案：</strong>改为 <code>WHERE time >= '2024-01-01' AND time < '2025-01-01'</code>，这是等价的纯范围条件，可以走索引。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>隐式类型转换</td><td><code>WHERE phone=13800138000</code> (phone是varchar)</td><td>MySQL 对索引列做了隐式转换</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>当字符串列和数字比较时，MySQL 会把字符串转为数字——相当于对 phone 列执行了 CAST(phone AS SIGNED)。这在优化器看来就是"列上有函数"，索引失效。</p>
+<p><strong>反过来不失效：</strong><code>WHERE id = '100'</code>（id 是 int），MySQL 会把 '100' 转为数字，不会对 id 列做转换，索引正常。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>OR 不全有索引</td><td><code>WHERE a=1 OR b=2</code>（b 没索引）</td><td rowspan="2">优化器认为全表更快</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>OR 意味着两个条件的结果取并集。如果 b 没有索引，b=2 只能全表扫描，a 的索引也无法限制扫描范围，优化器直接选择全表扫描。</p>
+<p><strong>解决方案：</strong>把 OR 拆成 UNION（如果两个条件各自都有索引），或者给 b 也加索引。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>违反最左前缀</td><td>联合索引 (a,b) 只查 b</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>详见上面"最左前缀原则"——跳过第一列就相当于没有这个索引。但如果查询是 <code>WHERE a=1 OR b=2</code> 且 b 有单独索引，可以通过 index_merge（索引合并）优化来利用两个索引的 bit map 做交集/并集。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -139,6 +224,18 @@ flowchart LR
     subgraph "有 ICP (5.6+)"
         D["存储引擎: 按 name AND age 一起过滤"] --> E["只返回符合全部条件的行"]
     end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>ICP 解决什么问题？</strong>
+<p>MySQL 架构中，存储引擎（InnoDB）负责从索引中取数据，Server 层负责在 WHERE 条件中做最终过滤（尤其是涉及非索引列的条件）。在没有 ICP 时，存储引擎把所有满足索引条件的行都返回给 Server 层，由 Server 层再过滤非索引条件——这意味着很多行被无谓地回表、传输、然后丢弃。</p>
+<p>ICP 把部分 WHERE 条件下推到存储引擎层，让引擎在索引扫描时就利用这些条件过滤。虽然非索引列不能在索引中定位，但可以在扫描过程中判断——命中了才回表。</p>
+<strong>ICP 触发条件：</strong>
+<ul><li>查询使用二级索引（非聚簇索引）</li>
+<li>WHERE 条件中包含索引列 + 非索引列</li>
+<li>EXPLAIN 的 Extra 列显示 <code>Using index condition</code></li></ul>
+<strong>ICP 的局限性：</strong>
+<p>ICP 只能下推"可以在索引扫描过程中判断"的条件（比如 WHERE name LIKE '张%' AND age > 20，name 走索引，age 可以在索引叶子节点上判断）。它不能替代覆盖索引，因为回表仍然存在，只是次数减少。</p>
 </div>
 
 <div class="highlight">
@@ -162,14 +259,37 @@ graph TD
     ACID --> I
     ACID --> D
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>原子性 — 为什么用 undo log 而不是直接回滚？</strong>
+<p>事务可能在执行到一半时崩溃。undo log 在修改数据前先记录"旧值"，崩溃恢复时通过 undo log 把已修改的页恢复到事务开始前的状态。undo log 也是 MVCC 的基础（存储历史版本）。</p>
+<strong>一致性 — 为什么说是"由 A+I+D 共同保证"？</strong>
+<p>一致性是目的，原子性、隔离性、持久性是手段。数据库本身还通过约束（主键、外键、NOT NULL、CHECK）来保证数据完整性。如果业务写错了 SQL（比如把所有人的年龄设成 -1），数据库无法阻止——这属于业务一致性。</p>
+<strong>隔离性 — MVCC + 锁如何配合？</strong>
+<p>MVCC 负责"快照读"（普通 SELECT）——读历史版本，不加锁，高并发。锁（行锁、间隙锁）负责"当前读"（SELECT ... FOR UPDATE / UPDATE / DELETE）——读最新版本，加锁，防止并发冲突。两者互补实现 RR 级别的隔离性。</p>
+<strong>持久性 — redo log 的 WAL 机制</strong>
+<p>如果每次事务提交都直接刷数据页到磁盘，会产生大量随机 IO。redo log 是顺序写入（追加到日志文件末尾），速度快。崩溃后通过 redo log 重放（redo）来恢复已提交但未刷盘的数据。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th>特性</th><th>说明</th><th>实现机制</th></tr>
-<tr><td>原子性</td><td>事务不可分割，全做或全不做</td><td>undo log 回滚</td></tr>
-<tr><td>一致性</td><td>事务前后数据完整性约束不变</td><td>其他三个特性共同保证</td></tr>
-<tr><td>隔离性</td><td>并发事务互不干扰</td><td>MVCC + 锁机制</td></tr>
-<tr><td>持久性</td><td>提交后数据永久保存</td><td>redo log + 刷盘</td></tr>
+<tr class="row-expandable"><td>原子性</td><td>事务不可分割，全做或全不做</td><td>undo log 回滚</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>undo log 记录的是"修改前的数据"——INSERT 对应写一条 DELETE 的 undo；UPDATE 对应写一条反向 UPDATE 的 undo。回滚时按 undo log 依次逆向执行。undo log 本身也是通过 redo log 保证持久性的——undo 页的修改也写 redo。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>一致性</td><td>事务前后数据完整性约束不变</td><td>其他三个特性共同保证</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>数据库层面的约束包括：实体完整性（主键唯一）、参照完整性（外键约束）、用户定义完整性（NOT NULL、CHECK、触发器）。InnoDB 通过 doublewrite buffer（防止页部分写）和 crash recovery 机制保证数据页的一致性。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>隔离性</td><td>并发事务互不干扰</td><td>MVCC + 锁机制</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>MVCC 的核心是 ReadView——一个事务开始时生成的数据快照。不同隔离级别的 ReadView 生成时机不同：RC 每次查询生成新快照，RR 事务开始时生成一次。锁（共享锁 S / 排他锁 X / 意向锁 IS/IX）用于写操作的并发控制。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>持久性</td><td>提交后数据永久保存</td><td>redo log + 刷盘</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>事务提交时，redo log 必须落盘（fsync），但数据页可以不立即刷盘（由后台线程异步刷）。这就是 WAL 的核心思想——只需保证日志持久化，数据最终会持久化。MySQL 通过 <code>innodb_flush_log_at_trx_commit=1</code> 保证每次提交都 fsync redo log。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -181,23 +301,35 @@ sequenceDiagram
     participant DB as 数据库
     participant T2 as 事务 T2
 
-    Note over T1,T2: ❌ 脏读
+    Note over T1,T2: 脏读
     T1->>DB: 修改 age=20（未提交）
     T2->>DB: 读取 age → 20
     T1->>DB: ROLLBACK（age 恢复原值）
     Note over T2: T2 读到了"脏数据"
 
-    Note over T1,T2: ❌ 不可重复读
+    Note over T1,T2: 不可重复读
     T1->>DB: 读取 age → 18
     T2->>DB: UPDATE age=20 + COMMIT
     T1->>DB: 再次读取 age → 20
     Note over T1: 两次读同一个数据，结果不同
 
-    Note over T1,T2: ❌ 幻读
+    Note over T1,T2: 幻读
     T1->>DB: SELECT COUNT(*) → 100
     T2->>DB: INSERT 一行 + COMMIT
     T1->>DB: SELECT COUNT(*) → 101
     Note over T1: 两次查，行数不同
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>脏读 vs 不可重复读 vs 幻读——本质区别：</strong>
+<ul><li><strong>脏读：</strong>读到了其他事务<strong>未提交</strong>的修改——这是最严重的，因为那些修改可能被回滚</li>
+<li><strong>不可重复读：</strong>同一行数据，两次读到的<strong>值不一样</strong>（被其他事务 UPDATE 并提交了）——针对已提交的修改</li>
+<li><strong>幻读：</strong>同样的查询条件，两次读到的<strong>行数不一样</strong>（被其他事务 INSERT/DELETE 了）——针对新增/删除的行</li></ul>
+<strong>InnoDB 如何在 RR 级别解决幻读？</strong>
+<p>快照读（普通 SELECT）：通过 MVCC 的 ReadView，只读事务开始前已提交的数据，看不到后来的 INSERT。<br/>
+当前读（SELECT FOR UPDATE）：通过 Next-Key Lock（行锁 + 间隙锁）锁住查询范围，阻止其他事务在间隙中 INSERT。</p>
+<strong>RR 级别真的完全解决幻读了吗？</strong>
+<p>没有完全解决。如果 T1 先快照读（SELECT），然后 T2 INSERT 并提交，接着 T1 用当前读（SELECT FOR UPDATE 或 UPDATE），T1 会看到 T2 插入的行——这种情况下发生了幻读。解决办法是开启事务后立即执行一次当前读来锁住范围。</p>
 </div>
 
 <h3 id="two-3">3. 四种隔离级别</h3>
@@ -205,10 +337,23 @@ sequenceDiagram
 <div class="card">
 <table>
 <tr><th>隔离级别</th><th>脏读</th><th>不可重复读</th><th>幻读</th><th>实现</th></tr>
-<tr><td>READ UNCOMMITTED</td><td>✅ 可能</td><td>✅</td><td>✅</td><td>不加锁</td></tr>
-<tr><td>READ COMMITTED</td><td>❌</td><td>✅ 可能</td><td>✅</td><td>每次 SELECT 新建 ReadView</td></tr>
-<tr><td><strong>REPEATABLE READ</strong></td><td>❌</td><td>❌</td><td>❌ (MVCC 基本解决)</td><td>事务首次 SELECT 建 ReadView + Next-Key Lock</td></tr>
-<tr><td>SERIALIZABLE</td><td>❌</td><td>❌</td><td>❌</td><td>所有读加共享锁</td></tr>
+<tr class="row-expandable"><td>READ UNCOMMITTED</td><td>可能</td><td>可能</td><td>可能</td><td>不加锁</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>最低隔离级别，几乎没有并发控制。事务可以读到其他事务未提交的修改（脏读）。在生产环境中几乎不用。唯一的好处是并发性能最高，因为不需要任何锁或版本判断。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>READ COMMITTED</td><td>防止</td><td>可能</td><td>可能</td><td>每次 SELECT 新建 ReadView</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>每次 SELECT 语句执行时创建新的 ReadView（快照），所以看不到未提交的数据（避免了脏读），但可以看到其他事务在两次 SELECT 之间提交的修改（不可重复读）。这是 Oracle 的默认隔离级别。许多互联网公司也使用 RC + 开启 binlog row 格式来避免主从不一致。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>REPEATABLE READ</strong></td><td>防止</td><td>防止</td><td>防止 (MVCC 基本解决)</td><td>事务首次 SELECT 建 ReadView + Next-Key Lock</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>InnoDB 的默认隔离级别。事务开始时创建 ReadView 并复用，所以一直看到相同的数据快照（可重复读）。通过 Next-Key Lock（行锁 + 间隙锁）阻止其他事务在查询范围内插入数据来防幻读。但要注意：RR 下如果两个事务同时 UPDATE 同一行，后提交的会触发"在可重复读之前数据已被修改"的错误。</p>
+<p><strong>RR vs RC 怎么选？</strong>RC 并发更好（间隙锁少），RR 一致性更好（可重复读）。互联网高并发场景常用 RC + row 格式 binlog。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>SERIALIZABLE</td><td>防止</td><td>防止</td><td>防止</td><td>所有读加共享锁</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>最高隔离级别。所有普通 SELECT 自动转为 SELECT ... FOR SHARE（加共享锁），相当于所有读都是当前读且加锁。并发度最低，容易死锁。一般只在非常严格的场景（如金融账务核对）中使用。</p>
+</div></td></tr>
 </table>
 <small style="color:var(--orange)">InnoDB 默认 RR 级别，通过 MVCC（快照读）+ Next-Key Lock（当前读）基本解决幻读</small>
 </div>
@@ -228,8 +373,20 @@ graph TD
         R["ReadView: 活跃事务列表<br/>m_ids = [200]"]
         R -->|"trx_id=300 > max → 不可见"| V3
         R -->|"trx_id=200 在 m_ids 中 → 不可见"| V2
-        R -->|"trx_id=100 < min → 可见 ✅"| V1
+        R -->|"trx_id=100 < min → 可见"| V1
     end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>MVCC 的三个隐藏列：</strong>
+<p>InnoDB 每行数据都有三个隐藏列：<code>DB_TRX_ID</code>（最近修改该行的事务 ID，6 字节）、<code>DB_ROLL_PTR</code>（回滚指针，指向 undo log 中的旧版本，7 字节）、<code>DB_ROW_ID</code>（隐藏主键，6 字节，当表没有显式主键时自动生成）。</p>
+<strong>ReadView 的可见性判断算法：</strong>
+<ul><li>trx_id == creator_trx_id → 可见（自己修改的）</li>
+<li>trx_id < min_trx_id → 可见（事务开始前已提交）</li>
+<li>trx_id >= max_trx_id → 不可见（事务开始后才启动的事务修改的）</li>
+<li>min_trx_id <= trx_id < max_trx_id → 如果在 m_ids 中则不可见（活跃事务修改的），否则可见（已提交的）</li></ul>
+<strong>undo log 版本链的清理：</strong>
+<p>当没有任何 ReadView 需要某个历史版本时（所有活跃事务都不再需要），Purge 线程会清理这些旧的 undo log。长事务会导致 undo log 膨胀（因为旧版本不能被清理）。</p>
 </div>
 
 <div class="highlight">
@@ -250,13 +407,33 @@ graph LR
     end
     F["Next-Key Lock = Gap Lock + Record Lock<br/>锁定区间: (10,20] 或 (20,30]"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Record Lock（记录锁）：</strong>
+<p>锁定单个索引记录。例如 <code>SELECT * FROM user WHERE id=1 FOR UPDATE</code> 会在 id=1 的聚簇索引记录上加 X 锁。如果没有索引或索引失效，会退化为表锁。</p>
+<strong>Gap Lock（间隙锁）：</strong>
+<p>锁定索引记录之间的间隙，阻止其他事务在间隙中 INSERT。只在 RR 级别下生效。例如已有 id=10 和 id=20 两行，间隙锁会锁住 (10, 20) 这个区间。Gap Lock 之间不冲突——两个事务可以同时持有同一个间隙的 Gap Lock。</p>
+<strong>Next-Key Lock（临键锁）：</strong>
+<p>Record Lock + Gap Lock 的组合，锁定一个左开右闭的区间。例如 (10, 20] 表示锁住 10-20 之间的间隙和 id=20 这条记录。这是 InnoDB 在 RR 级别下防止幻读的核心机制。</p>
+<strong>锁的退化：</strong>
+<p>当查询条件是唯一索引的等值查询（如 WHERE id=10）且记录存在时，Next-Key Lock 退化为 Record Lock。当查询条件是唯一索引等值查询但记录不存在时，退化为 Gap Lock。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th>锁</th><th>作用</th><th>备注</th></tr>
-<tr><td>Record Lock</td><td>锁定单条索引记录</td><td>精确命中</td></tr>
-<tr><td>Gap Lock</td><td>锁定索引间隙</td><td>阻止 INSERT，只在 RR 级别</td></tr>
-<tr><td>Next-Key Lock</td><td>Record + Gap</td><td>InnoDB 默认行锁形式</td></tr>
+<tr class="row-expandable"><td>Record Lock</td><td>锁定单条索引记录</td><td>精确命中</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Record Lock 锁的是索引记录，不是数据行本身。如果表没有索引，MySQL 会锁定所有扫描到的行（实际上退化为表锁）。当 WHERE 条件是唯一索引且命中唯一行时，只锁这一行。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Gap Lock</td><td>锁定索引间隙</td><td>阻止 INSERT，只在 RR 级别</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Gap Lock 是 RR 级别特有的。RC 级别没有 Gap Lock（这也是 RC 并发性能更好的原因之一）。Gap Lock 只阻止 INSERT，不阻止 SELECT 或 UPDATE。多个事务可以同时持有同一个 Gap Lock（因为 Gap Lock 之间不互斥）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Next-Key Lock</td><td>Record + Gap</td><td>InnoDB 默认行锁形式</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>在 RR 级别下，InnoDB 默认使用 Next-Key Lock 来扫描索引（不仅是精确等值查询）。这是为了解决幻读——不仅当前存在的行被锁定，还会锁住间隙阻止插入。如果查询条件覆盖了多个记录和间隙，会产生多个 Next-Key Lock。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -275,8 +452,20 @@ sequenceDiagram
     Note over A: 等待 id=2 的锁...
     B->>DB: UPDATE SET age=35 WHERE id=1
     Note over B: 等待 id=1 的锁...
-    Note over DB: 💀 死锁！互相等待
+    Note over DB: 死锁！互相等待
     DB-->>A: 回滚代价小的事务
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>InnoDB 的死锁检测机制：</strong>
+<p>InnoDB 通过等待图（wait-for graph）检测死锁——事务 A 等待事务 B 的锁，事务 B 又等待事务 A 的锁，形成了循环。InnoDB 会回滚"undo log 量最小"的事务（代价最小的），另一个事务获得锁继续执行。</p>
+<p><code>innodb_deadlock_detect=ON</code>（默认开启）会在每次加锁等待时检查是否存在死锁。在高并发场景下，死锁检测本身也是性能瓶颈（O(n²) 复杂度），可以通过 <code>innodb_lock_wait_timeout</code> 来配合使用。</p>
+<strong>死锁预防策略：</strong>
+<ul><li><strong>统一访问顺序：</strong>所有事务按相同的顺序访问资源（例如都先操作 id=1 再操作 id=2）</li>
+<li><strong>缩短事务：</strong>把非数据库操作（RPC 调用、文件 IO）移出事务</li>
+<li><strong>合理索引：</strong>索引可以缩小锁范围，避免不必要的 Gap Lock</li>
+<li><strong>RC 级别：</strong>RC 没有 Gap Lock，减少锁冲突概率</li>
+<li><strong>分布式锁：</strong>在应用层先获取锁再操作，但引入了额外的复杂度</li></ul>
 </div>
 
 <div class="highlight">
@@ -291,10 +480,22 @@ sequenceDiagram
 <div class="card">
 <table>
 <tr><th></th><th>redo log</th><th>undo log</th></tr>
-<tr><td>作用</td><td>崩溃恢复，保证持久性</td><td>事务回滚 + MVCC，保证原子性</td></tr>
-<tr><td>记录内容</td><td>物理日志：页的修改</td><td>逻辑日志：修改前的数据</td></tr>
-<tr><td>写入时机</td><td>事务执行中写入 buffer</td><td>修改数据前先写入</td></tr>
-<tr><td>存储位置</td><td>redo log file（循环写）</td><td>undo 表空间</td></tr>
+<tr class="row-expandable"><td>作用</td><td>崩溃恢复，保证持久性</td><td>事务回滚 + MVCC，保证原子性</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>redo log 和 undo log 的定位完全不同：redo 是向前滚动（重放已提交事务），undo 是向后滚动（撤销未提交事务）。崩溃恢复时，先 redo 把已提交的修复，再 undo 把未提交的回滚。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>记录内容</td><td>物理日志：页的修改</td><td>逻辑日志：修改前的数据</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>redo log 记录的是"在某个表空间的某个页面的某个偏移量上写入了什么数据"——物理层面的修改。undo log 记录的是"把某行数据的某列从什么值改成了什么值"——逻辑层面的修改。物理日志回放快但不可读，逻辑日志可读但回放慢。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>写入时机</td><td>事务执行中写入 buffer</td><td>修改数据前先写入</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>redo log 写入流程：事务修改数据 → 先写 redo log buffer（内存）→ 事务提交时 fsync 到磁盘。undo log 在修改数据之前就要写入（并记录对应的 redo 来保护 undo 本身），因为回滚和 MVCC 都需要它。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>存储位置</td><td>redo log file（循环写）</td><td>undo 表空间</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>redo log 是固定大小的循环文件（默认 48MB x 2），写满后触发 checkpoint 把脏页刷盘，然后覆盖旧日志。undo log 存在 undo 表空间中（innodb_undo 目录），可以自动扩展，但长事务会导致 undo 膨胀。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -310,6 +511,15 @@ flowchart LR
     F --> G["返回客户端成功"]
     G -.->|"后台异步"| H["脏页刷盘"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要 WAL？</strong>
+<p>假设没有 WAL：每次 UPDATE 都要找到对应数据页（可能不在内存中，需要磁盘 IO），修改后立即刷盘。如果修改涉及多个页（比如更新了索引），就需要多次随机 IO。WAL 把随机写转为顺序写——只需把修改记录追加到 redo log 末尾，数据页可以等后台空闲时再批量刷盘。</p>
+<strong>redo log 的循环写入：</strong>
+<p>redo log 有固定大小（innodb_log_file_size），由两个文件组成（ib_logfile0 和 ib_logfile1），循环写入。write pos 是当前写入位置，checkpoint 是已刷盘位置。当 write pos 追上 checkpoint 时，必须等待 checkpoint 推进（脏页刷盘），此时数据库写入会暂停。</p>
+<strong>checkpoint 机制：</strong>
+<p>checkpoint 把 buffer pool 中的脏页批量刷到磁盘，然后更新 redo log 的 checkpoint 位置。InnoDB 有 sharp checkpoint（暴力刷所有脏页，发生在关闭时）和 fuzzy checkpoint（逐步刷，正常运行时的策略）。Master Thread 每隔一定时间自动触发 fuzzy checkpoint。</p>
+</div>
 
 <div class="highlight">
 <strong>Write-Ahead Logging：</strong>先写日志再写磁盘。崩溃后靠 redo log 重放恢复。避免每次更新都随机写磁盘。
@@ -320,10 +530,23 @@ flowchart LR
 <div class="card">
 <table>
 <tr><th></th><th>binlog</th><th>redo log</th></tr>
-<tr><td>层级</td><td>Server 层（所有引擎通用）</td><td>InnoDB 引擎层</td></tr>
-<tr><td>内容</td><td>逻辑日志（SQL/行变更）</td><td>物理日志</td></tr>
-<tr><td>用途</td><td>主从复制、数据恢复</td><td>崩溃恢复</td></tr>
-<tr><td>写入方式</td><td>事务提交时一次性写</td><td>事务执行中持续写</td></tr>
+<tr class="row-expandable"><td>层级</td><td>Server 层（所有引擎通用）</td><td>InnoDB 引擎层</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>binlog 是 MySQL Server 层实现的，所有存储引擎（InnoDB、MyISAM、Memory）都支持。redo log 是 InnoDB 特有的，其他引擎没有。这意味着即使你用 MyISAM 引擎，binlog 仍然会生成，但没有 redo log 的保护。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>内容</td><td>逻辑日志（SQL/行变更）</td><td>物理日志</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>binlog 的三种格式：</strong><br/>1. <strong>STATEMENT</strong>：记录 SQL 语句本身，量小但可能主从不一致（如使用了 NOW()）<br/>2. <strong>ROW</strong>（推荐）：记录每行数据的具体变更，量大但精确<br/>3. <strong>MIXED</strong>：默认 STATEMENT，特殊情况用 ROW</p>
+<p>redo log 记录的是页的物理修改（比如"在页号 100 的偏移 200 处写入 4 字节数据"），与 SQL 无关。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>用途</td><td>主从复制、数据恢复</td><td>崩溃恢复</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>binlog 用于：主从复制（从库重放 binlog）、基于时间点的数据恢复（用 mysqlbinlog 工具回放）、Canal/Maxwell 等 CDC 工具订阅数据变更。redo log 只在崩溃恢复时使用（将未刷盘的已提交事务的数据页恢复）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>写入方式</td><td>事务提交时一次性写</td><td>事务执行中持续写</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>binlog 在事务提交时一次性写入（这就是为什么两阶段提交是必要的——需要协调 redo log 和 binlog 的写入顺序）。redo log 在事务执行过程中持续写入 buffer，提交时 fsync 落盘。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -335,13 +558,24 @@ sequenceDiagram
     participant R as redo log
     participant B as binlog
 
-    T->>R: ① 写入 redo log，状态=prepare
-    T->>B: ② 写入 binlog
-    T->>R: ③ redo log 状态改为 commit
+    T->>R: 写入 redo log，状态=prepare
+    T->>B: 写入 binlog
+    T->>R: redo log 状态改为 commit
 
     Note over T,R: 崩溃恢复判断：
     Note over T,R: redo prepare + binlog 完整 → 提交
     Note over T,R: redo prepare + binlog 不完整 → 回滚
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要两阶段提交？</strong>
+<p>redo log 和 binlog 是两个独立的日志系统，需要保证它们的一致性。如果先写 redo 再写 binlog——写完 redo 后崩溃，binlog 没有这条记录，从库会丢失这条数据（主从不一致）。如果先写 binlog 再写 redo——写完 binlog 后崩溃，redo 没有记录，崩溃恢复后主库没有这条数据但从库有（还是不一致）。两阶段提交通过 prepare + commit 机制保证了要么都成功，要么都失败。</p>
+<strong>崩溃恢复的判断逻辑：</strong>
+<ul><li>redo log 处于 prepare 状态 + binlog 完整 → 说明 binlog 已写入，事务应该提交，重做 redo</li>
+<li>redo log 处于 prepare 状态 + binlog 不完整 → 说明 binlog 未写入，事务应该回滚</li>
+<li>redo log 处于 commit 状态 → 正常提交了，redo 重放即可</li></ul>
+<strong>组提交优化（Group Commit）：</strong>
+<p>MySQL 5.6+ 引入了组提交，将多个事务的 binlog 写入和 redo log fsync 合并为一次操作，大幅提升写入性能。三个阶段：flush（刷 binlog）、sync（fsync binlog）、commit（redo commit），每个阶段可以攒批处理。</p>
 </div>
 
 <div class="highlight">
@@ -355,10 +589,19 @@ sequenceDiagram
 
 <div class="mermaid">
 flowchart LR
-    A["① 连接器<br/>建立连接，权限验证"] --> B["② 分析器<br/>词法分析 + 语法分析"]
-    B --> C["③ 优化器<br/>选索引、确定 JOIN 顺序"]
-    C --> D["④ 执行器<br/>调用引擎接口获取数据"]
+    A["连接器<br/>建立连接，权限验证"] --> B["分析器<br/>词法分析 + 语法分析"]
+    B --> C["优化器<br/>选索引、确定 JOIN 顺序"]
+    C --> D["执行器<br/>调用引擎接口获取数据"]
     D --> E["存储引擎<br/>InnoDB / MyISAM"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>各阶段详解：</strong>
+<p><strong>连接器：</strong>TCP 握手 → 身份认证（用户名密码）→ 权限读取（此后连接内的权限不会更新）。连接用完后通过连接池管理，长连接可能导致内存占用高（MySQL 在执行过程中使用的内存都分配在连接对象中）。</p>
+<p><strong>分析器：</strong>词法分析（识别关键字、表名、列名）→ 语法分析（检查 SQL 语法是否符合 MySQL 规则）→ 生成解析树。如果表名/列名不存在，在这个阶段报错。</p>
+<p><strong>优化器：</strong>决定用哪个索引、JOIN 的顺序（小表驱动大表）、是否用覆盖索引等。通过成本模型（基于表统计信息、索引基数等）估算不同方案的代价，选最优方案。可以通过 <code>EXPLAIN FORMAT=JSON</code> 查看优化器的成本和选择理由。</p>
+<p><strong>执行器：</strong>判断用户对表的权限 → 调用存储引擎接口逐行获取数据 → 对于带索引的查询，根据优化器的执行计划一条条取数据。</p>
+<p><strong>查询缓存（8.0 已移除）：</strong>MySQL 8.0 移除了查询缓存，因为在高并发下查询缓存的锁竞争非常严重，弊大于利。</p>
 </div>
 
 <h3 id="four-2">2. EXPLAIN 关键字段</h3>
@@ -366,11 +609,39 @@ flowchart LR
 <div class="card">
 <table>
 <tr><th>字段</th><th>含义</th><th>好 / 坏</th></tr>
-<tr><td><strong>type</strong></td><td>访问类型</td><td>system > const > eq_ref > <strong>ref</strong> > <strong>range</strong> > index > <strong>ALL</strong></td></tr>
-<tr><td><strong>key</strong></td><td>实际使用的索引</td><td>有索引名 ✅ / NULL ❌</td></tr>
-<tr><td><strong>rows</strong></td><td>预估扫描行数</td><td>越小越好</td></tr>
-<tr><td><strong>Extra</strong></td><td>额外信息</td><td><code>Using index</code> ✅ / <code>Using filesort</code> ❌ / <code>Using temporary</code> ❌</td></tr>
-<tr><td><strong>key_len</strong></td><td>索引使用的字节数</td><td>越大说明用的列越多</td></tr>
+<tr class="row-expandable"><td><strong>type</strong></td><td>访问类型</td><td>system > const > eq_ref > <strong>ref</strong> > <strong>range</strong> > index > <strong>ALL</strong></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>各类型含义：</strong>
+<ul><li><strong>system：</strong>表只有一行数据（系统表），几乎见不到</li>
+<li><strong>const：</strong>主键或唯一索引的等值查询，最多返回一行（WHERE id=1）</li>
+<li><strong>eq_ref：</strong>JOIN 时被驱动表走主键/唯一索引，每个驱动行匹配至多一行</li>
+<li><strong>ref：</strong>非唯一索引等值查询（WHERE name='张三'），可能返回多行</li>
+<li><strong>range：</strong>索引范围扫描（WHERE id > 100, BETWEEN, IN）</li>
+<li><strong>index：</strong>全索引扫描（扫整个索引而非全表，如 COUNT(*) 走二级索引）</li>
+<li><strong>ALL：</strong>全表扫描——需要优化的信号</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>key</strong></td><td>实际使用的索引</td><td>有索引名 / NULL</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>key 显示 MySQL 实际选择使用的索引名称。如果是 NULL 说明没有使用索引。possible_keys 显示候选索引列表，如果 possible_keys 有值但 key 是 NULL，可能优化器认为全表扫描更快（例如表很小，或索引区分度不够）。可以用 <code>FORCE INDEX</code> 强制指定索引对比效果。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>rows</strong></td><td>预估扫描行数</td><td>越小越好</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>rows 是优化器根据统计信息估算的需要扫描的行数，不是实际行数。当 rows 远大于实际返回行数时，说明索引选择性差或统计信息过期。可以通过 <code>ANALYZE TABLE</code> 更新统计信息。rows 的估算基于索引基数（Cardinality），通过采样得到。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Extra</strong></td><td>额外信息</td><td><code>Using index</code> / <code>Using filesort</code> / <code>Using temporary</code></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>关键 Extra 值：</strong>
+<ul><li><code>Using index</code>（好）：覆盖索引，不需要回表</li>
+<li><code>Using index condition</code>（中等）：索引下推（ICP），在索引层过滤后再回表</li>
+<li><code>Using where</code>（一般）：Server 层对存储引擎返回的数据做了 WHERE 过滤</li>
+<li><code>Using filesort</code>（坏）：需要额外排序（内存或磁盘），可优化的信号</li>
+<li><code>Using temporary</code>（坏）：需要临时表来处理查询（如 GROUP BY + ORDER BY 不同列），严重影响性能</li>
+<li><code>Using join buffer</code>（需关注）：JOIN 时使用了 join buffer（被驱动表没走索引）</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>key_len</strong></td><td>索引使用的字节数</td><td>越大说明用的列越多</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>key_len 可以帮助判断联合索引实际用了多少列。例如联合索引 (name VARCHAR(50), age INT)，如果 key_len=152（UTF-8 下 VARCHAR(50) = 50*3+2），说明只用了 name 列；如果 key_len=156（加上 INT 的 4 字节），说明两列都用了。可以用这个值来验证最左前缀是否按预期工作。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -388,6 +659,18 @@ flowchart TD
     G -->|"否"| I{"扫描行数多？"}
     I -->|"是"| J["优化 SQL 逻辑 / 分页"]
     I -->|"否"| K["考虑读写分离 / 缓存"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>慢查询日志配置：</strong>
+<ul><li><code>slow_query_log = ON</code></li>
+<li><code>long_query_time = 0.5</code>（超过 0.5 秒就算慢查询，根据业务调整）</li>
+<li><code>log_queries_not_using_indexes = ON</code>（记录没有使用索引的查询）</li>
+<li><code>log_slow_admin_statements = ON</code>（记录 DDL 等管理语句）</li></ul>
+<strong>常用分析工具：</strong>
+<p><code>mysqldumpslow</code>（官方自带，按执行次数/时间等维度统计）、<code>pt-query-digest</code>（Percona Toolkit，功能更强大，能生成可视化报告）。</p>
+<strong>Profiling 分析：</strong>
+<p><code>SET profiling = ON;</code> 然后执行 <code>SHOW PROFILES;</code> 和 <code>SHOW PROFILE CPU, BLOCK IO FOR QUERY N;</code> 可以看每条 SQL 在每个阶段（连接、分析、执行等）的耗时分布。MySQL 8.0 推荐用 <code>performance_schema</code> 替代。</p>
 </div>
 
 <h3 id="four-4">4. 分库分表</h3>
@@ -408,6 +691,19 @@ graph TD
         C --> C4["user_3<br/>id % 4 = 3"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>垂直拆分 vs 水平拆分的决策：</strong>
+<p><strong>垂直分库：</strong>按业务域拆分（用户库、订单库、商品库），每个库独立部署。解决了单库的并发连接数和写入压力。但跨库 JOIN 变成了应用层聚合，引入了分布式事务问题。适合微服务架构。</p>
+<p><strong>垂直分表：</strong>把一张宽表的常用列和冷列分开。例如 user 表拆成 user_base（id, name, phone, email）和 user_detail（id, address, bio, avatar）。减少了单行大小，让 buffer pool 能缓存更多热点数据。</p>
+<p><strong>水平拆分：</strong>按某个字段（通常是主键或分片键）hash 取模或按范围拆分到多个库/表中。解决了单表数据量过大的问题（超过 500 万行查询开始变慢）。</p>
+<strong>分库分表带来的核心挑战：</strong>
+<ul><li><strong>分布式 ID：</strong>不能用自增主键了，需要雪花算法（Snowflake）或其他分布式 ID 方案</li>
+<li><strong>跨分片查询：</strong>ORDER BY、GROUP BY、分页变得复杂（需要从多个分片取数据后合并）</li>
+<li><strong>跨分片事务：</strong>需要分布式事务（XA、TCC、Saga、AT 模式等）</li>
+<li><strong>扩容：</strong>从 4 库扩到 8 库，数据需要重新分配，可能需要停服迁移</li>
+<li><strong>中间件：</strong>ShardingSphere、MyCat、Vitess 等</li></ul>
+</div>
 
 <div class="card">
 <strong>垂直分库</strong>：按业务拆分 → 解决并发压力<br/>
@@ -423,10 +719,25 @@ graph TD
 flowchart LR
     M["Master 主库"]
     S["Slave 从库"]
-    M -->|"① 写 binlog"| M
-    M -->|"② IO 线程拉取 binlog"| S
-    S -->|"③ 写入 relay log"| S
-    S -->|"④ SQL 线程重放"| S
+    M -->|"写 binlog"| M
+    M -->|"IO 线程拉取 binlog"| S
+    S -->|"写入 relay log"| S
+    S -->|"SQL 线程重放"| S
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>主从复制的三个线程：</strong>
+<p>1. <strong>Master 的 Binlog Dump 线程：</strong>主库为每个从库创建一个 dump 线程，负责把 binlog 中的事件发送给从库。<br/>
+2. <strong>Slave 的 IO 线程：</strong>从库连接到主库，接收 binlog 事件并写入本地的 relay log。<br/>
+3. <strong>Slave 的 SQL 线程：</strong>从库从 relay log 中读取事件并重放在本地数据库。</p>
+<strong>复制延迟的根源分析：</strong>
+<ul><li>主库并发写入，但从库 SQL 线程只有一个（5.7 之前），串行回放跟不上</li>
+<li>大事务（如批量 UPDATE 100 万行）在主库可能只执行几秒，但在从库回放可能需要相同时间</li>
+<li>从库机器性能不如主库（IO/CPU 瓶颈）</li></ul>
+<strong>并行复制（5.7+）：</strong>
+<p>通过 <code>slave_parallel_type=LOGICAL_CLOCK</code> + <code>slave_parallel_workers=N</code>，从库可以按组提交（group commit）的方式并行回放 binlog。同一个组内的事务在从库可以并发执行，不同组之间串行。MySQL 8.0 引入了基于 writeset 的并行复制，可以跨组并行。</p>
+<strong>半同步复制：</strong>
+<p>默认是异步复制（主库不管从库是否收到）。半同步复制下，主库至少等一个从库确认收到 binlog 后才返回客户端成功。通过 <code>rpl_semi_sync_master_wait_point=AFTER_SYNC</code> 配置。可以减少数据丢失的风险但不能完全消除。</p>
 </div>
 
 <div class="card">

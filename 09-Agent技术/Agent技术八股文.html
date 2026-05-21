@@ -46,6 +46,15 @@ graph TD
     LLM -->|"驱动"| Planning
     LLM -->|"读写"| Memory
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么 LLM 仅仅是"大脑"而不是完整的 Agent？</strong>
+<p>LLM 的本质是"给定输入 token 序列，预测下一个 token"的概率模型。它没有外部世界的感知能力，没有持久化记忆，也不能执行任何操作。它的全部"世界"就是有限的上下文窗口（context window，比如 200K tokens）。Agent 通过工具调用（Function Calling/Tool Use）为 LLM 打开了通往外部世界的大门——查数据库、调 API、读文件、执行代码。</p>
+<strong>记忆的双层架构——短期 vs 长期：</strong>
+<p>短期记忆就是对话上下文——所有历史消息都在 context window 里。但 context window 容量有限（200K tokens 约等于一本中等长度的小说），而且成本随 token 数线性增长。长期记忆通过向量数据库实现：将历史对话或文档 Embedding 后存入向量库，需要时通过语义相似度检索最相关的内容注入 context。这种 RAG 风格的长记忆方案是当前的主流。</p>
+<strong>规划（Planning）的内部机制：</strong>
+<p>规划不是 LLM 的原生能力——LLM 是自回归的，一次生成一个 token。但通过 prompt engineering，可以让 LLM 先输出执行计划（"我打算先做 A，再做 B，最后 C"），再逐步执行。更高级的规划如 Tree of Thoughts（同时探索多条路径再选择最优）和 Reflexion（执行后自我评价并修正），本质上都是把 LLM 的输出反馈到输入中的循环过程。</p>
+</div>
 
 <div class="card">
 <strong>通俗理解：</strong>LLM 像一个会说话的大脑，Agent 给这个大脑装上了<strong>手（工具调用）</strong>和<strong>笔记本（记忆）</strong>，让它可以自主完成复杂任务。
@@ -68,6 +77,15 @@ flowchart LR
     Context --> Agent
     Agent -->|"生成最终回答"| User
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>路由器的本质是 Function Calling 的决策层：</strong>
+<p>当用户问"帮我查一下最近的订单"，LLM 需要判断：这是一个 RAG 问题（查内部文档的订单格式）还是 API 调用问题（调订单系统的接口）还是代码执行问题（写 SQL 查数据库）。这个决策在 prompt 中是通过 tool definition 的 description 字段驱动的——LLM 根据每个 tool 的描述来决定是否调用。路由器的"智能"完全取决于 tool description 写得好不好。</p>
+<strong>上下文组装（Context Assembly）为什么是瓶颈？</strong>
+<p>从各个工具拿回的结果——RAG 返回的文档片段、API 返回的 JSON、代码执行的输出——质量参差不齐，长度不一。如何在有限的 context window 内组装出最优的 prompt 是一个工程难题：太长会撑爆窗口，太短会丢失关键信息，顺序不对会导致 LLM 注意力被分散（lost-in-the-middle 问题——LLM 更关注开头和结尾，中间内容容易被忽略）。</p>
+<strong>ReAct 循环的收敛问题：</strong>
+<p>ReAct（Thought → Action → Observation → Thought → ...）是一个循环，理论上可能无限执行下去。实际系统中通过以下手段保证收敛：① 最大步数限制（如最多 30 步）；② 每步增加"你已经执行了 N 步，请尽快给出最终答案"的提示；③ token 预算——总 token 消耗接近 context window 上限时强制结束。</p>
+</div>
 
 <div class="highlight">
 <strong>Agent 循环（ReAct 模式）：</strong><br/>
@@ -79,11 +97,36 @@ Thought（思考下一步做什么）→ Action（执行工具）→ Observation
 <div class="card">
 <table>
 <tr><th></th><th>传统 LLM Chat</th><th>AI Agent</th></tr>
-<tr><td>能力</td><td>纯文本生成</td><td>能调用外部工具、查数据库、执行代码</td></tr>
-<tr><td>自主性</td><td>被动回答</td><td>主动规划、多步执行</td></tr>
-<tr><td>记忆</td><td>只有对话上下文</td><td>短期 + 长期记忆（向量库）</td></tr>
-<tr><td>纠错</td><td>不具备</td><td>观察结果后自我反思纠正</td></tr>
-<tr><td>场景</td><td>闲聊、写作、翻译</td><td>自动化运维、智能客服、代码助手</td></tr>
+<tr class="row-expandable"><td>能力</td><td>纯文本生成</td><td>能调用外部工具、查数据库、执行代码</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>能力边界的本质区别：</strong>
+<p>传统 LLM Chat 的能力上限 = 训练数据的截止日期 + 训练数据中涵盖的知识范围。如果 LLM 训练数据中没有你们公司内部系统的 API 文档，它就不可能回答"我们这个月交易量是多少"。Agent 通过工具调用打破了这层边界——LLM 不知道答案，但它知道该调用哪个工具去获取答案。</p>
+<p>这不是"LLM 变聪明了"，而是 Agent 架构让 LLM 不再依赖"记忆"而是依赖"获取"——从知识的存储器变成了知识的调度器。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>自主性</td><td>被动回答</td><td>主动规划、多步执行</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>被动 vs 主动的技术含义：</strong>
+<p>Chat 模式是 request-response：用户输入一句话，LLM 输出一句话，对话结束。Agent 模式是 goal-driven：用户给定一个目标（"帮我部署这个应用到测试环境"），Agent 自己分解为子任务（检查配置→构建镜像→推送到 registry→更新 K8s deployment→验证健康检查），子任务中还可能遇到错误需要自动重试或换方案。</p>
+<p>关键差异在于循环——Agent 的输出可能不是给用户看的，而是给系统执行的下一个指令（tool_call）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>记忆</td><td>只有对话上下文</td><td>短期 + 长期记忆（向量库）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>长期记忆的三层含义：</strong>
+<p>① 用户级记忆：记住用户偏好、习惯、历史行为（"张经理通常用 PostgreSQL 而不是 MySQL"）；② 任务级记忆：记住之前完成过的类似任务的经验（"上次部署这个应用时，config.yaml 的 port 要改成 8080"）；③ 知识级记忆：通过 RAG 从文档库检索到的领域知识注入当前对话。</p>
+<p>实现上，向量数据库（Milvus/Pinecone/ChromaDB）存储 Embedding 向量，检索时用余弦相似度或欧氏距离做近似最近邻搜索（ANN），Top-K 结果注入 context。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>纠错</td><td>不具备</td><td>观察结果后自我反思纠正</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>自我纠错的技术路径：</strong>
+<p>Reflexion 模式：Agent 执行工具后收到错误结果（如编译失败、API 返回 500），将这个错误作为新的 observation 反馈给 LLM，LLM 重新思考并尝试不同的方案。这种"失败驱动"的纠错不需要人工干预。</p>
+<p>更高级的是自我一致性检查（Self-Consistency）：让 LLM 执行完任务后反思"我刚才的答案/操作是否正确？为什么？"，用第二个 prompt 做自我审查。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>场景</td><td>闲聊、写作、翻译</td><td>自动化运维、智能客服、代码助手</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>银行场景的两个典型 Agent 应用：</strong>
+<p><strong>智能运维 Agent：</strong>监控告警 → Agent 自动分析日志 → 判断是否为已知问题（RAG 检索历史故障手册）→ 如果是，自动执行修复脚本；如果不是，升级给人工运维并附上诊断报告。</p>
+<p><strong>智能研发 Agent（如 Claude Code）：</strong>需求描述 → Agent 分析现有代码结构 → 规划修改方案 → 逐步修改代码 → 运行测试验证 → 提交代码。整个过程人只需要 review 最终结果，甚至只需要 review Agent 的方案。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -97,6 +140,17 @@ graph TD
         C["③ 层级委托<br/>Master Agent 把子任务分给 Specialist Agent"]
         D["④ 辩论模式<br/>多个 Agent 互相质疑，取最优结论"]
     end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>顺序流水线——工作流引擎的 Agent 化：</strong>
+<p>最基础的模式。A Agent 完成代码生成，B Agent 做代码审查，C Agent 写测试，D Agent 执行测试并修复。每个 Agent 的输出是下一个的输入，像工厂流水线。LangChain 的 Chain 本质上就是这种模式。优点是简单、可预测、易调试，缺点是串行效率低，且错误会级联放大（A 的输出有 bug，后面的全都白跑）。</p>
+<strong>并行分发 + 投票——多模型集成：</strong>
+<p>同一个问题同时发给多个 Agent（可能使用不同的 LLM 如 GPT + Claude + Gemini），各自独立回答，然后由汇总 Agent（或投票机制）选出最优答案。这类似于机器学习的 Ensemble 思想——多个弱模型组合成强模型。关键挑战：如何定义"最优"？可以是投票（多数一致）、LLM-as-Judge（让汇总 Agent 评估所有答案的质量）、或是基于置信度的选择。</p>
+<strong>层级委托——树形任务分解：</strong>
+<p>Master Agent 收到"重构用户模块"的指令，分解为：① 代码审查子任务 → Code Reviewer Agent；② 测试子任务 → Test Writer Agent；③ 文档更新子任务 → Doc Writer Agent。每个 Specialist Agent 可以再进一步分解。这种模式在 Claude Code 的 Plan Mode + Sub-agent 架构中有直接体现。层级过深会导致子任务分配的开销超过实际工作效率，通常 2-3 层最佳。</p>
+<strong>辩论模式——对抗式协作：</strong>
+<p>Agent A 提出方案，Agent B 扮演反对者角色（Devil's Advocate）挑刺，Agent A 改进方案，迭代多轮直到分歧收敛。这在安全和合规场景特别有价值——让一个 Agent 专门检查另一个 Agent 的代码是否有安全漏洞。</p>
 </div>
 
 <div class="card">
@@ -129,6 +183,16 @@ flowchart TD
     User["用户"] -->|"输入"| LLM
     Harness -->|"执行结果"| LLM
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要 Harness 这一层？</strong>
+<p>在没有 Harness 的简单 Agent 实现中，LLM 输出 tool_call → 开发者直接 eval() 执行 → 结果返回 LLM。这在 demo 中可行，但在企业环境中有三个致命问题：① 安全——LLM 可能被诱导输出危险命令（如 rm -rf /）；② 可靠性——没有超时控制、没有重试、没有错误标准化；③ 可观测性——没有审计日志，不知道 Agent 做了什么。</p>
+<p>Harness 把 LLM 的"意图"和系统的"执行"解耦——LLM 说"我要读这个文件"，Harness 检查权限、触发 Pre-hook、在沙箱中执行、触发 Post-hook、返回结果。LLM 永远不能绕过 Harness 直接操作系统。</p>
+<strong>工具执行器的指令翻译：</strong>
+<p>LLM 输出的 tool_call 是一个 JSON 结构（如 {name: "read_file", args: {path: "/etc/config.yaml"}}），不是可执行的系统调用。工具执行器负责：① 验证参数格式和类型；② 路径规范化（防路径穿越攻击，如 ../../../etc/passwd）；③ 将逻辑操作翻译为实际系统调用；④ 捕获 stdout/stderr 和退出码并标准化返回给 LLM。</p>
+<strong>会话上下文管理的内存策略：</strong>
+<p>长 Agent 任务可能产生数千轮工具调用，context window 很快被塞满。Harness 的会话管理负责：① 上下文压缩（Compaction）——将历史对话总结为摘要而非保留原始消息，释放空间；② 关键信息提取——在压缩前用 LLM 自动提取关键决策点和状态信息；③ 文件与内存分离——大文件内容不在 context 中传递，而是通过文件引用访问。</p>
+</div>
 
 <div class="highlight">
 <strong>一句话：</strong>Harness 是 Agent 的<strong>"操作系统内核"</strong>——LLM 负责"想"，Harness 负责"做"。它管理着 LLM 与外部世界交互的每一个环节：执行什么命令、谁能执行、执行前要做什么检查、执行后要做什么记录。
@@ -139,11 +203,33 @@ flowchart TD
 <div class="card">
 <table>
 <tr><th>职责</th><th>做什么</th><th>为什么重要</th></tr>
-<tr><td><strong>工具执行</strong></td><td>将 LLM 输出的 tool_call 翻译为真实系统调用</td><td>LLM 不直接执行代码，需要中间层翻译和管控</td></tr>
-<tr><td><strong>权限控制</strong></td><td>allow / deny / ask 三级权限模型</td><td>防止 Agent 越权操作（删库、访问敏感文件）</td></tr>
-<tr><td><strong>Hook 系统</strong></td><td>在工具执行前后、会话启停时注入自定义逻辑</td><td>企业合规（提交前自动扫描、操作前二次确认）</td></tr>
-<tr><td><strong>沙箱隔离</strong></td><td>限制 Agent 可访问的文件系统、网络、进程</td><td>安全第一——Agent 代码执行必须在受限环境</td></tr>
-<tr><td><strong>会话状态</strong></td><td>管理上下文窗口、后台任务、工作目录</td><td>长任务需要状态持久化和任务编排</td></tr>
+<tr class="row-expandable"><td><strong>工具执行</strong></td><td>将 LLM 输出的 tool_call 翻译为真实系统调用</td><td>LLM 不直接执行代码，需要中间层翻译和管控</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>工具执行的完整生命周期：</strong>
+<p>① 参数校验：验证 JSON Schema 是否符合 tool definition 中的 inputSchema；② 路径安全：文件路径规范化 + 白名单目录检查（"../../etc/shadow" 被拦截）；③ 资源限制：使用 cgroup/namespace 限制 CPU、内存、文件描述符；④ 超时控制：每个工具调用都有独立 timeout（如 Bash 5 分钟，Read 30 秒）；⑤ 结果清洗：截断过长输出、移除 ANSI 转义序列、检测敏感信息（如密钥泄露）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>权限控制</strong></td><td>allow / deny / ask 三级权限模型</td><td>防止 Agent 越权操作（删库、访问敏感文件）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>三级权限的决策逻辑：</strong>
+<p>Allow（白名单）：与当前任务明确相关的、低风险的命令（如 git status、npm test、ls）。这些操作自动放行，不需要用户确认。Deny（黑名单）：高风险且不可逆的操作（rm -rf、DROP TABLE、push --force）。这些操作直接阻止并告知 LLM 改用其他方案。Ask（需确认）：灰色地带操作（git push、修改生产配置），弹出确认框给用户。</p>
+<p>权限粒度支持通配符匹配：<code>Bash(git diff *)</code> 匹配所有 git diff 操作，<code>Read(*credentials*)</code> 拦截所有含 credentials 关键字的文件读取。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Hook 系统</strong></td><td>在工具执行前后、会话启停时注入自定义逻辑</td><td>企业合规（提交前自动扫描、操作前二次确认）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Hook 的链式调用与执行顺序：</strong>
+<p>多个 Hook 可以注册到同一个事件上，按优先级排序执行。例如 PreToolUse 事件上注册了 3 个 Hook：① 安全扫描（检查参数是否含 SQL 注入模式，优先级 100）→ ② 审批卡点（检查是否属于需审批操作，优先级 50）→ ③ 参数注入（自动添加 traceId 等公共参数，优先级 10）。任何一个 Hook 返回 reject 都会让整个调用链中止。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>沙箱隔离</strong></td><td>限制 Agent 可访问的文件系统、网络、进程</td><td>安全第一——Agent 代码执行必须在受限环境</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>沙箱的多层隔离机制：</strong>
+<p>① 进程级隔离：Docker 容器或 Firecracker microVM，Agent 在独立环境中运行，宿主机文件系统不可见；② 文件系统限制：通过 mount namespace 控制可访问目录（如只挂载项目根目录），写操作限制在指定工作区；③ 网络管控：通过 iptables/network namespace 控制 egress（出站）流量——只允许访问白名单内的域名。</p>
+<p>在无 Docker 环境中（如 Claude Code 本地运行），沙箱依赖于操作系统层面的权限控制和不依赖交互式输入的工具封装。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>会话状态</strong></td><td>管理上下文窗口、后台任务、工作目录</td><td>长任务需要状态持久化和任务编排</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>会话状态机与恢复机制：</strong>
+<p>Agent 任务可能持续数小时甚至数天（如大型重构）。会话状态包括：对话历史、当前工作目录、正在执行的后台任务列表、加载的 MCP Server 列表、上下文压缩状态。Harness 定期将状态序列化到磁盘，支持断点续传——Agent 进程崩了可以从上次的 checkpoint 继续。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -170,17 +256,50 @@ sequenceDiagram
         H-->>L: 返回最终结果
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>PreToolUse 的三种返回值和影响：</strong>
+<p>① allow——放行，可以附带修改后的参数（如自动补充缺失的默认值）；② deny——阻止，返回拒绝原因给 LLM（如"该文件在敏感目录，不允许读取"），LLM 会尝试其他方案；③ ask——暂挂，等待用户确认，确认后继续。这种三级返回让 Hook 从"开关"变成了"可编程的策略引擎"。</p>
+<strong>Hook 的幂等性与副作用控制：</strong>
+<p>Hook 本身应该是幂等的——同一个 Hook 对同一个事件多次触发的效果应该一致。如果 PostToolUse Hook 中写了一条审计日志到数据库，Hook 重试时不应重复写入。可以通过唯一请求 ID（request_id）做去重：<code>INSERT ... WHERE NOT EXISTS (SELECT 1 FROM audit_log WHERE request_id=?)</code>。</p>
+<strong>PostCompact Hook 的特殊性：</strong>
+<p>PreCompact 在上下文压缩之前触发，是"抢救关键信息"的最后机会。例如 Agent 正在进行一个需要精确状态维护的长任务，压缩前通过此 Hook 将关键变量、决策记录、未完成的任务列表保存到结构化存储中（如写文件或插数据库），而非依赖 LLM 的自动摘要。这保证了压缩不会丢失关键上下文。</p>
+</div>
 
 <div class="card">
 <strong>常见 Hook 事件类型：</strong>
 <table>
 <tr><th>事件</th><th>触发时机</th><th>典型用途</th></tr>
-<tr><td><code>PreToolUse</code></td><td>工具调用<strong>之前</strong></td><td>审批卡点、参数校验、敏感操作拦截</td></tr>
-<tr><td><code>PostToolUse</code></td><td>工具调用<strong>之后</strong></td><td>审计日志、结果校验、自动提交</td></tr>
-<tr><td><code>Notification</code></td><td>特定通知事件</td><td>权限请求转发、异常告警</td></tr>
-<tr><td><code>SessionStart</code></td><td>会话启动时</td><td>环境初始化、加载项目配置</td></tr>
-<tr><td><code>SessionEnd / Stop</code></td><td>会话结束时</td><td>清理临时文件、上报使用统计</td></tr>
-<tr><td><code>PreCompact</code></td><td>上下文压缩前</td><td>保存关键信息防止被压缩丢失</td></tr>
+<tr class="row-expandable"><td><code>PreToolUse</code></td><td>工具调用<strong>之前</strong></td><td>审批卡点、参数校验、敏感操作拦截</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>PreToolUse 的银行级应用：</strong>
+<p>① 参数脱敏——检测到工具参数中包含身份证号、手机号等敏感字段时，自动替换为脱敏版本再执行；② 操作审批——检测到工具是 Write 且路径在生产配置目录，触发审批流程（发送企业微信通知等待审批）；③ 合规检查——检测到 git commit 操作，自动扫描 commit message 是否包含敏感关键词（如内网 IP、密码）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>PostToolUse</code></td><td>工具调用<strong>之后</strong></td><td>审计日志、结果校验、自动提交</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>PostToolUse 的审计能力：</strong>
+<p>银行合规要求 Agent 的每一步操作都可追溯。PostToolUse Hook 记录：调用时间、工具名称、输入参数（脱敏后）、执行耗时、是否成功、输出摘要。所有记录写入不可篡改的审计日志（如 append-only 的 Elasticsearch index 或区块链存证）。如果操作是"写了文件"，PostHook 还可以自动触发后续流程——如代码格式化（prettier）、测试运行、安全扫描。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>Notification</code></td><td>特定通知事件</td><td>权限请求转发、异常告警</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>通知事件的路由策略：</strong>
+<p>Notification Hook 接收 Harness 内部的状态变更事件（如权限请求、长时间无响应、context 窗口接近饱和等）。根据事件类型和严重程度路由到不同的通知渠道：低优先级 → 仪表盘记录；中优先级 → 企业微信/飞书通知；高优先级（如检测到越权尝试）→ 短信 + 电话告警。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>SessionStart</code></td><td>会话启动时</td><td>环境初始化、加载项目配置</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>SessionStart 的环境准备：</strong>
+<p>① 加载项目级 .claude/settings.json 配置；② 自动启动开发环境（数据库 Docker 容器、Mock Server 等）；③ 注入项目上下文（CONTEXT.md 中的约定和术语表）；④ 初始化监控指标（记录会话开始时间和初始资源状态）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>SessionEnd / Stop</code></td><td>会话结束时</td><td>清理临时文件、上报使用统计</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>SessionEnd 的清理与归档：</strong>
+<p>① 清理临时文件（分片上传的残留文件、编译中间产物）；② 将完整对话历史归档到对象存储（合规要求保留 6 个月）；③ 上报使用统计（token 消耗量、工具调用次数、任务完成率）；④ 释放会话占用的资源（数据库连接、Redis 临时 key）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>PreCompact</code></td><td>上下文压缩前</td><td>保存关键信息防止被压缩丢失</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>为什么压缩会导致信息丢失？</strong>
+<p>上下文压缩是由 LLM 执行的——它将冗长的对话历史总结为简短的摘要。但这个总结过程本身就是有损的：LLM 可能遗漏关键细节（"用户在第 3 步明确说过不要用 MySQL 8.0 的窗口函数"），或者过度泛化（"用户想要一个查询"——丢失了具体的 WHERE 条件）。PreCompact Hook 在压缩前将"不可丢失"的信息显式保存到文件或状态存储中。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -197,6 +316,15 @@ flowchart TD
     Execute --> SandboxCheck{沙箱检查}
     SandboxCheck -->|"在允许范围内"| Run["真正执行"]
     SandboxCheck -->|"越界"| Block
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>权限匹配的优先级策略——从具体到泛化：</strong>
+<p>权限规则的匹配不是先到先得，而是按具体性排序：① 精确匹配优先（Read(/path/to/specific/file.json) 先于 Read(*)）；② 路径深度优先（路径越长的规则优先级越高）；③ deny 优先于 allow 优先于 ask——但如果一条更具体的 allow 规则和一条更泛化的 deny 规则冲突，具体规则胜出。这就是"最小惊讶原则"，避免用户困惑。</p>
+<strong>沙箱与权限的双重保险：</strong>
+<p>权限模型控制的是"能否调用某个工具"，沙箱控制的是"工具在实际执行时能访问什么资源"。两者是互补的：即使权限检查通过（allow Bash(git)），沙箱也会限制 git 命令只能访问当前项目目录，无法访问 /etc 或其他用户的家目录。这种纵深防御确保单个层面的漏洞不会导致完全失控。</p>
+<strong>银行场景的特殊权限需求——四眼原则：</strong>
+<p>对于高风险操作（如修改生产数据库 Schema、删除用户数据），采用四眼原则（Four-Eyes Principle）：操作需要两个人的确认。在 Agent 权限模型中，这表现为 ask 权限 + 审批流——不仅弹出确认框，还需要第二个审批人的签名（通过 Hook 触发审批流程）。</p>
 </div>
 
 <div class="card">
@@ -244,6 +372,13 @@ graph TD
     L3 --> L4
     L4 --> L5
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么是五层而不是三层？</strong>
+<p>把 Agent 简单理解为"LLM + 工具"（2 层）是 demo 级的认知。企业级 Agent 系统需要：应用层（面向用户的 Skill/Workflow 抽象）、Agent 层（Agent 循环的核心逻辑）、Harness 层（安全和执行管控）、协议层（标准化工具接入）、基础设施层（实际存储和计算资源）。五层关注点分离让每一层可以独立演进和替换——比如协议层从 Function Calling 升级到 MCP，不需要改 Agent 层的代码。</p>
+<strong>Skills 与 Workflows 的区别：</strong>
+<p>Skill 是"某个领域的专业能力包"（如 TDD 开发、安全审查、部署），封装了特定任务的 prompt 模板 + 工具选择 + 最佳实践。Workflow 是"多个 Skill 的编排"（如"从需求到上线"的全流程：需求分析 Skill → 编码 Skill → 测试 Skill → 代码审查 Skill → 部署 Skill）。Skill 是原子能力，Workflow 是能力的编排。</p>
+</div>
 
 <div class="highlight">
 <strong>面试加分点：</strong>能说出 Agent 不只是"LLM + 工具"，而是有一个完整的<strong>运行时引擎 (Harness)</strong> 在中间做安全管控和执行调度。这说明你理解 Agent 系统在<strong>企业落地</strong>时需要的基础设施，而不只是 demo 级别的玩具。
@@ -269,6 +404,15 @@ graph LR
         MCP --> Server2["File Server"]
         MCP --> Server3["API Server"]
     end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>MCP 解决了什么根本问题？</strong>
+<p>在 MCP 之前，每个 AI 产品（Claude、ChatGPT、Copilot）都有自己的一套插件/工具机制——Claude 用 Tool Use、OpenAI 用 Function Calling、Google 用 Vertex AI 的 Extension。开发者为不同 LLM 写不同的工具适配代码，M×N 问题。MCP 定义了统一的协议，开发者写一次 Server，所有支持 MCP 的客户端都能用——本质上是把"适配"的工作从应用层下沉到协议层。</p>
+<strong>LSP 类比的技术深度：</strong>
+<p>LSP 定义了 IDE 和语言服务器之间的通信协议——编辑器发送"光标在第 10 行用户想看补全"，语言服务器返回"建议列表"。一个 LSP Server 可以被任何支持 LSP 的编辑器使用（VS Code、Neovim、Emacs）。MCP 做了完全类似的事：客户端发送"LLM 想调用工具 X"，MCP Server 返回"执行结果"。</p>
+<strong>MCP 的传输层细节——stdio vs SSE：</strong>
+<p>stdio 模式：MCP Server 作为子进程启动，通过标准输入/输出（stdin/stdout）与客户端通信。适用于本地工具（如文件系统访问、本地数据库查询）。SSE（Server-Sent Events）模式：通过 HTTP 长连接通信，适用于远程工具（如公司内网的 API 网关、云数据库）。SSE 模式下可以实现工具共享——多个开发者的 Claude Code 可以共用同一个 MCP Server 实例。</p>
 </div>
 
 <div class="highlight">
@@ -303,14 +447,38 @@ graph TD
         S3 --> API["REST API / gRPC"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Host vs Client 的分工：</strong>
+<p>Host 是用户看到的应用（Claude Desktop、VS Code + Claude 插件、自研 IDE）。它负责提供 UI、管理 LLM 会话、处理用户输入。Client 是 Host 内的协议层，负责：① 管理 MCP Server 进程的生命周期（启动/停止/重启）；② 序列化/反序列化 JSON-RPC 消息；③ 路由 LLM 的 tool_call 到正确的 MCP Server。一个 Host 可以有多个 Client，每个 Client 连接一个 Server。</p>
+<strong>为什么一个 Client 只连一个 Server？</strong>
+<p>这是 MCP 的设计选择——不是"一对多"而是"一对一"。目的是：① 安全性——每个 Server 有独立的进程和权限边界，一个 Server 被攻击不会影响其他 Server；② 故障隔离——一个 Server 崩溃不会导致所有工具不可用；③ 资源管理——每个 Server 的 CPU/内存可以独立限制。如果需要多个 Server 协作，由 Host 层的 Router 负责。</p>
+<strong>Server 端的工具定义与动态发现：</strong>
+<p>MCP Server 启动后通过 <code>tools/list</code> 事件向 Client 声明自己支持的工具列表（名称、自然语言描述、JSON Schema 形式的参数定义）。LLM 根据这些元数据决定调用哪个工具——意味着写好工具的 description 和 inputSchema 极其重要。一个描述不好的工具 LLM 永远不会调用，一个参数定义不准确的工具 LLM 调用时会出错。</p>
+</div>
 
 <div class="card">
 <strong>MCP 三大核心概念：</strong>
 <table>
 <tr><th>概念</th><th>作用</th><th>举例</th></tr>
-<tr><td><strong>Resources</strong></td><td>暴露数据（只读，类似 GET）</td><td>文件内容、数据库记录、文档</td></tr>
-<tr><td><strong>Tools</strong></td><td>暴露操作（可执行动作）</td><td>创建文件、发送消息、查询 API</td></tr>
-<tr><td><strong>Prompts</strong></td><td>预定义的提示模板</td><td>代码审查模板、SQL 生成模板</td></tr>
+<tr class="row-expandable"><td><strong>Resources</strong></td><td>暴露数据（只读，类似 GET）</td><td>文件内容、数据库记录、文档</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Resources 的语义和适用场景：</strong>
+<p>Resources 是 MCP 中"读取数据"的抽象。它们暴露给 LLM 的是"数据的地址"（URI），LLM 通过 <code>resources/read</code> 获取内容。Resources 通常用于上下文注入——在 LLM 开始回答之前，自动将相关资源内容加载到 prompt 中。例如：<code>context://project/README</code> 在每次对话开始时自动注入项目说明。</p>
+<p>与 Tools 的关键区分：Resources 是声明式的（"这里有这些数据"），Tools 是命令式的（"执行这个操作"）。Resources 对用户和 LLM 来说是"可发现的信息源"，Tools 是"可执行的能力"。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Tools</strong></td><td>暴露操作（可执行动作）</td><td>创建文件、发送消息、查询 API</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Tools 的定义如何影响 LLM 行为的可靠性：</strong>
+<p>Tool definition 包含三个关键部分：name（全局唯一标识）、description（自然语言，LLM 据此判断是否调用）、inputSchema（JSON Schema，LLM 据此生成参数）。description 要写得像 API 文档，不是"query database"而是"执行 SQL 查询并返回结果，支持 SELECT/INSERT/UPDATE，数据库包含订单表、用户表、商品表"。inputSchema 的 required 字段让 LLM 知道哪些参数是必须的。</p>
+<p>最佳实践：每个 tool 的 description 包含"何时使用"（触发条件）、"如何使用"（参数说明）、"返回什么"（结果描述）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Prompts</strong></td><td>预定义的提示模板</td><td>代码审查模板、SQL 生成模板</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Prompts 的价值——降低 prompt engineering 门槛：</strong>
+<p>Prompts 是 MCP Server 暴露给用户的"快捷方式"——用户选择"代码审查"prompt，系统自动填充完整的 prompt 模板（包含审查清单、重点关注项、输出格式要求等）。这让非专业 prompt 工程师也能使用高质量的 prompt。</p>
+<p>Prompts 支持参数化：<code>"请审查 {{language}} 代码，关注 {{focus_areas}} 方面的问题"</code>——用户填充 language 和 focus_areas 后生成最终 prompt。这样就把领域专家的 prompt engineering 能力封装为了可共享的模板。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -319,11 +487,31 @@ graph TD
 <div class="card">
 <table>
 <tr><th></th><th>Function Calling</th><th>MCP</th></tr>
-<tr><td>定义方</td><td>每个 LLM 厂商自己的规范</td><td>统一的开源协议</td></tr>
-<tr><td>生态</td><td>各自为政</td><td>社区共建 Server，一次开发到处用</td></tr>
-<tr><td>发现机制</td><td>开发者手动声明函数</td><td>Server 自描述，Client 自动发现工具</td></tr>
-<tr><td>安全性</td><td>依赖各厂商</td><td>明确的权限模型 + 沙箱</td></tr>
-<tr><td>传输</td><td>HTTP/gRPC（各厂商不同）</td><td>标准 stdio / SSE</td></tr>
+<tr class="row-expandable"><td>定义方</td><td>每个 LLM 厂商自己的规范</td><td>统一的开源协议</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>厂商锁定与开源协议的本质区别：</strong>
+<p>Function Calling 是 OpenAI 定义的规范，虽然其他厂商（Anthropic、Google）也实现了类似机制，但各自的 JSON Schema 格式、调用方式、错误处理都有微妙差异。当你用 Function Calling 写了工具后，换 LLM 厂商就意味着重写配接代码。MCP 是开源协议（由 Anthropic 主导但社区共建），目标是消除这种厂商锁定——一次编写，多 LLM 使用。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>生态</td><td>各自为政</td><td>社区共建 Server，一次开发到处用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>生态的飞轮效应：</strong>
+<p>MCP 的生态价值在于复用：有人写好了 PostgreSQL MCP Server，所有 MCP 兼容的客户端都能直接用——不需要每个团队自己写数据库连接。目前 MCP 生态已覆盖：数据库（MySQL/PG/SQLite）、云服务（AWS/GCP/Azure）、开发工具（Git/GitHub/GitLab）、搜索引擎（Elasticsearch）、消息队列（Kafka/RabbitMQ）。这种可复用性是 Function Calling 所不具备的。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>发现机制</td><td>开发者手动声明函数</td><td>Server 自描述，Client 自动发现工具</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>自动发现的工程意义：</strong>
+<p>Function Calling 需要开发者在代码中逐个声明 function schema——如果有 30 个工具，就是 30 个 JSON 对象硬编码在代码里。MCP Server 启动后通过 <code>tools/list</code> 动态告知 Client 自己有哪些工具——新增工具只需更新 Server，Client 自动感知。这带来了"热插拔"能力：在 Claude Code 运行时添加一个新的 MCP Server，Agent 立刻能使用新工具。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>安全性</td><td>依赖各厂商</td><td>明确的权限模型 + 沙箱</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>MCP 的安全边界：</strong>
+<p>Function Calling 没有内建的安全模型——开发者自行决定某个 function 是否执行、是否安全。MCP 虽然协议本身不强制安全策略，但它的 Client-Server 架构天然支持安全隔离：Client 在 Harness 层做权限控制，Server 在自己进程内做输入校验，进程边界本身提供了隔离。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>传输</td><td>HTTP/gRPC（各厂商不同）</td><td>标准 stdio / SSE</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>传输层的技术选择：</strong>
+<p>stdio 的优势是简单、安全（不暴露端口）、适用于本地开发工具。SSE 的优势是支持远程部署、多客户端共享、可以通过 HTTPS + Token 认证。MCP 的传输层是协议的一部分——升级 MCP 版本时可以引入新的传输方式（如 WebSocket），但协议的其它部分保持不变。</p>
+</div></td></tr>
 </table>
 <strong>关系：MCP 可以理解为 Function Calling 的"标准化升级版"。</strong>
 </div>
@@ -353,6 +541,15 @@ sequenceDiagram
     Client->>Server: resources/read {uri}
     Server-->>Client: {contents: [...]}
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>初始化握手的版本协商：</strong>
+<p>Client 发送 initialize 时声明自己支持的 MCP 协议版本和客户端能力（是否支持 prompts、resources）。Server 返回自己支持的协议版本和能力列表。如果版本不兼容（如 Client v1.0、Server v2.0），Server 应降级到共同支持的最高版本，或返回错误让 Client 决定如何处理。这个版本协商机制是 MCP 协议长期演进的基础——协议升级不需要所有 Server 和 Client 同步更新。</p>
+<strong>tools/list 返回的元数据如何影响 LLM 决策：</strong>
+<p>Client 收到工具列表后，将每个工具的 name + description + inputSchema 注入 LLM 的 system prompt（通常是追加到 tools 字段）。LLM 根据用户问题匹配最合适的工具——比如用户问"订单表有多少条记录"，LLM 看到 tool 列表中有一个 description 写着"查询数据库并返回结果"，就会输出 tool_call。如果 description 写得模糊（如"do something"），LLM 就不会调用。</p>
+<strong>tools/call 的完整生命周期：</strong>
+<p>① LLM 输出 tool_call（JSON 格式，包含工具名和参数）；② Client 解析 tool_call，验证参数符合 inputSchema；③ Client 通过 JSON-RPC 发送请求给 Server；④ Server 执行业务逻辑（如查询数据库），返回结果；⑤ Client 将结果包装为 tool_result 消息注入 LLM 的上下文；⑥ LLM 基于结果继续推理。每一步都有错误处理——参数格式不对返回 validation error，Server 挂了返回 timeout error，LLM 根据错误信息调整策略。</p>
+</div>
 
 <div class="highlight">
 <strong>面试加分点：</strong>能说出 MCP 是 LLM ↔ 外部世界的标准协议，类比 LSP，先说 Protocol 层（Resources/Tools/Prompts），再说 Transport 层（stdio/SSE），面试官会觉得你真正理解了这个东西。
@@ -374,6 +571,17 @@ flowchart TD
     N2 --> N3["③ 向量相似度检索 Top-K"]
     N3 --> N4["④ 拼接 Prompt:<br/>上下文 + 问题"]
     N4 --> N5["⑤ LLM 生成回答"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>文档切分（Chunking）是 RAG 质量的第一道关口：</strong>
+<p>切得太大（如 4096 tokens/chunk），检索精度低，一个 chunk 包含太多不相关的信息；切得太小（如 128 tokens/chunk），语义碎片化，丢失上下文连贯性。最佳大小在 256-512 tokens 之间。还有语义切分（Semantic Chunking）——按段落、章节的自然边界切分，而非机械地按 token 数；滑动窗口切分——相邻 chunk 之间保留 10-20% 的重叠，防止关键信息不幸落在 chunk 边界。</p>
+<strong>Embedding 模型的选型误区：</strong>
+<p>embedding 模型（如 OpenAI text-embedding-3、BGE、Jina）生成的向量维度从 384 到 3072 不等。高维度带来更好的语义表达能力，但存储和检索成本线性增长。实际中 1024 维是好平衡点。多语言场景要注意：很多模型对中文支持不好（英文检索中文文档时相似度不准），应选择多语言模型（text-embedding-3-multilingual、BAAI/bge-large-zh）。</p>
+<strong>混合检索（Hybrid Search）为什么优于纯向量检索：</strong>
+<p>纯向量检索（ANN）擅长语义相似但可能遗漏精确关键词匹配。比如用户搜"2024年第一季度财报"，向量模型可能返回"2023年年度报表"（语义相似），而非用户真正要的"2024 Q1"。混合检索同时使用向量检索（语义）和 BM25/稀疏检索（关键词），对两种结果做 RRF（Reciprocal Rank Fusion）融合排序，兼顾语义和精确匹配。</p>
+<strong>Rerank（重排序）——检索后的精排：</strong>
+<p>向量检索返回 Top-100 候选，但向量相似度不是最终的相关性排序。Rerank 模型（如 Cohere Rerank、BGE-Reranker）是一个交叉编码器——将 query 和每个 doc 成对输入，输出精确的相关性分数。对 Top-100 做 rerank 后选 Top-5 注入 prompt，比直接从向量检索取 Top-5 准确得多。代价是多了一次模型调用（100 对 query-doc 推理）。</p>
 </div>
 
 <div class="card">
@@ -403,11 +611,32 @@ flowchart TD
 <div class="card">
 <table>
 <tr><th>技巧</th><th>说明</th><th>示例</th></tr>
-<tr><td><strong>角色设定</strong></td><td>定义 AI 的身份和行为</td><td>"你是一个银行风控专家..."</td></tr>
-<tr><td><strong>Few-Shot</strong></td><td>给 2-3 个示例</td><td>输入→输出示例对</td></tr>
-<tr><td><strong>思维链 CoT</strong></td><td>引导 LLM 一步步推理</td><td>"请逐步分析这个交易的风险"</td></tr>
-<tr><td><strong>结构化输出</strong></td><td>指定输出格式</td><td>"请以 JSON 格式返回"</td></tr>
-<tr><td><strong>约束 + 边界</strong></td><td>明确什么不能做</td><td>"不要给出具体投资建议"</td></tr>
+<tr class="row-expandable"><td><strong>角色设定</strong></td><td>定义 AI 的身份和行为</td><td>"你是一个银行风控专家..."</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>角色设定的神经机制：</strong>
+<p>角色设定利用了 LLM 训练数据中"领域专家回答模式"的归纳偏置——当 prompt 以"你是一个银行风控专家"开头时，LLM 的生成分布会偏向训练数据中银行风控文档的文体、术语、逻辑严谨度。这不是 LLM 真的在扮演专家，而是统计上"有这身份前缀的文本后面通常跟什么"。角色设定越具体越有效：到底是"风控策略分析师"、"风控数据科学家"，还是"风控合规专员"——三个角色关注点完全不同。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Few-Shot</strong></td><td>给 2-3 个示例</td><td>输入→输出示例对</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Few-Shot 示例的选择策略：</strong>
+<p>示例的多样性比数量更重要——3 个覆盖不同场景的示例远好于 10 个同类示例。示例应涵盖：① 理想情况（输入标准、输出完美）；② 边界情况（输入有歧义、输出澄清）；③ 错误情况（输入不合理、输出拒绝+解释）。示例的顺序也有影响——最后一个示例对 LLM 行为影响最大（recency bias）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>思维链 CoT</strong></td><td>引导 LLM 一步步推理</td><td>"请逐步分析这个交易的风险"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>CoT 为什么能提升推理准确性：</strong>
+<p>当 LLM 直接输出最终答案时，所有推理步骤隐式地在一次前向传播中完成。这导致复杂的多步推理容易出错——"中途计算"没有显式验证。CoT 让 LLM 把中间步骤输出为 token，每个步骤都经过注意力机制的重新检查。这相当于把隐式推理变成了显式推理，数学上增加了模型对中间结果的"test-time computation"。</p>
+<p>Zero-shot CoT：在 prompt 末尾加"Let's think step by step"——最简单且最有效的 trick。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>结构化输出</strong></td><td>指定输出格式</td><td>"请以 JSON 格式返回"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>结构化输出的工程实践：</strong>
+<p>直接让 LLM 输出 JSON 有两个问题：① JSON 格式的完整性和合法性不保证（缺括号、引号不匹配）；② 字段名和类型可能不稳定。工程上：使用 function calling 的 response_format 参数（如 OpenAI 的 json_mode）、设置 JSON Schema 约束、在代码中加 try-parse + 错误时让 LLM 重试。更可靠的方案是 structured output API（GPT-4 的 structured outputs），在模型层面保证输出符合 schema。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>约束 + 边界</strong></td><td>明确什么不能做</td><td>"不要给出具体投资建议"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>负面约束 vs 正面引导：</strong>
+<p>"不要做 X"比"请做 Y"效果差——LLM 在处理否定式时可能反而触发相关概念（processing negation activates the negated concept）。更好的做法是正面引导："请仅从技术角度分析，不涉及投资建议"比"不要给出投资建议"更有效。银行场景中，负面约束应放在 prompt 末尾并标注高权重（如用"极其重要：..."开头）。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -425,6 +654,16 @@ graph TD
     Bank --> S5["⑤ 合规审查<br/>自动检查合同/文件合规性"]
     Bank --> S6["⑥ 代码审查<br/>Agent 审查代码安全和质量问题"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>智能风控——Agent 的多维数据融合：</strong>
+<p>传统风控系统依赖规则引擎（"金额 > 5 万且异地交易 → 拦截"）。Agent 风控可以让 LLM 调用多个数据源做综合分析：① 调交易历史 API → 查看用户历史行为模式；② 调设备指纹 API → 判断是否新设备登录；③ 调黑名单 API → 匹配风险库；④ 调外部数据 API → 查询地理位置是否异常。LLM 综合分析这些数据后给出风控建议（通过/拦截/人工审核），并附带完整的推理链。</p>
+<p>注意：Agent 不直接决策拦截——最终决策权在风控规则引擎，Agent 提供分析结果和建议。</p>
+<strong>智能研发——Claude Code 在银行的实际应用链：</strong>
+<p>需求文档 → Agent 解析需求，生成技术方案（Plan Mode）→ 方案评审（人工审批 Hook）→ Agent 逐步修改代码 → 提交前自动安全检查（PostToolUse Hook 触发 SAST 扫描）→ 生成测试用例（TDD Skill）→ 运行测试 → 人工 Code Review → 合并。整个流程中 Agent 负责 80% 的体力活（写代码、写测试、跑扫描），人负责 20% 的决策（方案是否通过、代码是否符合规范）。</p>
+<strong>代码审查——安全优先的 Agent 审查维度：</strong>
+<p>银行代码审查的关注点与互联网公司不同：代码安全（SQL 注入、XSS、越权漏洞）> 代码规范 > 代码性能。Agent 审查工具（如 CodeQL + Claude）可以在提交前自动检测：硬编码密码、未加密的敏感数据传输、不安全的反序列化、缺乏输入校验的接口。</p>
+</div>
 
 <div class="card">
 <strong>银行场景的特殊要求（Agent 安全版）：</strong>
@@ -439,11 +678,32 @@ graph TD
 <div class="card">
 <table>
 <tr><th>概念</th><th>是什么</th><th>银行场景</th></tr>
-<tr><td><strong>Skill</strong></td><td>可复用的专业工作流（如 TDD、Debug）</td><td>定制银行业务 Skill（如反洗钱检查）</td></tr>
-<tr><td><strong>MCP Server</strong></td><td>LLM 与外部系统交互的标准接口</td><td>对接银行内部 API、数据库</td></tr>
-<tr><td><strong>Hook</strong></td><td>在特定事件触发时执行的脚本</td><td>提交前自动跑安全扫描</td></tr>
-<tr><td><strong>Worktree</strong></td><td>隔离的 Git 工作区</td><td>多需求并行开发互不干扰</td></tr>
-<tr><td><strong>Plan Mode</strong></td><td>先出方案再写代码</td><td>满足银行对方案评审的合规要求</td></tr>
+<tr class="row-expandable"><td><strong>Skill</strong></td><td>可复用的专业工作流（如 TDD、Debug）</td><td>定制银行业务 Skill（如反洗钱检查）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Skill 的技术本质——Prompt + Tool 的组合封装：</strong>
+<p>一个 Skill 包含：① System prompt 注入（定义角色和任务范围）；② 可选的工具白名单（限制该 Skill 只能使用特定工具）；③ 工作流定义（定义了 Agent 在执行该 Skill 时的行为模式，如 TDD 的 red-green-refactor 循环）。Skill 的设计哲学是"专业化"——每个 Skill 做一件事并做好，复杂任务通过 Skill 组合完成。</p>
+<p>银行场景：开发一个"反洗钱检查 Skill"——封装了洗钱特征识别规则、可疑交易模型、合规报告模板，Agent 使用该 Skill 时可以自动检查交易数据、标出可疑项、生成合规报告。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>MCP Server</strong></td><td>LLM 与外部系统交互的标准接口</td><td>对接银行内部 API、数据库</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>银行为什么需要自建 MCP Server：</strong>
+<p>银行的内部系统（核心银行系统、征信系统、反欺诈系统）对外部不可见，无法使用社区现成的 MCP Server 接入。需要自建 MCP Server 作为"适配层"——将内部系统的 REST API/gRPC 接口封装为 MCP 协议兼容的 tools。安全考虑：MCP Server 内部要做细粒度的数据脱敏（如只返回卡号后 4 位），确保即使 LLM"好奇"也不能通过工具获取完整敏感数据。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Hook</strong></td><td>在特定事件触发时执行的脚本</td><td>提交前自动跑安全扫描</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>银行的 Hook 部署策略：</strong>
+<p>全局 Hook（项目级）和用户 Hook（个人级）两层：全局 Hook 是强制性的安全与合规策略（如 PreToolUse 阻止所有 DELETE/TRUNCATE 操作、PostToolUse 自动记录审计日志）；用户 Hook 是个人的效率工具（如自动运行 linter、自定义通知）。全局 Hook 存储在版本控制中，任何开发者 checkout 项目后自动生效。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Worktree</strong></td><td>隔离的 Git 工作区</td><td>多需求并行开发互不干扰</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Worktree 与 Agent 会话隔离：</strong>
+<p>Git worktree 允许同一个仓库有多个独立的工作目录（每个在独立分支上）。这对 Agent 开发至关重要：当 Agent A 在 feature/bugfix-1 上工作时，可以创建 worktree → Agent 在其中独立工作 → 完成后清理。不会污染主工作区的未提交修改，也不会与其他 Agent 的工作区冲突。每个 worktree 还可以有独立的 .claude/settings.json 配置。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Plan Mode</strong></td><td>先出方案再写代码</td><td>满足银行对方案评审的合规要求</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Plan Mode 如何满足银行合规：</strong>
+<p>银行对代码变更有严格的审批流程——不能"直接写代码"。Plan Mode 让 Agent 先输出完整的技术方案（设计思路、风险点、影响范围、测试策略），人可以 review 方案并修改（"这个 SQL 查询性能有风险，改用索引覆盖"），确认后再切换到执行模式开始写代码。这对应了银行的"方案评审 → 审批 → 执行"合规流程，Agent 的输出天然形成了可归档的评审文档。</p>
+</div></td></tr>
 </table>
 
 <strong>手写一个简单的 MCP Server demo：</strong>

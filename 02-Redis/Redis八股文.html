@@ -27,7 +27,7 @@
 
 <div class="main">
 
-<h1>🔴 Redis 八股文</h1>
+<h1>Redis 八股文</h1>
 
 <!-- ============ 一、基础 ============ -->
 <h2 id="one-1">一、基础</h2>
@@ -42,17 +42,49 @@ graph TD
     A --> E["④ 高效数据结构<br/>跳表/压缩列表等"]
     A --> F["⑤ RESP 协议简单<br/>解析开销小"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>五大因素如何协同工作：</strong>
+<p>内存操作是最大的性能来源——内存随机访问约 100ns，而磁盘随机访问约 10ms，差距达 10 万倍。单线程模型消除了线程上下文切换（每次约 1-2us）和锁竞争的开销，在 CPU 不是瓶颈时反而是最优解。IO 多路复用（epoll）允许一个线程同时监听数万个连接，事件驱动的方式避免了为每个连接创建一个线程的内存开销和调度成本。</p>
+<p><strong>数据结构的优化细节：</strong>SDS（简单动态字符串）通过预分配空间和惰性释放减少内存重分配次数；压缩列表（ziplist/listpack）用连续内存存储多个元素，减少指针开销且对 CPU 缓存友好；跳表通过随机层级在概率上保证 O(logN)，实现比红黑树简单得多。</p>
+<p><strong>RESP 协议的精妙之处：</strong>RESP（REdis Serialization Protocol）是纯文本协议，解析极其简单——首字节标识类型（+ 简单字符串、- 错误、: 整数、$ 批量字符串、* 数组），无需复杂的序列化/反序列化过程。客户端和服务端都只需少量代码即可实现。</p>
+</div>
 
 <h3 id="one-2">2. 五种基本数据类型</h3>
 
 <div class="card">
 <table>
 <tr><th>类型</th><th>场景</th><th>底层结构</th></tr>
-<tr><td><strong>String</strong></td><td>缓存、计数器、分布式锁、Session</td><td>SDS（简单动态字符串）/ int / embstr / raw</td></tr>
-<tr><td><strong>Hash</strong></td><td>存储对象（用户信息）、购物车</td><td>ziplist → listpack / dict</td></tr>
-<tr><td><strong>List</strong></td><td>消息队列、最新列表、时间线</td><td>quicklist（由 ziplist + linkedlist 组成）</td></tr>
-<tr><td><strong>Set</strong></td><td>标签、好友关系、共同关注、抽奖</td><td>intset / dict</td></tr>
-<tr><td><strong>ZSet</strong></td><td>排行榜、延时队列、带权重的集合</td><td>ziplist → listpack / skiplist + dict</td></tr>
+<tr class="row-expandable"><td><strong>String</strong></td><td>缓存、计数器、分布式锁、Session</td><td>SDS（简单动态字符串）/ int / embstr / raw</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>SDS 为什么比 C 字符串更适合 Redis：</strong>
+<p>SDS 在字符数组前加了一个 header，记录了 len（已用长度）和 alloc（分配长度）。获取字符串长度是 O(1) 而非 C 字符串的 O(n)。SDS 通过预分配（扩容时多分配一些空间）和惰性释放（缩短时不立即回收内存）减少了内存重分配次数。SDS 是二进制安全的（不像 C 字符串以 \0 结尾），可以存储任意二进制数据。</p>
+<p><strong>三种编码的切换：</strong>int 编码用于纯整数（可节省指针开销）；embstr 编码用于短字符串（≤44 字节），将 RedisObject 和 SDS 分配在同一块连续内存中，只需一次内存分配和释放；raw 编码用于长字符串，RedisObject 和 SDS 分开分配。embstr 是只读的——任何修改都会转为 raw。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Hash</strong></td><td>存储对象（用户信息）、购物车</td><td>ziplist → listpack / dict</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Hash 的双编码设计：</strong>
+<p>当 Hash 元素少且单个元素短时，Redis 使用压缩列表（ziplist）/ listpack 存储——所有 key-value 对交替存放在一段连续内存中。这避免了 dict 的指针和哈希表开销，但每次修改都可能触发连锁更新。当元素数量超过 <code>hash-max-listpack-entries</code>（默认 512）或单个元素超过 <code>hash-max-listpack-value</code>（默认 64 字节）时，自动转为 dict 编码。</p>
+<p>Redis 7.0 用 listpack 替代了 ziplist：listpack 每个元素记录自身长度，解决了 ziplist 的连锁更新问题（修改一个元素导致后续所有元素都需要更新长度字段）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>List</strong></td><td>消息队列、最新列表、时间线</td><td>quicklist（由 ziplist + linkedlist 组成）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>quicklist 的设计智慧：</strong>
+<p>一个纯粹的 linkedlist 每个节点有两个指针（prev/next），对于小元素来说指针开销远大于数据本身。一个纯粹的 ziplist 在插入/删除时可能触发连锁更新。quicklist 是两者的折中——它是一个双向链表，但每个节点是一个 ziplist（默认 8KB）。这样既减少了指针开销（每个节点内多个元素共享前后指针），又控制了连锁更新的影响范围（只影响一个 ziplist 内部）。</p>
+<p><strong>为什么不用更简单的结构？</strong>List 的典型场景（消息队列、时间线）需要头尾操作 O(1)，而数组的头插是 O(n)。quicklist 头尾节点的 ziplist 操作是 O(1)（未满时），满了才需要分配新节点。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Set</strong></td><td>标签、好友关系、共同关注、抽奖</td><td>intset / dict</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>intset 的内存效率：</strong>
+<p>当 Set 中所有元素都是整数且数量较小时，Redis 使用 intset（整数集合）——一个有序的整数数组，通过二分查找（O(logN)）判断元素是否存在。intset 会根据元素大小自动升级编码（int16 → int32 → int64），但不会降级。当元素数量超过 <code>set-max-intset-entries</code>（默认 512）或添加了非整数元素时，转为 dict 编码。</p>
+<p>Set 的交集（SINTER）、并集（SUNION）、差集（SDIFF）操作在 intset 编码下非常高效——有序数组的归并算法。转为 dict 后，交集通常遍历较小的集合查找。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>ZSet</strong></td><td>排行榜、延时队列、带权重的集合</td><td>ziplist → listpack / skiplist + dict</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>ZSet 为什么需要两种结构配合：</strong>
+<p>跳表（skiplist）保证按 score 排序和范围查询 O(logN)，但按 member 查 score 需要遍历跳表（O(logN)）。dict 保证按 member 查 score 是 O(1)。两者组合——跳表存 member+score 并按 score 排序，dict 存 member→score 映射——实现了各自的最优操作。两者在插入/删除时同步更新，空间翻倍但换来了时间最优。</p>
+<p><strong>跳表的层级生成：</strong>每个节点插入时通过随机算法（抛硬币）决定层级。有 1/2 的概率只有第 0 层，1/4 的概率有 2 层，1/8 的概率有 3 层...这保证了第 k 层的节点数大约是 n/2^k，查找时从最高层开始逐层下降，期望时间复杂度 O(logN)。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -71,6 +103,13 @@ graph TD
         E["跳表平均 O(logN)<br/>红黑树也是 O(logN)"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>跳表 vs 红黑树的深入对比：</strong>
+<p>跳表的代码量约 100 行（Redis 中 t_zset.c 的 skiplist 实现），而红黑树约 400 行。跳表的插入/删除只需修改相邻节点的指针，红黑树需要旋转和变色，逻辑更复杂。对于范围查询（ZRANGEBYSCORE），跳表只需在底层沿着 level[0] 的前向指针顺序遍历即可，而红黑树需要中序遍历——本质上是深度优先遍历，需要用栈或父指针回溯，空间和时间开销都更大。</p>
+<p><strong>跳表的空间开销：</strong>每个节点平均有 1/(1-p) 层（p 通常取 0.25），即约 1.33 层。每个节点额外存储约 1.33 个前向指针 + 跨度（span），在 64 位系统上约 21 字节/节点。相比红黑树的父指针+左右子指针+颜色（约 24 字节），空间开销相近。但跳表的实现简洁性在实际工程中价值更大。</p>
+<p><strong>Redis 跳表的特殊设计：</strong>Redis 的跳表节点还存储了 span（跨度），记录了该节点到同层下一个节点跨越了多少个原始节点。这使得 ZRANK（查排名）操作可以在 O(logN) 内完成——在查找路径上累加 span 值即可。</p>
+</div>
 
 <div class="highlight">
 <strong>常见底层结构：</strong>SDS、双向链表、压缩列表（ziplist）、listpack、quicklist、跳表（skiplist）、整数集合（intset）、dict、RedisObject
@@ -83,31 +122,56 @@ graph TD
 
 <div class="mermaid">
 graph TD
-    subgraph "🔴 缓存穿透"
+    subgraph "缓存穿透"
         P1["请求查询不存在的数据"] --> P2["缓存没有，DB也没有"]
         P2 --> P3["大量请求直接打到 DB"]
         P3 --> P4["解决：布隆过滤器 / 缓存空值"]
     end
 
-    subgraph "🟡 缓存击穿"
+    subgraph "缓存击穿"
         H1["热点 key 过期"] --> H2["大量并发请求同一 key"]
         H2 --> H3["瞬时流量全部打到 DB"]
         H3 --> H4["解决：互斥锁 / 逻辑过期"]
     end
 
-    subgraph "🔵 缓存雪崩"
+    subgraph "缓存雪崩"
         X1["大量 key 同时过期 / Redis 宕机"] --> X2["请求全部打到 DB"]
         X2 --> X3["DB 扛不住，服务崩溃"]
         X3 --> X4["解决：过期加随机值 / 高可用集群"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>三大问题的本质区别：</strong>
+<ul><li><strong>穿透</strong>：攻击者或业务异常查询不存在的数据（如查询 id=-1），缓存和 DB 都没有，相当于缓存被"穿透"了。核心特征是查询目标本身不存在。</li>
+<li><strong>击穿</strong>：热点 key（如秒杀商品库存）恰好过期，瞬间所有请求穿透缓存打到 DB。核心特征是 key 存在但刚好过期。</li>
+<li><strong>雪崩</strong>：大量 key 同时过期（如同一时间设置的缓存都在凌晨 0 点过期），或 Redis 宕机，所有请求直接压到 DB。核心特征是规模性的失效。</li></ul>
+<strong>布隆过滤器的原理和代价：</strong>
+<p>布隆过滤器使用一个大的 bit 数组和 k 个哈希函数。添加元素时将 k 个哈希值对应的 bit 置 1；查询时检查 k 个 bit 是否全部为 1。存在误判（假阳性，滤波器说存在但实际不存在，约 1-3%）但不存在漏判（假阴性——说不存在就一定不存在）。误判率取决于 bit 数组大小 m、哈希函数数量 k 和元素个数 n：p ≈ (1 - e^(-kn/m))^k。需要额外维护 bit 数组的存储和更新。</p>
+<strong>逻辑过期方案的精妙之处：</strong>
+<p>热点 key 不设 Redis 过期时间，而是将过期时间存在 value 中。读取时判断是否"逻辑过期"，如果过期则先返回旧值，同时异步启动一个线程去查 DB 更新缓存。用户请求永远不会被阻塞，永远能拿到数据（即使稍旧）。这牺牲了极短时间的强一致性换取了高可用。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th>问题</th><th>原因</th><th>解决方案</th></tr>
-<tr><td><strong>穿透</strong></td><td>查询不存在的数据</td><td>① 布隆过滤器 ② 缓存空值（短过期） ③ 参数校验</td></tr>
-<tr><td><strong>击穿</strong></td><td>热点 key 过期瞬间</td><td>① 互斥锁（setnx） ② 不设过期 + 异步更新 ③ 逻辑过期</td></tr>
-<tr><td><strong>雪崩</strong></td><td>大量 key 同时过期 / Redis 宕机</td><td>① 过期时间 + 随机值 ② 高可用（主从+哨兵/集群）③ 限流降级熔断</td></tr>
+<tr class="row-expandable"><td><strong>穿透</strong></td><td>查询不存在的数据</td><td>① 布隆过滤器 ② 缓存空值（短过期） ③ 参数校验</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>三种方案的组合使用：</strong>
+<p>布隆过滤器前置拦截是最彻底的方案——在缓存层之前就判断 key 是否存在，不存在的直接返回。初始化布隆过滤器时需要全量加载所有可能查询的 key（如所有商品 ID），后续新增数据时同步更新过滤器。缓存空值方案更简单——对查询结果为 null 的 key 也缓存一个特殊值（如 "NULL"），但过期时间要短（1-5 分钟），避免占用过多内存。参数校验是最基本的防护——比如 ID 范围、格式校验，在网关或 Controller 层就拦截非法请求。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>击穿</strong></td><td>热点 key 过期瞬间</td><td>① 互斥锁（setnx） ② 不设过期 + 异步更新 ③ 逻辑过期</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>互斥锁的实现细节：</strong>
+<p>使用 <code>SET key NX PX 3000</code> 实现互斥——第一个获取锁的线程去查 DB 并回写缓存，其他线程等待（while 循环 + sleep 或自旋）直到缓存被更新。锁的过期时间要给重建缓存留足时间。注意：锁的 key 应该是业务 key + ":lock"（如 "product:100:lock"），避免不同业务的锁互相影响。</p>
+<p><strong>逻辑过期 vs 不设过期：</strong>不设过期 + 异步更新方案永远不过期，后台定时任务定期刷新。逻辑过期方案更精细——设置了逻辑过期时间，读取时判断逻辑过期则异步刷新。前者适合变化频率确定的数据，后者更灵活。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>雪崩</strong></td><td>大量 key 同时过期 / Redis 宕机</td><td>① 过期时间 + 随机值 ② 高可用（主从+哨兵/集群）③ 限流降级熔断</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>随机过期时间的计算：</strong>
+<p>在基础 TTL 上叠加一个随机偏移，例如 <code>expire = base_ttl + random(0, base_ttl * 0.3)</code>。这样 30 分钟的缓存实际过期时间分布在 30-39 分钟之间，避免在同一时刻大规模失效。对于定时任务批量写入的缓存尤其重要——如果 100 万条数据在凌晨 2 点整同时写入，不设随机值就会在凌晨 2:30 整同时过期。</p>
+<p><strong>多级降级策略：</strong>限流（Rate Limiter）控制进入 DB 的请求 QPS；降级（Degradation）当 DB 压力过大时返回兜底数据或默认值；熔断（Circuit Breaker）当 DB 连续失败时直接短路，快速失败而非持续重试加重负载。Sentinel 或 Hystrix 是实现这些模式的常用工具。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -127,6 +191,17 @@ sequenceDiagram
 
     Note over App,DB: ❌ 为什么不是"先删缓存，再更新 DB"？
     Note over App,DB: 先删 → 另一线程读到旧数据写入缓存 → 缓存是旧数据
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么"先更新 DB 再删缓存"是最优解：</strong>
+<p>如果先删缓存再更新 DB：一个线程 A 删除缓存 → 另一个线程 B 读缓存 miss → B 从 DB 读到旧数据 → B 将旧数据写入缓存 → A 再更新 DB。结果：DB 是新数据，缓存是旧数据——且这个不一致会持续到缓存的 TTL 结束。而"先更新 DB 再删缓存"的窗口期极短：只有在删缓存之前有其他线程读了旧缓存才可能不一致（读在 DB 更新后、缓存删除前）。考虑到 DB 更新通常比删除缓存快，这个窗口非常小。</p>
+<strong>删除失败兜底——消息队列重试：</strong>
+<p>如果删缓存操作失败（网络抖动、Redis 瞬时不可用），可以发一条 MQ 消息（如 RocketMQ/Kafka），消费者接收后重试删除，支持指数退避（1s → 2s → 4s → 8s → ...）。也可以将删除操作写入一张"任务表"，后台 Job 定时扫描并重试。</p>
+<strong>Canal 的 binlog 订阅方案：</strong>
+<p>Canal 伪装成 MySQL 的从库，监听 binlog 事件。当检测到数据变更时，推送消息到 MQ，由缓存更新服务消费。这是异步的最终一致性方案——从 DB 提交到缓存更新之间可能有几十到几百毫秒的延迟。但好处是与业务代码完全解耦，不会因为缓存更新失败影响主业务流程。</p>
+<strong>延时双删的适用场景：</strong>
+<p>在极端并发场景下，可以：① 删除缓存 → ② 更新 DB → ③ 延时 500ms-1s → ④ 再删除缓存。第二步删除是为了清理在第二步更新 DB 期间可能写入缓存的旧数据。但延时时间难以确定（太短清理不掉，太长影响用户体验），通常只在读写并发极高的热点数据上使用。</p>
 </div>
 
 <div class="highlight">
@@ -151,14 +226,40 @@ sequenceDiagram
 <div class="card">
 <table>
 <tr><th>策略</th><th>行为</th></tr>
-<tr><td><strong>noeviction</strong></td><td>不淘汰，写请求直接报错（默认）</td></tr>
-<tr><td><strong>allkeys-lru</strong></td><td>所有 key 中，淘汰最近最少使用的（推荐）</td></tr>
-<tr><td><strong>allkeys-lfu</strong></td><td>所有 key 中，淘汰使用频率最低的</td></tr>
-<tr><td><strong>volatile-lru</strong></td><td>有过期时间的 key 中，淘汰最近最少使用的</td></tr>
-<tr><td><strong>volatile-lfu</strong></td><td>有过期时间的 key 中，淘汰使用频率最低的</td></tr>
-<tr><td><strong>volatile-ttl</strong></td><td>有过期时间的 key 中，淘汰 TTL 最短的</td></tr>
-<tr><td><strong>allkeys-random</strong></td><td>所有 key 中随机淘汰</td></tr>
-<tr><td><strong>volatile-random</strong></td><td>有过期时间的 key 中随机淘汰</td></tr>
+<tr class="row-expandable"><td><strong>noeviction</strong></td><td>不淘汰，写请求直接报错（默认）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>noeviction 是 Redis 3.x 起的默认策略。当内存达到 maxmemory 时，所有写请求（SET、LPUSH 等）都会返回错误（-OOM command not allowed when used memory > 'maxmemory'），但读请求和 DEL 操作不受影响。这个策略适合内存严格规划的场景，如纯缓存中间层——宁愿报错也不误删数据。但在实际生产环境中很少使用，因为一旦触发就会导致服务不可用。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>allkeys-lru</strong></td><td>所有 key 中，淘汰最近最少使用的（推荐）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>Redis 的近似 LRU 算法：</strong>
+<p>精确 LRU 需要维护一个全局链表，每次访问将 key 移到链表头，淘汰时从尾部取——内存开销大。Redis 使用近似 LRU：随机采样 N 个 key（由 <code>maxmemory-samples</code> 控制，默认 5），淘汰其中 idle time 最大的（即最久未被访问的）。N 越大越接近精确 LRU，但 CPU 开销也越大。Redis 3.0 引入了一个淘汰池（eviction pool），将每轮采样的候选 key 放入池中，淘汰时取池中最差的——提高了近似精度。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>allkeys-lfu</strong></td><td>所有 key 中，淘汰使用频率最低的</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>LFU 的概率计数器：</strong>
+<p>Redis 4.0 引入 LFU。每个 key 的访问频率用一个 8 位的 Morris Counter 记录——不是精确计数，而是一种概率性递增：计数器值越小，递增概率越高（counter 值 0 → 100% 递增，counter 值 255 → 几乎不递增）。同时，计数器会随时间衰减（<code>lfu-decay-time</code> 控制衰减速率），防止"曾经热门后来不用的 key"长期占据内存。LFU 比 LRU 更适合有热点波动的工作负载——LRU 可能因为某个 key 碰巧最近被访问了一次就保留它，而 LFU 只看长期频率。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>volatile-lru</strong></td><td>有过期时间的 key 中，淘汰最近最少使用的</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>只从设置了过期时间（TTL）的 key 中根据 LRU 策略淘汰。如果没有设置过期时间的 key 占用了大量内存，volatile-lru 无法释放它们——最终还是会触发 OOM。适合"所有数据都设 TTL"的场景（纯缓存），这样可以保护一些没有 TTL 的持久数据不被误删。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>volatile-lfu</strong></td><td>有过期时间的 key 中，淘汰使用频率最低的</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>与 volatile-lru 逻辑类似，但使用 LFU 算法而非 LRU 来判断淘汰优先级。只在有过期时间的 key 池中选择访问频率最低的淘汰。适合需要区分热点数据和普通数据且所有 key 都有 TTL 的场景。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>volatile-ttl</strong></td><td>有过期时间的 key 中，淘汰 TTL 最短的</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>选择剩余过期时间（TTL）最短的 key 淘汰——相当于"反正你快过期了，不如现在就腾出空间"。这种策略的假设是：TTL 短的 key 价值更低。但实际上 TTL 短和业务重要性不一定相关。适合缓存预热（先淘汰即将过期的，为新热数据腾空间）的场景。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>allkeys-random</strong></td><td>所有 key 中随机淘汰</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>随机淘汰看似简单粗暴，但在某些场景下表现令人惊讶地好——特别是当所有 key 的访问概率均匀分布时，LRU 和随机没有区别。而且随机淘汰的 CPU 开销极低（不需要维护访问时间），适合对延迟极度敏感的场景。但在大多数实际业务中，数据的访问热度是高度偏斜的（二八法则），所以 LRU/LFU 通常更优。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>volatile-random</strong></td><td>有过期时间的 key 中随机淘汰</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>在有过期时间的 key 中随机选择淘汰。开销最低的"有选择性的"淘汰策略——CPU 开销小，且不会影响无 TTL 的持久数据。适合数据访问均匀、所有 key 设 TTL、且追求低延迟的纯缓存场景。</p>
+</div></td></tr>
 </table>
 <strong>LRU vs LFU：</strong>LRU 看"最近" → 热点数据不容易淘汰；LFU 看"频率" → 防止偶尔访问一次就留下来
 </div>
@@ -177,15 +278,41 @@ graph LR
         A1["每次写操作<br/>追加到 AOF 文件"] --> A2["✅ 数据更安全<br/>❌ 文件大，恢复慢<br/>❌ 写性能有影响"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>RDB fork 的 Copy-On-Write 原理：</strong>
+<p><code>bgsave</code> 触发时，Redis 主进程调用 fork() 创建子进程。fork 使用 COW（写时复制）——父子进程最初共享所有内存页，当父进程修改某个页时，内核才将该页复制一份给父进程，子进程仍持有原始页进行快照写入。这意味着 fork 的瞬时延迟取决于页表大小（通常每 GB 内存约 0.5ms），而内存消耗在大量写入时可能翻倍（父进程修改的页都需要复制）。这也是为什么 Redis 推荐预留一半内存——防止 COW 导致内存溢出。</p>
+<strong>AOF 的三种 fsync 策略：</strong>
+<ul><li><strong>always（每次 fsync）：</strong>每个写命令都同步到磁盘，最安全但性能最差（吞吐量降至几百 QPS）</li>
+<li><strong>everysec（每秒 fsync，默认）：</strong>每秒异步刷盘一次，最多丢失 1 秒数据，性能影响小（通常仅损失 10-15%）</li>
+<li><strong>no（由 OS 决定）：</strong>不主动 fsync，由操作系统决定何时刷盘（通常 30 秒），可能丢失大量数据但性能最好</li></ul>
+<strong>AOF 重写（Rewrite）的机制：</strong>
+<p>随着运行时间增长，AOF 文件会变得很大（例如对同一个 key 执行 100 次 INCR，AOF 记录了 100 条命令）。AOF 重写会根据当前内存数据生成等价的、最精简的写命令集合——100 次 INCR 变成 1 条 SET key 100。重写过程也是 fork 子进程执行，期间的新写入记录到 AOF 重写缓冲区，完成后追加到新文件末尾。这就是为什么重写不会阻塞主进程。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th></th><th>RDB</th><th>AOF</th></tr>
-<tr><td>原理</td><td>定时全量内存快照</td><td>写命令追加日志</td></tr>
-<tr><td>文件大小</td><td>小（压缩二进制）</td><td>大（文本命令）</td></tr>
-<tr><td>恢复速度</td><td><strong>快</strong></td><td>慢（重放所有命令）</td></tr>
-<tr><td>数据安全</td><td>可能丢失最后一次快照后的数据</td><td><strong>更安全</strong>（可配置每秒同步）</td></tr>
-<tr><td>fork</td><td>需要 fork，大数据量下阻塞</td><td>不需要 fork</td></tr>
+<tr class="row-expandable"><td>原理</td><td>定时全量内存快照</td><td>写命令追加日志</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>RDB 是"快照式"——在某个时间点对整个内存做一次全量镜像。AOF 是"日志式"——持续记录每一条修改命令。形象地说，RDB 是拍照片，AOF 是录视频。这也是为什么 RDB 适合备份（小、恢复快），AOF 适合数据安全（细粒度、丢失少）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>文件大小</td><td>小（压缩二进制）</td><td>大（文本命令）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>RDB 是紧凑的二进制格式（Redis 自有格式，经过 LZF 压缩），只存数据本身。AOF 是文本格式的全量写命令（如 SET key value → *3\r\n$3\r\nSET\r\n...），自然更大。但 AOF 经过 rewrite 后会显著缩小（从全量命令优化为净结果命令）。通常同等数据量下 AOF 文件是 RDB 的 2-5 倍大小。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>恢复速度</td><td><strong>快</strong></td><td>慢（重放所有命令）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>RDB 恢复是直接解析二进制文件并加载到内存——一个 10GB 的 RDB 文件可能只需几分钟。AOF 恢复需要逐条重放写命令——相当于把所有历史写入重新执行一遍。如果 AOF 文件有 20GB，重放可能需要数十分钟。这就是为什么大型 Redis 实例推荐使用混合持久化（RDB + AOF）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>数据安全</td><td>可能丢失最后一次快照后的数据</td><td><strong>更安全</strong>（可配置每秒同步）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>RDB 的数据丢失取决于快照频率——如果每 5 分钟一次快照，最多丢失 5 分钟数据。AOF 的 everysec 策略最多丢失 1 秒数据。对于金融场景或关键业务，1 秒 vs 5 分钟的差异可能是致命的。但需要注意的是，即使 AOF everysec，在极端崩溃（如断电）时仍可能丢失最后 1 秒的数据，因为 fsync 是每秒一次而非每个命令。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>fork</td><td>需要 fork，大数据量下阻塞</td><td>不需要 fork</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>RDB 的 bgsave 和 AOF rewrite 都需要 fork。fork 本身是一个系统调用，耗时与进程的虚拟内存大小相关（复制页表）。在 20GB+ Redis 实例上，fork 可能阻塞数百毫秒甚至数秒，期间 Redis 无法处理任何请求。这就是为什么超大实例不推荐频繁 RDB 快照。AOF 的追加写入不需要 fork，但 AOF rewrite 同样需要 fork。</p>
+</div></td></tr>
 </table>
 <strong>最佳实践：</strong>RDB + AOF 混合使用。Redis 4.0+ 支持混合持久化——RDB 快照 + 增量 AOF。
 </div>
@@ -209,6 +336,22 @@ graph TD
         SN2 -.->|"监控 + 投票"| SN3
         Note["Master 挂了 → 哨兵投票选举新 Master → 通知客户端"]
     end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>哨兵故障转移的完整流程（SDOWN → ODOWN → 选举 → 切换）：</strong>
+<ol>
+<li><strong>主观下线（SDOWN）：</strong>每个 Sentinel 每秒向 Master 发送 PING，如果在 <code>down-after-milliseconds</code> 时间内未收到有效回复，该 Sentinel 将 Master 标记为 SDOWN（主观下线）。</li>
+<li><strong>客观下线（ODOWN）：</strong>该 Sentinel 向其他 Sentinel 询问 Master 状态（SENTINEL is-master-down-by-addr），如果超过 <code>quorum</code> 个 Sentinel 都认为 Master 下线，则标记为 ODOWN（客观下线）。</li>
+<li><strong>Leader 选举：</strong>发现 ODOWN 的 Sentinel 发起 Leader 选举（基于 Raft 算法变体），获得 > N/2 票的 Sentinel 成为 Leader，负责执行故障转移。</li>
+<li><strong>选新 Master：</strong>Leader 从所有 Slave 中选出一个最优的（优先级最高 → 复制偏移量最大 → run_id 最小），发送 SLAVEOF NO ONE 提升为 Master。</li>
+<li><strong>重新配置：</strong>其他 Slave 改为复制新 Master，旧 Master 恢复后自动变为 Slave。</li>
+<li><strong>通知客户端：</strong>通过 Pub/Sub 通知所有订阅的客户端新 Master 地址。</li>
+</ol>
+<strong>为什么 Sentinel 至少需要 3 个？</strong>
+<p>为了形成多数派。如果只有 1 个 Sentinel，挂了就无法故障转移。如果 2 个，一个挂了另一个无法形成多数（2 的多数是 2），也无法故障转移。3 个 Sentinel 容忍 1 个挂掉（2 > 3/2）。且必须部署在不同物理机上——如果 3 个 Sentinel 都在同一台机器上，机器挂了就没有故障转移能力。</p>
+<strong>异步复制的数据丢失风险：</strong>
+<p>由于复制是异步的，Master 写入成功但还没来得及同步到 Slave 时宕机，这部分数据就永久丢失了（即使故障转移成功）。可以通过 <code>min-slaves-to-write</code> 和 <code>min-slaves-max-lag</code> 配置来限制——如果健康 Slave 少于 N 个或延迟超过 M 秒，Master 拒绝写入。但这只能用强一致性（更多失败）换数据安全。</p>
 </div>
 
 <div class="highlight">
@@ -254,6 +397,16 @@ sequenceDiagram
     Note over A: GET value == unique_value → DEL key
     R-->>A: OK 释放锁
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么 SET NX EX 必须是原子操作：</strong>
+<p>在 Redis 2.6 之前，SETNX 和 EXPIRE 是两个独立命令，如果执行完 SETNX 后客户端崩溃了，锁就永远不会过期——死锁。Redis 2.6.12 起 SET 命令增加了 NX 和 EX/PX 选项，可以在一条命令中完成加锁+设过期，保证了原子性。这是分布式锁最基本的要求。</p>
+<strong>为什么释放锁需要 Lua 脚本：</strong>
+<p>如果不用 Lua 脚本，释放锁需要两步：GET value 判断是否是自己的锁 → 如果是则 DEL。但这两个操作之间有窗口——GET 之后、DEL 之前，锁可能刚好过期，被另一个线程获取了，然后 DEL 误删了别人的锁。Lua 脚本在 Redis 中是原子执行的，中间不会被其他命令插入，因此 GET+判断+DEL 可以安全地合并为一个原子操作。</p>
+<p>完整的释放锁 Lua 脚本：<code>if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end</code></p>
+<strong>过期时间如何设定：</strong>
+<p>一般设为业务逻辑最长执行时间的 2-3 倍。太短 → 业务没执行完锁就过期了（其他线程获取到锁，同时操作）；太长 → 机器宕机后锁长时间不释放（需要等待过期）。具体数值需要根据业务的 P99 耗时 + buffer 来确定。</p>
+</div>
 
 <div class="highlight">
 <strong>核心要素：</strong><br/>
@@ -268,10 +421,27 @@ sequenceDiagram
 <div class="card">
 <table>
 <tr><th>问题</th><th>方案</th></tr>
-<tr><td>锁过期，业务还没结束</td><td><strong>看门狗机制</strong>（Redisson）：定时续期</td></tr>
-<tr><td>释放了别人的锁</td><td>value 存唯一标识 + Lua 脚本验证后删除</td></tr>
-<tr><td>主从切换锁丢失</td><td><strong>RedLock</strong>：向多个独立实例加锁，过半成功才算获取</td></tr>
-<tr><td>单点故障</td><td>使用 RedLock / Zookeeper 方案</td></tr>
+<tr class="row-expandable"><td>锁过期，业务还没结束</td><td><strong>看门狗机制</strong>（Redisson）：定时续期</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>Redisson 看门狗的工作原理：</strong>
+<p>Redisson 在获取锁后启动一个后台定时任务（watchdog），每隔 <code>lockTimeout / 3</code> 的时间检查锁是否还存在且属于当前线程，如果是则重新设置过期时间（续期）。这个操作也是通过 Lua 脚本原子完成的。如果客户端进程崩溃，看门狗自然停止，锁在剩余的 TTL 后自动释放——不会死锁。</p>
+<p><strong>注意事项：</strong>看门狗机制依赖客户端存活，如果只是 GC 停顿导致看门狗线程暂停，可能导致锁过期。且续期延长了锁持有时间，需要确保你的业务逻辑确实是长时间运算而非死循环或阻塞在外部调用上。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>释放了别人的锁</td><td>value 存唯一标识 + Lua 脚本验证后删除</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>唯一标识通常用 <code>UUID + 线程ID</code> 的组合（保证不同 JVM 实例间不重复、同一 JVM 内不同线程可区分）。释放时先 GET 比较 value，确认是自己的锁才 DEL——这个"校验 + 删除"操作必须在 Lua 脚本中原子执行，否则在 GET 和 DEL 之间锁可能刚好过期被他人获取。</p>
+<p>一个更安全的方案是使用 Redisson 的 RLock，它的 <code>unlock()</code> 内部已经包含了这个原子校验逻辑，开发者不需要手写 Lua 脚本。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>主从切换锁丢失</td><td><strong>RedLock</strong>：向多个独立实例加锁，过半成功才算获取</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>RedLock 算法流程：</strong>
+<p>1. 客户端获取当前时间戳（T1）<br/>2. 依次向 N 个独立的 Redis 实例（通常是 5 个）尝试获取锁（SET NX PX），每个实例设置较短的超时时间（远小于锁 TTL）<br/>3. 计算获取锁的总耗时（T2 - T1），如果获取成功的实例数 ≥ N/2+1（过半），且总耗时 < 锁的 TTL，则认为获取锁成功<br/>4. 实际有效的锁时间 = TTL - 总耗时<br/>5. 如果获取失败，向所有实例发送释放锁请求</p>
+<p><strong>RedLock 的争议：</strong>分布式系统专家 Martin Kleppmann 指出 RedLock 在时钟跳跃、GC 停顿等场景下可能不安全。Redis 作者 antirez 回应称这些场景在实际工程中概率极低。如果你的场景对一致性要求极高（如金融交易），建议考虑 Zookeeper 或 etcd 等基于共识协议的方案。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>单点故障</td><td>使用 RedLock / Zookeeper 方案</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>单实例 Redis 做主从 + 哨兵可以实现高可用，但不能完全保证锁的安全性（主从切换期间可能丢锁）。RedLock 通过多实例独立部署来解决单点问题。Zookeeper 方案通过 ZAB 协议保证一致性和顺序性——临时顺序节点天然支持锁的获取和排队，且客户端断开后临时节点自动删除（释放锁），不需要担心过期时间。代价是 Zookeeper 的性能低于 Redis，约 2-3 倍延迟。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -288,6 +458,14 @@ graph TD
         C --> D["单线程<br/>逐个处理事件"]
         D --> E["读事件 → 解析命令 → 执行 → 写响应"]
     end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>事件循环的核心：</strong>
+<p>Redis 的事件循环本质上是一个不断执行的 while(1) 循环：① 调用 epoll_wait 等待文件事件就绪（阻塞，直到有连接可读/可写或超时）；② 处理就绪的文件事件（读客户端命令、执行命令、写响应）；③ 处理时间事件（如 serverCron，执行定期删除过期 key、AOF 刷盘等后台任务）。所有事件都由同一个线程串行处理。</p>
+<p>因为命令执行是单线程的，Redis 天然不需要对数据结构加锁——这就是为什么它的数据结构实现可以非常简洁，不需要考虑并发安全。每个命令执行时间通常只有微秒级（如 GET O(1) 约 2-5us），在单个 CPU 核心上也能达到 10 万+ QPS。</p>
+<strong>单线程的真正瓶颈：</strong>
+<p>不是命令执行本身，而是：1) 大 key 操作（如 DEL 一个 100 万元素的 Set，需要释放所有元素内存，耗时数百毫秒）；2) O(N) 命令遍历大量 key（KEYS * 遍历全库）；3) 内存回收（过期 key 删除、内存淘汰时的淘汰计算）。Redis 4.0 引入 UNLINK（异步删除）和 FLUSHDB ASYNC（异步清库）来缓解大 key 删除的阻塞问题。</p>
 </div>
 
 <div class="card">
@@ -306,9 +484,23 @@ graph TD
 <br/>
 <table>
 <tr><th>系统调用</th><th>机制</th><th>特点</th></tr>
-<tr><td>select</td><td>遍历所有 fd</td><td>O(n)，有 1024 限制</td></tr>
-<tr><td>poll</td><td>遍历，链表存 fd</td><td>O(n)，无数量限制</td></tr>
-<tr><td>epoll（Linux）</td><td>回调机制，内核通知就绪 fd</td><td>O(1)，无数量限制，<strong>Redis 首选</strong></td></tr>
+<tr class="row-expandable"><td>select</td><td>遍历所有 fd</td><td>O(n)，有 1024 限制</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>select 是最古老的 IO 多路复用机制。它使用 fd_set 位图来管理文件描述符，每次调用 select 都需要将整个 fd_set 从用户态拷贝到内核态，内核遍历全部 fd 检查就绪状态，再将结果拷回用户态。fd_set 大小固定为 1024（FD_SETSIZE），限制了最大并发连接数。</p>
+<p>每次调用 select 后，fd_set 被内核修改（只保留就绪的 fd），所以每次循环都需要重新构建完整的 fd_set。在 10k+ 连接场景下，select 的 O(n) 遍历成为性能瓶颈。Redis 早期版本支持 select（用于兼容性），但生产环境基本都使用 epoll。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>poll</td><td>遍历，链表存 fd</td><td>O(n)，无数量限制</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>poll 是 select 的改进版。使用 pollfd 结构体数组（而非固定位图），突破了 1024 的 fd 数量限制。但仍然需要每次调用时将整个数组从用户态拷贝到内核态，内核 O(n) 遍历所有 fd 检查就绪状态。</p>
+<p>在高并发（10k+）场景下，poll 的 O(n) 遍历仍然不可接受——当 99% 的连接都是空闲的时候，poll 仍然要遍历全部 10k 个 fd。这为 epoll 的出现提供了动力。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>epoll（Linux）</td><td>回调机制，内核通知就绪 fd</td><td>O(1)，无数量限制，<strong>Redis 首选</strong></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>epoll 的核心优势——事件驱动而非轮询：</strong>
+<p>epoll 通过三个系统调用工作：<strong>epoll_create</strong> 创建一个 epoll 实例（内核分配一个 eventpoll 结构）；<strong>epoll_ctl</strong> 向 epoll 实例注册/修改/删除 fd，内核会为每个 fd 设置回调函数——当 fd 就绪时回调被触发，将 fd 加入就绪列表（rdlist）；<strong>epoll_wait</strong> 直接返回就绪列表中的 fd，不需要遍历全部 fd。</p>
+<p>这意味着 epoll_wait 的时间复杂度是 O(1)（只返回就绪的 fd），而非 select/poll 的 O(n)（遍历所有 fd）。在 10k+ 空闲连接的场景下，epoll 的 CPU 开销几乎为零。</p>
+<p><strong>ET（边缘触发）vs LT（水平触发）：</strong>LT 模式下，只要 fd 还有数据可读，每次 epoll_wait 都会返回该 fd（编程更容易但可能重复通知）。ET 模式下，只在 fd 状态变化时通知一次（高性能但要求开发者一次读完所有数据，通常配合非阻塞 IO）。Redis 默认使用 LT 模式，更稳定。</p>
+</div></td></tr>
 </table>
 </div>
 

@@ -27,7 +27,7 @@
 
 <div class="main">
 
-<h1>📦 Java 集合八股文</h1>
+<h1>Java 集合八股文</h1>
 
 <h2 id="one-1">一、集合框架总览</h2>
 
@@ -56,6 +56,17 @@ graph TD
     Map --> HashTable["HashTable<br/>线程安全，过时"]
     Map --> ConcurrentHashMap["ConcurrentHashMap<br/>线程安全"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Collection 和 Map 为什么要分开设计：</strong>
+<p>Collection 接口表示一组元素的集合，核心操作是 add/remove/contains/iterator，关注的是"元素"本身。Map 接口表示键值对的映射，核心操作是 put/get/remove，关注的是 key 到 value 的对应关系。两者在语义上根本不同——强行统一在一个接口下会导致方法签名尴尬（比如 Map 的 add 方法应该接受什么参数？）。Java 的设计者选择了两个独立的接口层次，这是正确的抽象。</p>
+<strong>接口层次的设计意图：</strong>
+<ul><li><strong>List</strong>：承诺有序且可重复，增加了按索引访问的方法（get(int)、set(int, E)）</li>
+<li><strong>Set</strong>：承诺不重复，基于 equals/hashCode 判断，没有索引概念。SortedSet（TreeSet 实现的接口）额外承诺排序</li>
+<li><strong>Queue/Deque</strong>：承诺 FIFO/LIFO/双端操作，增加了 offer/poll/peek 等方法，不抛出异常而是返回特殊值</li></ul>
+<strong>Vector 为什么被标记为"过时"：</strong>
+<p>Vector 的所有方法都加了 synchronized，即使单线程场景也要付出锁的开销。它的迭代器（Enumeration）功能弱于 Iterator（不支持 remove）。Stack 继承 Vector 也被认为是不好的设计（Stack 应该是 LIFO，却暴露了 Vector 的所有方法，允许中间插入）。现代替代方案：用 ArrayList + Collections.synchronizedList() 或 CopyOnWriteArrayList。</p>
+</div>
 
 <h2>一、List</h2>
 
@@ -64,12 +75,32 @@ graph TD
 <div class="card">
 <table>
 <tr><th></th><th>ArrayList</th><th>LinkedList</th></tr>
-<tr><td>底层</td><td>Object[] 数组</td><td>双向链表</td></tr>
-<tr><td>随机访问</td><td>✅ O(1)</td><td>❌ O(n) 需要遍历</td></tr>
-<tr><td>头插/删除</td><td>❌ O(n) 需要移动元素</td><td>✅ O(1)</td></tr>
-<tr><td>尾插</td><td>✅ O(1) 均摊</td><td>✅ O(1)</td></tr>
-<tr><td>内存</td><td>紧凑，只存数据</td><td>每个节点多两个指针</td></tr>
-<tr><td>使用场景</td><td>读多写少 / 随机访问</td><td>频繁头尾增删</td></tr>
+<tr class="row-expandable"><td>底层</td><td>Object[] 数组</td><td>双向链表</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>内存布局的深层差异：</strong>
+<p>ArrayList 使用一块连续内存存储 Object[] 引用数组，每个元素占 4 或 8 字节（取决于是否开启指针压缩）。LinkedList 每个节点是一个内部类 Node 对象，包含 3 个引用（item, prev, next），在 64 位 JVM 中每个 Node 对象头 12-16 字节 + 3 个引用各 4-8 字节 = 约 32-40 字节的纯开销（不含实际数据）。这意味着存储 100 万元素时，LinkedList 的内存开销比 ArrayList 多约 24MB。</p>
+<p><strong>CPU 缓存局部性：</strong>ArrayList 的数据存储在连续内存中，遍历时 CPU 可以高效地预取缓存行（cache line，通常 64 字节），每次预取可以 load 8-16 个引用。LinkedList 的节点在堆上散乱分布，每次访问下一个节点几乎必定是缓存未命中（cache miss），遍历效率可能比 ArrayList 慢 5-10 倍。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>随机访问</td><td>O(1)</td><td>O(n) 需要遍历</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>ArrayList 的随机访问是通过数组基地址 + 索引 * 元素大小直接计算内存地址（C 语言中的 <code>base + index * sizeof(element)</code>），是一次指针解引用。LinkedList 的 get(n) 需要从 head（或 tail，如果 n > size/2 则从尾部）开始逐一遍历第 n 个节点，最坏情况需要遍历 size/2 次。这也是为什么 LinkedList 没有实现 RandomAccess 接口——Java 的 Collections.binarySearch 会检查是否实现了 RandomAccess 来决定使用索引二分还是迭代器二分。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>头插/删除</td><td>O(n) 需要移动元素</td><td>O(1)</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>ArrayList 的头插（add(0, e)）需要调用 System.arraycopy 将所有已有元素整体后移一位——这是一个 native 方法，使用了 CPU 级别的批量内存移动指令（类似 memmove），虽然很快但仍然是 O(n) 操作。LinkedList 的头插只需修改 3 个引用（新节点的 prev/next，以及原 head 的 prev），是真正的 O(1)。但注意：LinkedList 的头插也不是"先找到头再插"——它内部维护了 first 指针，直接定位。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>尾插</td><td>O(1) 均摊</td><td>O(1)</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>ArrayList 的尾插在容量足够时是真正的 O(1)——直接写入 array[size++] 即可。但当 size == capacity 时触发扩容，需要 Arrays.copyOf（本质是 System.arraycopy），这是一个 O(n) 操作。所以尾插的均摊复杂度是 O(1)（因为扩容是偶发的，且扩容倍率 1.5x 使得扩容次数 = log(n)）。LinkedList 尾插维护了 last 指针，直接追加到尾部，是严格的 O(1) 无均摊。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>内存</td><td>紧凑，只存数据</td><td>每个节点多两个指针</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>ArrayList 在无参构造时是空数组（JDK 1.8+），第一次 add 才分配容量 10，之后按 1.5 倍扩容。这个设计避免了大量未使用的 ArrayList 占用内存。LinkedList 除了每个元素的两个指针外，还需要存储 first 和 last 指针以及 size。最关键的是 GC 压力——LinkedList 的每个元素都是一个独立对象，如果频繁增删，会产生大量垃圾对象（Node），触发频繁的 Young GC。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>使用场景</td><td>读多写少 / 随机访问</td><td>频繁头尾增删</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>实际工程中 ArrayList 的使用频率远高于 LinkedList。因为大多数业务场景是"追加 + 遍历 + 随机访问"，恰好是 ArrayList 的强项。而且现代 CPU 的缓存预取机制使得 ArrayList 的实际遍历速度远超看上去的数字。LinkedList 真正有优势的场景非常有限：1) 需要在列表头/尾频繁增删（如实现队列，但此时 ArrayDeque 通常比 LinkedList 更好）；2) 有大量中间位置的增删且不需要随机访问。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -88,6 +119,13 @@ sequenceDiagram
         A->>E: Arrays.copyOf() → 复制到新数组
     end
     A->>E: elementData[size++] = e
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么扩容倍率是 1.5 而不是 2：</strong>
+<p>扩容倍率是一个精心的权衡。2 倍扩容的问题是——每次扩容后，之前所有的扩容空间加起来也不足以容纳下一次扩容。例如：10 → 20 → 40：扩容到 40 后（占用 40），之前扩容释放的空间 10+20=30，不足以放下下一个 40 的扩容（需要新分配），这导致内存无法复用，容易触发碎片化和频繁 GC。</p>
+<p>1.5 倍扩容下：10 → 15 → 22 → 33 → 49 → ...，序列满足 k 次扩容后容量 C(k) = C(0) * 1.5^k，而之前释放的总空间 sum = C(0) * (1.5^k - 1) / 0.5，当 k 足够大时之前释放的总空间接近 C(k)，所以后续扩容有机会复用之前释放的内存。</p>
+<p><strong>System.arraycopy 为什么这么快：</strong>这是一个 native 方法（JVM intrinsic），被 HotSpot JVM 直接编译为 CPU 的批量内存操作指令（如 x86 的 REP MOVS），可以按机器字长（8 字节）批量复制，且在复制前会检查内存重叠并选择正向/反向复制方向。对 Java 开发者来说它只是一个方法调用，但实际上 JIT 编译器会把它内联为几条机器指令。</p>
 </div>
 
 <div class="card">
@@ -136,6 +174,14 @@ graph TD
         P7 --> P8["⑥ 检查是否需扩容"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>hash 扰动函数的数学原理：</strong>
+<p><code>(h = key.hashCode()) ^ (h >>> 16)</code> 这个操作将 hashCode 的高 16 位和低 16 位进行异或混合。原因是 HashMap 的容量通常较小（初始 16），计算桶位置时使用 <code>(n-1) & hash</code>，这等价于 <code>hash % n</code>（当 n 是 2 的幂时）。当 n=16 时，n-1=15（二进制 00001111），只有低 4 位参与运算——高位完全被忽略。如果 hashCode 的低位分布不均匀（某些 Object 的 hashCode 确实如此），会导致严重的 hash 冲突。通过高位异或低位，高位的信息也被"折叠"进了低位，显著改善了分布。这是理论与实践结合的经典案例。</p>
+<strong>树化的两个条件缺一不可：</strong>
+<p>链表长度 ≥ 8（TREEIFY_THRESHOLD）只是一个条件，还需要数组长度 ≥ 64（MIN_TREEIFY_CAPACITY）。原因是：如果数组长度很小（如 16），链表长度达到 8 可能是因为数组太小导致 hash 冲突严重，此时扩容（让桶变成 32 个，分散冲突）比树化更有效。只有当数组已经足够大（≥64）但某个桶仍然有 8+ 个元素时，才说明这些 key 的 hash 值确实高度冲突，此时树化是必要的。</p>
+<p><strong>树化阈值为 8 的概率基础：</strong>基于泊松分布，当负载因子为 0.75 时，一个桶中元素个数 k 的概率近似为 (0.75)^k / k! * e^(-0.75)。计算可得 k=8 的概率约为 0.00000006（千万分之六），这是一个非常罕见的事件。所以正常情况下几乎不会触发树化，HashMap 的性能始终很好。</p>
+</div>
 
 <div class="highlight">
 <strong>hash 扰动函数（为什么高 16 位异或低 16 位）：</strong><br/>
@@ -156,6 +202,13 @@ graph LR
     T1 -->|"threshold=16*0.75=12<br/>size>12 触发扩容"| T2
     Note["负载因子 0.75：空间和时间的折中<br/>太大→hash冲突多 太小→浪费空间"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>扩容时重定位的位运算优化：</strong>
+<p>JDK 1.8 使用了一个巧妙的方法避免重新计算 hash 位置：判断 <code>e.hash & oldCap</code> 是否为 0。因为容量始终是 2 的幂，扩容后新容量是旧容量的 2 倍（newCap = oldCap << 1）。对于任意 hash 值，新位置要么在原位置（如果 hash & oldCap == 0），要么在原位置 + oldCap（如果 hash & oldCap != 0）。</p>
+<p>原理：旧索引 = hash & (oldCap - 1)。新索引 = hash & (newCap - 1) = hash & (2*oldCap - 1)。比较两者的区别——实际上只有第 log2(oldCap) 位不同。旧掩码 (oldCap-1) 的那一位是 0，新掩码 (newCap-1) 的那一位是 1。所以只需检查 hash 在这一位上是 0 还是 1，就能确定新位置。</p>
+<p><strong>负载因子 0.75 的来源：</strong>这是泊松分布与内存效率的折中。负载因子越小，hash 冲突越少（查询越快），但内存利用率越低。0.75 是实验得出的最佳点——在这个值下，链表长度 ≥ 8 的概率约 0.000006%，几乎不会触发树化。如果负载因子设为 1.0，虽然省内存，但冲突概率大幅上升，查询退化。</p>
+</div>
 
 <div class="card">
 <strong>扩容过程：</strong>
@@ -172,10 +225,24 @@ graph LR
 <div class="card">
 <table>
 <tr><th></th><th>JDK 1.7</th><th>JDK 1.8</th></tr>
-<tr><td>结构</td><td>数组 + 链表</td><td>数组 + 链表 + <strong>红黑树</strong></td></tr>
-<tr><td>插入方式</td><td><strong>头插法</strong>（多线程扩容死循环）</td><td><strong>尾插法</strong>（避免了死循环）</td></tr>
-<tr><td>hash 计算</td><td>9 次扰动</td><td>1 次扰动（效率更高）</td></tr>
-<tr><td>扩容条件</td><td>size ≥ threshold</td><td>size > threshold（且桶不为空）</td></tr>
+<tr class="row-expandable"><td>结构</td><td>数组 + 链表</td><td>数组 + 链表 + <strong>红黑树</strong></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>1.8 引入红黑树是为了应对 hash 冲突攻击（DDoS）。攻击者可以精心构造一批 hashCode 相同的 key（如都是 0），导致所有元素落入同一个桶——查询退化到 O(n)。1.7 无法应对这种攻击，1.8 在桶内元素超过 8 个时转为红黑树，查询保持 O(logN)。当元素减少到 6 个时会退化为链表（阈值差 2 是为了避免频繁的树↔链表切换，即 hysteresis）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>插入方式</td><td><strong>头插法</strong>（多线程扩容死循环）</td><td><strong>尾插法</strong>（避免了死循环）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>1.7 头插法导致死循环的详细过程：</strong>
+<p>假设链表是 A→B→C→null。扩容时，1.7 使用头插法将元素从旧表迁移到新表。如果线程 1 执行到一半（持有 A 的引用且 A.next = B），被挂起。线程 2 完成整个扩容（倒序插入：C→B→A→null）。线程 1 恢复后继续使用自己持有的引用——A.next = B，但此时 B.next 已经被线程 2 改成了 A。于是形成了一个环：A→B→A→B...，调用 get() 查找不存在的 key 时会无限循环。</p>
+<p>1.8 的尾插法始终在链表尾部追加，不会改变已有节点的相对顺序，所以扩容后链表顺序不变，避免了成环。这是从"倒序"变为"保序"的关键变化。但不是 1.8 就线程安全了——仍然有数据覆盖和 size 不准的问题。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>hash 计算</td><td>9 次扰动</td><td>1 次扰动（效率更高）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>1.7 的 hash 函数进行了 9 次扰动（4 次移位 + 5 次异或），目的是让 hash 值充分混合。1.8 简化为只用 1 次异或（h ^ h>>>16），因为在 1.8 中即使 hash 碰撞严重，也还有红黑树兜底——hash 扰动不再是唯一的防护手段。这个简化让 hash 计算从约 20 条 CPU 指令减少到约 4 条，在高频调用场景（如大量 put/get）下有明显的吞吐提升。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>扩容条件</td><td>size ≥ threshold</td><td>size > threshold（且桶不为空）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>这是一个微小但重要的区别：1.7 是 size >= threshold 就扩容（threshold = capacity * loadFactor），1.8 是 size > threshold。举例：capacity=16, loadFactor=0.75, threshold=12。1.7 在 size=12 时扩容，1.8 在 size=13 时才扩容。1.8 还增加了一个条件——只有当目标桶不为空时才扩容（如果桶为空说明没有 hash 冲突，不急于扩容）。这些细微调整反映了更好的工程实践。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -184,9 +251,20 @@ graph LR
 <div class="card">
 <table>
 <tr><th>问题</th><th>场景</th></tr>
-<tr><td><strong>数据覆盖</strong></td><td>两个线程同时 put，A 还没插入 B 就插入了 → A 覆盖 B</td></tr>
-<tr><td><strong>1.7 死循环</strong></td><td>扩容时头插法导致链表成环 → get() 时 CPU 100%</td></tr>
-<tr><td><strong>size 不准确</strong></td><td>size++ 不是原子操作</td></tr>
+<tr class="row-expandable"><td><strong>数据覆盖</strong></td><td>两个线程同时 put，A 还没插入 B 就插入了 → A 覆盖 B</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>两个线程同时计算到同一个桶，且桶为空。线程 A 创建了 Node(keyA, valueA)，还没赋值到 table[i]；线程 B 也创建了 Node(keyB, valueB) 并赋值 table[i] = nodeB；然后线程 A 执行 table[i] = nodeA，覆盖了 B 的数据。这就是典型的 check-then-act 竞态条件——两个线程都检查到桶为空，然后都执行插入，后执行的覆盖先执行的。</p>
+<p>这也是 HashMap 最常见的数据丢失场景。在高并发下可能每秒发生数十次。解决方案：使用 ConcurrentHashMap 的 CAS 插入（桶为空时用 CAS 保证只有一个线程成功）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>1.7 死循环</strong></td><td>扩容时头插法导致链表成环 → get() 时 CPU 100%</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>1.7 头插法导致死循环上文已详细分析。这个 bug 在过去的生产环境中造成了多次严重事故（CPU 直接被一个 get() 操作打到 100%，因为无限循环不会释放 CPU）。HashMap 的作者 Doug Lea 在 ConcurrentHashMap 中使用了尾插法来避免这个问题。1.8 引入红黑树时顺带将 HashMap 也改为了尾插法。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>size 不准确</strong></td><td>size++ 不是原子操作</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>size 字段没有 volatile 修饰（1.7 中甚至用了 transient），且 <code>size++</code> 在字节码层面是三个操作：load size → increment → store size。两个线程同时执行 size++ ，可能读到相同的旧值，各自加 1 后写回，导致本来应该 +2 的 size 只增加了 1。而且由于没有 volatile，一个线程对 size 的修改可能对另一个线程不可见，get 时可能返回过期的 size 值。</p>
+<p>ConcurrentHashMap 的解决方案是用 <code>baseCount + CounterCell[]</code> 的分散计数机制——类似于 LongAdder，将竞争分散到多个槽位，最后求和得到总数。</p>
+</div></td></tr>
 </table>
 </div>
 
@@ -209,6 +287,16 @@ graph TD
         C3 --> C4["链表 / 红黑树操作"]
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>1.7 → 1.8 的设计哲学转变：</strong>
+<p>1.7 使用 Segment 继承 ReentrantLock 实现分段锁。默认 16 个 Segment，每个 Segment 管理一部分桶，不同 Segment 之间可以并发操作。但 Segment 的数量在初始化后不可变（除非重新创建整个 Map），随着数据增长，锁粒度相对变粗。且 ReentrantLock 每个锁对象本身占用约 40 字节内存。</p>
+<p>1.8 抛弃了 Segment，改为每个桶一个锁——锁粒度从"Segment 级别"细化到"桶级别"。锁的实现从 ReentrantLock 换为 synchronized，因为 JDK 1.6 之后 synchronized 经过了大量优化（偏向锁、轻量级锁、锁粗化、锁消除），在低竞争场景性能优于 ReentrantLock，且代码更简洁。</p>
+<strong>扩容的多线程协同：</strong>
+<p>1.8 ConcurrentHashMap 的扩容不再是单线程操作——多个线程可以协同扩容。每个线程通过 <code>transferIndex</code>（一个从右向左递减的索引）"认领"一段连续的桶区间进行迁移。使用 CAS 操作 <code>transferIndex</code> 来分配任务区间。这类似于 Fork-Join 的工作窃取模式——put 线程在发现 Map 正在扩容时会帮忙迁移一部分数据，加速扩容完成。迁移完成后在新表中继续执行 put 操作。</p>
+<strong>sizeCtl 的多重语义：</strong>
+<p>sizeCtl 是 ConcurrentHashMap 中最精妙的设计之一，一个变量承担了多种角色：初始化时为 0 或 -1（表示正在初始化）；正常运行时 = threshold（扩容阈值）；扩容时 = -(1 + 参与扩容的线程数)（高位记录扩容标记，低位记录参与线程数）。一个 volatile int 承载了状态机的全部信息，避免了额外的锁或状态变量。</p>
+</div>
 
 <div class="card">
 <strong>JDK 1.8 ConcurrentHashMap 核心机制：</strong>
@@ -224,11 +312,29 @@ graph TD
 <div class="card">
 <table>
 <tr><th></th><th>HashTable</th><th>ConcurrentHashMap</th></tr>
-<tr><td>锁粒度</td><td>锁整张表（synchronized 方法）</td><td>锁桶（synchronized 头节点）</td></tr>
-<tr><td>并发度</td><td>1（全表锁）</td><td>高（桶级别锁）</td></tr>
-<tr><td>读操作</td><td>加锁（get 也锁）</td><td><strong>无锁</strong>（volatile 保证可见性）</td></tr>
-<tr><td>null</td><td>不允许 null key/value</td><td>不允许 null key/value</td></tr>
-<tr><td>性能</td><td>差</td><td>好</td></tr>
+<tr class="row-expandable"><td>锁粒度</td><td>锁整张表（synchronized 方法）</td><td>锁桶（synchronized 头节点）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>HashTable 在每个 public 方法上都加了 synchronized（方法级的 synchronized 锁的是 this），意味着同一时刻只能有一个线程操作这张表——即使两个线程操作的是完全不同的 key。这导致 HashTable 在高并发场景下吞吐量极低（通常只有 ConcurrentHashMap 的 1/10 到 1/20）。</p>
+<p>ConcurrentHashMap 1.8 只锁发生 hash 冲突的桶的头节点，不同桶的操作可以完全并发。在负载因子 0.75、16 个桶的默认配置下，理论上最多 16 个线程可以同时写（实际上受限于 CPU 核心数）。随着扩容桶数增加，并发度进一步提高。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>并发度</td><td>1（全表锁）</td><td>高（桶级别锁）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>"并发度"指的是最多有多少个线程可以同时操作这个数据结构而不阻塞。HashTable 的并发度永远是 1。ConcurrentHashMap 1.7 的并发度 = Segment 数量（默认 16），1.8 的并发度理论上 = 桶的数量（可以非常大）。在实际压测中，ConcurrentHashMap 的吞吐量随线程数线性增长直到 CPU 核心数饱和，而 HashTable 的吞吐量几乎不随线程数增长。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>读操作</td><td>加锁（get 也锁）</td><td><strong>无锁</strong>（volatile 保证可见性）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>HashTable 的 get() 方法也是 synchronized 的，意味着所有读操作也需要竞争同一把锁。在"读多写少"的典型业务场景（如配置缓存、字典数据）中，HashTable 的读锁竞争会成为系统瓶颈——100 个线程同时 get 同一个 HashTable，需要排队。</p>
+<p>ConcurrentHashMap 的 get() 完全无锁——Node.val 和 Node.next 都使用 volatile 修饰，保证了内存可见性（一个线程写 volatile 字段后其他线程立即可见）。get() 只做内存读取，不涉及任何 CAS 或锁操作，因此在"读多写少"场景下性能极佳。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>null</td><td>不允许 null key/value</td><td>不允许 null key/value</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>为什么 ConcurrentHashMap 和 HashTable 都不允许 null，而 HashMap 允许？因为在并发环境下，null 有歧义——get(key) 返回 null 到底是"key 不存在"还是"key 存在但 value 是 null"？在 HashMap 中可以用 containsKey() 来区分，但在 ConcurrentHashMap 中，在 get 和 containsKey 之间可能有其他线程插入/删除数据，这个区分本身就没有意义（TOCTOU 问题——time of check, time of use）。所以直接禁止 null，get 返回 null 就明确表示 key 不存在。</p>
+<p>HashMap 允许 null 是历史遗留设计——早期的 Java 标准库在设计时没有充分考虑这个问题，后来为了兼容性一直保留。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>性能</td><td>差</td><td>好</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>在现代 Java 开发中，HashTable 已被视为遗留类（legacy class），不应在新代码中使用。需要线程安全的 Map 时：优先考虑 ConcurrentHashMap（高并发读写）；如果只是单线程使用或者可以接受外部的同步包装，用 Collections.synchronizedMap(new HashMap<>())（但性能不如 ConcurrentHashMap）。HashTable 仅在某些需要兼容老版本 JDK（1.1/1.2）的极端情况下才会出现。</p>
+</div></td></tr>
 </table>
 </div>
 

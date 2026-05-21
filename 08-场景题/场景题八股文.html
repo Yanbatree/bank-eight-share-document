@@ -42,6 +42,17 @@ graph TD
     end
     L1 --> L2 --> L3 --> L4
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要四层防护，单靠 HTTPS 不够吗？</strong>
+<p>HTTPS 只保证传输通道上不被窃听和篡改，但无法防御应用层的攻击。例如：中间人代理（企业防火墙解密再加密的场景）、客户端恶意软件截获解密后的数据、服务端日志误打印敏感字段等。每一层防护针对不同的攻击面——这就是纵深防御（Defense in Depth）思想，银行系统的核心安全原则。</p>
+<strong>TLS 1.2+ 握手过程与安全性：</strong>
+<p>TLS 握手分为：ClientHello（支持的密码套件）→ ServerHello（选定套件 + 证书）→ 密钥交换（ECDHE 为主流，支持前向保密 PFS）→ 双方用协商的对称密钥通信。TLS 1.0/1.1 已被禁用，因为它们使用了 SHA-1 哈希和 CBC 模式加密，存在 BEAST/POODLE 攻击向量。TLS 1.3 进一步简化握手到 1-RTT，去掉非前向保密的 RSA 密钥交换。</p>
+<strong>AES 加密选型的关键决策：</strong>
+<p>AES-256-GCM 是目前首选模式——GCM 同时提供加密和认证（AEAD），可以防篡改。不要用 ECB 模式（相同明文产生相同密文，模式可被识别），也不要单独用 CBC（需要额外的 HMAC）。密钥必须从 KMS 中动态获取，不能硬编码在代码或配置文件中。密钥应定期轮换（Rotation），旧密钥用新密钥重加密（Re-encrypt）历史数据。</p>
+<strong>Nonce + 时间戳防重放的具体机制：</strong>
+<p>每个请求携带随机数 Nonce（UUID）和时间戳 Timestamp。服务端校验：① 时间戳与服务器时间偏差不超过 5 分钟（防过期请求）；② Nonce 在 Redis 中不重复（用 SET NX EX 存储，过期时间 5 分钟）。攻击者即使截获了完整请求，也无法重放——因为 Nonce 只能用一次，且请求在 5 分钟后自动失效。</p>
+</div>
 
 <div class="card">
 <strong>银行标准回答框架：</strong><br/><br/>
@@ -91,15 +102,46 @@ sequenceDiagram
         S-->>C: 429 请勿重复提交
     end
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么 Redis DEL 的返回值是关键？</strong>
+<p>Redis DEL 命令返回被删除的 key 数量（0 或 1）。这个返回值天然区分了"首次请求"（返回 1，token 存在并被删除）和"重复请求"（返回 0，token 已被之前的请求删除）。不需要额外的 GET → 判断 → DEL 流程，避免了竞态条件。实际上更推荐用 Lua 脚本做 SET NX + DEL 的原子组合，确保"获取并删除"是原子的。</p>
+<strong>Token 机制的核心竞态问题：</strong>
+<p>如果服务端代码是"GET token → 判断是否存在 → 执行业务 → DEL token"，两个并发请求可能同时 GET 到相同的 token（都读到存在），然后都执行了业务。这就是典型的 TOCTOU（Time-of-Check-Time-of-Use）问题。正确的做法是用 Redis 的 SET NX（只在 key 不存在时设置）来获取 token，或者用 Lua 脚本做 check-and-delete 的原子操作。</p>
+<strong>Token 的生命周期管理：</strong>
+<p>Token 必须有过期时间（如 30 秒），防止用户获取 token 后不提交导致 Redis 内存泄漏。过期的 token 被清理后，用户的合法请求会失败——这是预期行为，前端应提示用户刷新页面重新获取 token。不能把过期时间设得过长，否则 token 堆积会撑爆 Redis 内存。</p>
+<strong>如果 Redis 挂了怎么办？</strong>
+<p>Relying on Redis for idempotency 引入了单点故障。降级方案：① 数据库唯一索引兜底（order_no 唯一键，insert 失败返回"请勿重复提交"）；② Redis Cluster + Sentinel 高可用部署；③ 本地缓存（Caffeine/Guava Cache）作为二级降级——但无法跨实例共享，只能作为辅助手段。</p>
+</div>
 
 <div class="card">
 <strong>方案对比：</strong>
 <table>
 <tr><th>方案</th><th>原理</th><th>适用</th></tr>
-<tr><td><strong>Token 机制</strong></td><td>先获取 Token，提交时校验并删除（Redis SETNX + DEL）</td><td>表单提交、支付</td></tr>
-<tr><td><strong>数据库唯一索引</strong></td><td>insert 时依赖唯一约束防重</td><td>创建订单</td></tr>
-<tr><td><strong>状态机</strong></td><td>业务状态流转（待支付→已支付），已支付的不再处理</td><td>状态变更</td></tr>
-<tr><td><strong>乐观锁</strong></td><td>UPDATE SET xxx, version=version+1 WHERE version=N</td><td>并发更新</td></tr>
+<tr class="row-expandable"><td><strong>Token 机制</strong></td><td>先获取 Token，提交时校验并删除（Redis SETNX + DEL）</td><td>表单提交、支付</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Token 机制的精妙之处：</strong>
+<p>Token 本质是一个"一次性凭证"。服务端生成后同时存 Redis（server-side state）和返回给客户端。提交时客户端带 token，服务端用 Redis DEL 的返回值做"原子性校验+消耗"——这巧妙地将两个操作合二为一。对比方案"先查 Redis 再判断"有并发漏洞，而"原子删除"天然线程安全。</p>
+<p>实际落地时还要考虑：Token 用 UUID 生成保证唯一性，过期时间设 30-60 秒（防止内存泄漏），用户刷新页面时重新获取新 token。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>数据库唯一索引</strong></td><td>insert 时依赖唯一约束防重</td><td>创建订单</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>数据库唯一索引是最终兜底：</strong>
+<p>即使 Redis Token 机制失败（Redis 故障、并发竞态等），数据库唯一索引（如 order_no UNIQUE）能保证同一笔订单不会被创建两次。当重复 insert 时，MySQL 返回 Duplicate entry 错误，业务层 catch 住后返回"请勿重复提交"。</p>
+<p>但唯一索引的问题在于：它防的是"已落库"的重复——如果业务操作本身不需要 insert（比如纯 UPDATE 操作），唯一索引就无能为力了。此时需要 Token 机制或状态机。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>状态机</strong></td><td>业务状态流转（待支付→已支付），已支付的不再处理</td><td>状态变更</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>状态机利用业务本身的语义防重：</strong>
+<p>以支付为例，订单状态流转为"待支付 → 支付中 → 已支付"。如果收到第二次支付请求，检查状态已是"已支付"则直接返回成功（不重复扣款）。这比 Token 机制更可靠，因为状态是业务数据的原生属性，不需要额外引入 Redis。</p>
+<p>实现时注意：状态更新要用乐观锁——<code>UPDATE order SET status='paid' WHERE id=? AND status='pending'</code>——通过 affected rows=0 判断是否有人已经改过了。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>乐观锁</strong></td><td>UPDATE SET xxx, version=version+1 WHERE version=N</td><td>并发更新</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>乐观锁不是幂等性方案，而是并发控制：</strong>
+<p>乐观锁的核心是 version 字段。两个请求同时读到 version=1，其中一个更新成功（version→2），另一个更新时 WHERE version=1 条件不成立、affected rows=0。但注意：第二个请求只是"更新失败"而非"幂等返回相同结果"——你需要捕获 affected rows=0 并决定是重试还是返回错误。</p>
+<p>乐观锁适用于"更新同一行数据"的场景（如扣库存、改余额），但不适合"创建新记录"（此时用唯一索引）。</p>
+</div></td></tr>
 </table>
 <strong>银行场景（支付/转账）推荐：Token + 状态机 双重保障。</strong>
 </div>
@@ -115,6 +157,17 @@ flowchart TD
     D --> E["④ 业务层<br/>Redis 预减库存 + 异步下单"]
     E --> F["⑤ MQ 消峰<br/>RocketMQ/Kafka"]
     F --> G["⑥ 数据库<br/>最终扣库存、生成订单"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么"漏斗"过滤是秒杀的核心思想？</strong>
+<p>秒杀系统不是靠一个环节扛住全部流量，而是用层层过滤把流量逐级削减：100 万请求 → CDN/静态化过滤 90 万 → Nginx 限流只剩 1 万 → Redis 预减库存只剩 1000 → MQ 缓冲 → DB 最终写入。每一层都在保护下一层不被冲垮。这就是"漏斗设计"——越靠近用户越粗，越靠近数据库越细。</p>
+<strong>Redis Lua 脚本为什么能防超卖？</strong>
+<p>单条 Redis 命令是原子的，但"检查库存 + 扣库存"是两步操作——如果放在应用层做，两个并发请求可能同时读到 stock=1，都通过检查，都扣减，最终 stock=-1（超卖）。Lua 脚本在 Redis 服务端执行，整个脚本是原子的：<code>local stock = redis.call('get', KEYS[1]); if stock > 0 then redis.call('decr', KEYS[1]); return 1 else return 0 end</code>。这样就消除了竞态条件。</p>
+<strong>MQ 异步下单的补偿机制：</strong>
+<p>Redis 扣库存成功后发 MQ 消息，消费者异步落库。如果消费者挂了或处理失败怎么办？① MQ 消息本身就支持重试（RocketMQ 默认重试 16 次）；② 死信队列兜底——重试 N 次后仍失败的消息进入死信队列，人工介入补偿；③ 定时任务扫描"已扣库存但无订单"的记录，做补偿或回滚。</p>
+<strong>为什么不分库分表？</strong>
+<p>秒杀的流量大但数据量不一定大（就一个商品）。分库分表解决的是数据量大的问题，秒杀要解决的是并发量大的问题。秒杀的热点只有一个（那个秒杀商品），分库分表也无法分散热点——一个商品的所有请求还是会打到同一个分片。所以秒杀优化的核心是"减少打到 DB 的请求"而非"让 DB 能扛更多请求"。</p>
 </div>
 
 <div class="card">
@@ -139,13 +192,36 @@ graph LR
     end
     D -->|"最常用"| E["Guava RateLimiter / Sentinel"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>四种算法的数学本质与适用场景：</strong>
+<p><strong>固定窗口计数器：</strong>把时间切分成固定窗口（如 1 秒），每个窗口内计数，超限则拒绝。问题在于"窗口边界突发"——第 0.9 秒来了 100 个请求，第 1.1 秒又来了 100 个，虽然每秒钟都是 100，但在 0.9-1.1 的 0.2 秒内实际来了 200 个。这叫"双倍突发"问题。</p>
+<p><strong>滑动窗口：</strong>把时间窗口切片（如 1 秒切成 10 个 100ms 小窗口），统计最近 N 个小窗口的请求数。解决了固定窗口的边界问题，代价是内存中要维护窗口队列。Redis 的 ZSET 滑动窗口实现：key 用 score=时间戳，每次统计时删除过期成员。</p>
+<p><strong>漏桶（Leaky Bucket）：</strong>请求先进入队列（桶），然后以恒定速率流出处理。削峰填谷效果好，但无法处理突发流量——即使下游有空闲容量，流量也只能匀速流出。适合需要"稳定输出"的场景（如调用第三方接口，对方要求恒定 QPS）。</p>
+<p><strong>令牌桶（Token Bucket）：</strong>以恒定速率往桶里放令牌，桶满则丢弃令牌。请求需要获取令牌才能通过，桶的大小决定了允许的最大突发量。当没有流量时令牌累积，突发流量来时可以瞬间消耗所有积攒的令牌——这是它比漏桶更实用的原因。Sentinel 和 Guava RateLimiter 默认使用令牌桶。</p>
+</div>
 
 <div class="card">
 <table>
 <tr><th>层级</th><th>工具</th><th>方式</th></tr>
-<tr><td>网关层</td><td>Nginx</td><td>limit_req_zone（漏桶）/ limit_conn</td></tr>
-<tr><td>服务层</td><td>Sentinel / Guava RateLimiter</td><td>令牌桶，QPS 限流 + 熔断降级</td></tr>
-<tr><td>业务层</td><td>Redis + Lua</td><td>滑动窗口计数</td></tr>
+<tr class="row-expandable"><td>网关层</td><td>Nginx</td><td>limit_req_zone（漏桶）/ limit_conn</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>网关层限流——第一道防线：</strong>
+<p>Nginx 的 limit_req_zone 基于漏桶算法，按固定速率处理请求，超过速率的请求直接返回 503。limit_conn 限制并发连接数（如单 IP 最多 10 个连接）。网关层限流的优势在于：它挡在应用服务器前面，恶意流量根本不会打到 Java 进程上，节省了服务器资源。</p>
+<p>配置要点：rate 值要根据后端承载能力设置（如 rate=100r/s），burst 参数允许一定的突发队列。银行场景通常还会结合 WAF（Web 应用防火墙）做 IP 黑名单和 CC 攻击防护。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>服务层</td><td>Sentinel / Guava RateLimiter</td><td>令牌桶，QPS 限流 + 熔断降级</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>服务层限流——精细化控制：</strong>
+<p>相比 Nginx 只能按 IP/URL 限流，Sentinel 可以按接口、按用户、按资源维度做细粒度限流。Sentinel 还集成了熔断降级——当某个接口响应时间过长或异常比例过高时，自动熔断该接口，快速失败，避免雪崩。</p>
+<p>Guava RateLimiter 是单机版的令牌桶实现，适合简单场景。但分布式系统需要全局限流（比如整个集群每秒最多处理 1000 个支付请求），这时 Sentinel 集群限流或 Redis 分布式计数更合适。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>业务层</td><td>Redis + Lua</td><td>滑动窗口计数</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>业务层限流——最灵活的方案：</strong>
+<p>用 Redis ZSET 实现滑动窗口：每个请求以当前时间戳为 score 插入 ZSET，然后删除 score 小于（当前时间-窗口大小）的成员，最后统计 ZSET 大小是否超过阈值。整个操作用 Lua 脚本保证原子性。</p>
+<p>业务层限流的优势是灵活——比如"每个用户每分钟最多发送 5 条短信验证码"、"每个 IP 每小时最多注册 3 个账号"这类需要业务维度（用户 ID、IP）的限流，只有业务层能做到。网关和服务层的限流是粗粒度的。</p>
+</div></td></tr>
 </table>
 <strong>限流后的处理：</strong>排队（验证码/等待页面）、降级（返回缓存/默认结果）、熔断（快速失败）。
 </div>
@@ -163,6 +239,17 @@ graph TD
         E["Seata AT 模式<br/>自动回滚"]
         F["最大努力通知<br/>重试 + 人工兜底"]
     end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>CAP 定理下的分布式事务选型：</strong>
+<p>分布式系统无法同时满足一致性（Consistency）、可用性（Availability）、分区容错性（Partition Tolerance）。银行的分布式事务本质是在 C 和 A 之间做权衡：核心交易（转账、支付）选择 CP，优先保证一致性——用 TCC 或 Seata AT；非核心场景（发短信、记账）选择 AP，优先保证可用性——用本地消息表或最大努力通知做最终一致性。</p>
+<strong>为什么 2PC/XA 在互联网场景被淘汰？</strong>
+<p>2PC 的第一个阶段（Prepare）要求所有参与者锁定资源（数据库行锁），直到第二阶段（Commit/Rollback）才释放。如果协调者挂了，参与者会一直持有锁不放，整个系统阻塞。这种"同步阻塞"在微服务高并发场景下不可接受——一个慢节点拖垮全链路。此外，2PC 要求所有参与者都支持 XA 协议，限制了技术选型。</p>
+<strong>TCC 与 Seata AT 的本质区别：</strong>
+<p>TCC 需要开发者手动实现 Try（资源预留）、Confirm（提交）、Cancel（回滚）三个接口，侵入性强但可控性高，适合复杂业务（如转账需要冻结+解冻）。Seata AT 是基于数据源代理的自动回滚——自动生成 undo log，Commit 时删 undo log，Rollback 时根据 undo log 回滚——开发者无需写补偿代码，但只适用于纯数据库操作（不涉及 Redis、MQ 等外部调用）。</p>
+<strong>银行实际案例——转账 100 元的完整 TCC 流程：</strong>
+<p>Try 阶段：A 账户冻结 100 元（可用余额 -100，冻结金额 +100），B 账户预增 100 元（不可用）。如果任一 Try 失败，所有参与者 Cancel（解冻）。Confirm 阶段：A 账户真正扣减冻结的 100 元，B 账户预增转为实际余额 +100。如果 Confirm 失败（网络问题等），需要重试——TCC 的 Confirm/Cancel 都要求幂等。</p>
 </div>
 
 <div class="card">
@@ -210,6 +297,17 @@ sequenceDiagram
     B->>A2: 带 ticket
     A2->>SSO: 验证 ticket
     A2-->>B: 自动登录成功
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要 Ticket 而不是直接信任 Cookie？</strong>
+<p>如果子系统直接信任 SSO 的 Cookie，SSO 的 Cookie 域名必须设为顶级域（如 .bank.com），这样所有子系统（a.bank.com, b.bank.com）都能读取。但这也意味着任何一个子系统被 XSS 攻击，SSO Cookie 就可能被窃取。Ticket 机制让 Cookie 只在 SSO 域有效，子系统通过服务端到服务端的 ticket 校验获取用户信息，Cookie 不会暴露给子系统。</p>
+<strong>全局 Session 为什么放在 Redis？</strong>
+<p>SSO 中心本身可能是多实例部署的，Session 存本地内存会导致用户请求到不同 SSO 实例时被判定为未登录。Redis 集中存储解决了这个"有状态服务"的水平扩展问题。但同时也引入了对 Redis 的强依赖——所有登录校验都要查 Redis，Redis 挂了整个 SSO 不可用。因此 Redis Cluster + 本地缓存（短 TTL）是常见搭配。</p>
+<strong>JWT 方案 vs Ticket 方案的取舍：</strong>
+<p>JWT 方案：SSO 签发 JWT（含用户信息 + 签名），子系统验证签名即可，不需要回调 SSO。优势是 SSO 无状态、子系统无需网络调用。缺点是 JWT 无法主动失效（除非引入黑名单），用户修改密码后旧 JWT 仍然有效直到过期。Ticket 方案：Ticket 是一次性的，SSO 中心始终是唯一的状态持有者，可以随时踢人下线。银行场景通常选 Ticket，因为安全性要求更高（会话可控）。</p>
+<strong>安全考虑：</strong>
+<p>Ticket 必须是加密的随机字符串（不是自增 ID），防止枚举攻击。Ticket 一次使用后立即删除（或标记已使用），防止重放。SSO Cookie 要设 HttpOnly（防 JS 读取）、Secure（仅 HTTPS 传输）、SameSite=Strict（防 CSRF）。</p>
 </div>
 
 <div class="card">
@@ -269,6 +367,17 @@ flowchart TD
     D --> D2["CompletableFuture 并行调用"]
     D --> D3["MQ 异步处理非关键逻辑"]
 </div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>排查方法论——从现象到根因：</strong>
+<p>第一步，加全链路追踪（SkyWalking / Pinpoint / Jaeger）定位慢在哪个微服务、哪个方法。没有监控就是盲人摸象。第二步，看是 CPU 密集还是 IO 密集：CPU 密集（加密、序列化、复杂计算）优化算法或加机器；IO 密集（数据库、Redis、HTTP）减少 IO 次数或加缓存。第三步，逐层排除——先查网络（ping、traceroute），再查应用（arthas/btrace 看热点方法），再查中间件（慢查询日志、Redis slowlog），最后查数据库（EXPLAIN 分析执行计划）。</p>
+<strong>数据库慢的经典优化路径：</strong>
+<p>① EXPLAIN 查看执行计划：type 列如果是 ALL（全表扫描）必须优化；② 看 key 列是否用到了索引，rows 列估算扫描行数是否合理；③ 慢 SQL 优化三板斧——加索引、改写法（避免 SELECT *、避免函数在列上）、换方案（读写分离、分库分表）。④ MySQL 慢查询日志设置 <code>long_query_time=0.1</code>（100ms 即记录），配合 pt-query-digest 分析慢查询模式。</p>
+<strong>应用层并行的正确姿势：</strong>
+<p>CompletableFuture 并行调用多个下游服务：<code>CompletableFuture.allOf(f1, f2, f3).join()</code>——原本串行 300ms（100ms+100ms+100ms）变并行 100ms（最慢的那个）。但注意：① 线程池要隔离，不要让并行任务共享同一个池子导致死锁；② 设置超时 <code>orTimeout()</code>，单个慢任务不要拖垮整个聚合；③ ForkJoinPool.commonPool() 默认线程数 = CPU 核数-1，IO 密集型任务应使用自定义线程池。</p>
+<strong>第三方调用慢的防御策略：</strong>
+<p>银行系统的第三方调用（如调用央行征信接口）是不可控的外部依赖。必须设置合理超时（connect timeout + read timeout），超时后走降级逻辑（返回缓存结果或默认值）。引入熔断器（Sentinel/Hystrix）—连续失败 N 次后半熔断，直接快速失败，定期试探性放行少量请求检测是否恢复。</p>
+</div>
 
 <div class="card">
 <strong>排查链路：</strong>
@@ -300,6 +409,17 @@ sequenceDiagram
     C->>S: ④ POST /upload/merge?md5=xxx&totalChunks=10
     S->>S: 合并分片 + MD5 校验
     S-->>C: 上传完成 + 文件 URL
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>分片大小的工程权衡：</strong>
+<p>分片太大会导致单次上传失败率高（网络波动导致 50MB 的分片上传到 90% 再失败），分片太小会导致 HTTP 请求次数过多（TLS 握手开销、HTTP header 开销累积）。实践中 5MB 是一个经验性的平衡点——单次上传约 2-10 秒完成（取决于网络），失败影响面小。对于弱网环境（如移动端 4G），可以缩小到 1-2MB。服务端需要限制分片大小上限（如 10MB），防止客户端发超大片。</p>
+<strong>秒传（Sec-upload）的密码学基础：</strong>
+<p>秒传的前提是文件内容的唯一性——通过 MD5 或 SHA-256 计算文件摘要，如果服务端已有相同摘要的文件，说明内容完全一致，可以直接复用。这里有一个安全陷阱：MD5 已被证明存在碰撞攻击，恶意用户可以构造两个不同文件但 MD5 相同。银行场景对文件完整性要求高，应使用 SHA-256 代替 MD5。此外，不要只用文件摘要做秒传判断——还应验证文件大小，双重保障。</p>
+<strong>并发分片上传与乱序合并：</strong>
+<p>客户端可以同时上传多个分片（如用 Web Worker 并发 5 个），服务端需要支持分片乱序到达——即 chunk=5 可能比 chunk=3 先到。服务端将分片临时存储（本地磁盘或对象存储），合并时按 chunks 索引排序后顺序拼接。文件名约定：<code>{file_md5}/chunk_{index}</code>，如 <code>abc123/chunk_3</code>。</p>
+<strong>断点续传的状态管理：</strong>
+<p>/upload/check 接口返回的 uploaded 数组告诉客户端哪些分片已经上传成功。客户端只需上传缺失的分片。这个状态可以用 Redis（分片索引存在 Set 中，合并后删除）或数据库表（file_id + chunk_index + status）管理。关键点：已上传的分片不会被重复覆盖——客户端要知道自己的进度，但服务端的 uploaded 状态才是权威。</p>
 </div>
 
 <div class="card">
@@ -342,6 +462,17 @@ flowchart TD
     I -->|"命中"| J["返回"]
     I -->|"未命中"| K["② 查数据库 + SETNX 写缓存"]
     K --> L["③ 设置过期时间"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么是"删缓存"而不是"更新缓存"？</strong>
+<p>如果一个数据被频繁修改（如库存从 100→99→98→97），每次都更新缓存会产生 3 次写操作，但中间的 99、98 可能从未被读到——这是无效的写开销。直接删缓存，等下次读的时候再加载最新值——这就是惰性加载（Lazy Loading）的核心思想。而且，并发更新可能让缓存的最终值与数据库不一致：A 线程更新 DB=100 后更新缓存，B 线程更新 DB=99 后更新缓存，如果 B 的缓存更新先于 A 完成，缓存最终是 100 而 DB 是 99。</p>
+<strong>Cache Aside 的并发竞态问题——为什么要延迟双删：</strong>
+<p>标准流程"更新 DB → 删缓存"仍存在一个非常狭窄的并发窗口：① 线程 A 读缓存未命中，准备读 DB；② 线程 B 更新 DB=99 并删缓存；③ 线程 A 读到旧的 DB=100 并写入缓存。结果是缓存=100、DB=99，不一致。延迟双删的做法：更新 DB → 第一次删缓存 → 睡眠 N 毫秒（大于一次查询耗时）→ 第二次删缓存。这样即使有线程在两次删除之间把旧值写入了缓存，第二次删除也会清理掉。睡眠时间的估算：业务的查询平均耗时 + 一个 buffer。</p>
+<strong>Canal + binlog 终极兜底方案：</strong>
+<p>Canal 伪装成 MySQL 的从库，实时订阅 binlog。当监听到数据变更时，异步更新或删除缓存。这是目前生产上最可靠的缓存一致性方案——因为 binlog 是数据库原生机制，与业务代码完全解耦，不存在"忘记删缓存"的问题。但引入 Canal 也增加了运维复杂度（Canal Server 本身需要 HA + 监控）。</p>
+<strong>为什么缓存要设过期时间？</strong>
+<p>过期时间是缓存一致性的最后一道防线——即使前面的"更新 DB → 删缓存"失败，缓存也会在过期后自动失效，数据最终会在下次读取时从 DB 加载。过期时间不能设得太短（频繁 miss，增加 DB 压力），也不能太长（不一致窗口太大）。通用的经验值：业务能接受的脏数据时长 × 2。</p>
 </div>
 
 <div class="highlight">
