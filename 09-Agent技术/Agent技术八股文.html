@@ -27,7 +27,7 @@
 <div class="main">
 
 <h1>🤖 AI Agent & MCP 技术八股文</h1>
-<p style="color:var(--text-secondary)">2025 面试新热点 — 手写 Agent + MCP 协议 + RAG 问答</p>
+<p style="color:var(--text-secondary)">2025 面试新热点 — 手写 Agent + Harness 运行时 + MCP 协议 + RAG 问答</p>
 
 <!-- ==================== 一、AI Agent ==================== -->
 <h2 id="one-1">一、AI Agent 基础</h2>
@@ -106,6 +106,149 @@ graph TD
 • <strong>CrewAI</strong>：角色扮演式多 Agent
 • <strong>Anthropic Claude Code</strong>：Agent 驱动的代码助手（Skills + MCP + Hooks）
 • <strong>Dify / Coze</strong>：低代码 Agent 平台
+</div>
+
+<h3 id="one-5">5. Agent 运行时引擎 (Harness)</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "Harness = Agent 的操作系统层"
+        direction TB
+        LLM["LLM 大脑"]
+        Harness["Harness 运行时引擎"]
+
+        Harness --> ToolExec["工具执行器<br/>Bash / API / 文件读写"]
+        Harness --> PermMgr["权限管理器<br/>allow / deny / ask"]
+        Harness --> HookEngine["Hook 引擎<br/>Pre-tool / Post-tool / Session 事件"]
+        Harness --> Sandbox["沙箱安全层<br/>进程隔离 / 网络管控"]
+        Harness --> Session["会话管理<br/>上下文 / 状态 / 后台任务"]
+        Harness --> Config["配置中心<br/>Settings / Env / MCP Server 注册"]
+    end
+
+    LLM -->|"决策：调用哪个工具"| Harness
+    User["用户"] -->|"输入"| LLM
+    Harness -->|"执行结果"| LLM
+</div>
+
+<div class="highlight">
+<strong>一句话：</strong>Harness 是 Agent 的<strong>"操作系统内核"</strong>——LLM 负责"想"，Harness 负责"做"。它管理着 LLM 与外部世界交互的每一个环节：执行什么命令、谁能执行、执行前要做什么检查、执行后要做什么记录。
+</div>
+
+<h4>5.1 Harness 核心职责</h4>
+
+<div class="card">
+<table>
+<tr><th>职责</th><th>做什么</th><th>为什么重要</th></tr>
+<tr><td><strong>工具执行</strong></td><td>将 LLM 输出的 tool_call 翻译为真实系统调用</td><td>LLM 不直接执行代码，需要中间层翻译和管控</td></tr>
+<tr><td><strong>权限控制</strong></td><td>allow / deny / ask 三级权限模型</td><td>防止 Agent 越权操作（删库、访问敏感文件）</td></tr>
+<tr><td><strong>Hook 系统</strong></td><td>在工具执行前后、会话启停时注入自定义逻辑</td><td>企业合规（提交前自动扫描、操作前二次确认）</td></tr>
+<tr><td><strong>沙箱隔离</strong></td><td>限制 Agent 可访问的文件系统、网络、进程</td><td>安全第一——Agent 代码执行必须在受限环境</td></tr>
+<tr><td><strong>会话状态</strong></td><td>管理上下文窗口、后台任务、工作目录</td><td>长任务需要状态持久化和任务编排</td></tr>
+</table>
+</div>
+
+<h4>5.2 Hook 机制详解</h4>
+
+<div class="mermaid">
+sequenceDiagram
+    participant L as LLM
+    participant H as Harness
+    participant PreH as PreToolUse Hook
+    participant Tool as 实际工具
+    participant PostH as PostToolUse Hook
+
+    L->>H: 决定调用 Read / Bash / Write ...
+    H->>PreH: 触发 PreToolUse 事件
+    PreH-->>H: 返回 (允许/拒绝/修改参数)
+    alt Hook 拒绝
+        H-->>L: 返回 "操作被阻止"
+    else Hook 允许
+        H->>Tool: 执行实际工具调用
+        Tool-->>H: 返回执行结果
+        H->>PostH: 触发 PostToolUse 事件
+        PostH-->>H: 返回 (记录日志/发送通知/修改结果)
+        H-->>L: 返回最终结果
+    end
+</div>
+
+<div class="card">
+<strong>常见 Hook 事件类型：</strong>
+<table>
+<tr><th>事件</th><th>触发时机</th><th>典型用途</th></tr>
+<tr><td><code>PreToolUse</code></td><td>工具调用<strong>之前</strong></td><td>审批卡点、参数校验、敏感操作拦截</td></tr>
+<tr><td><code>PostToolUse</code></td><td>工具调用<strong>之后</strong></td><td>审计日志、结果校验、自动提交</td></tr>
+<tr><td><code>Notification</code></td><td>特定通知事件</td><td>权限请求转发、异常告警</td></tr>
+<tr><td><code>SessionStart</code></td><td>会话启动时</td><td>环境初始化、加载项目配置</td></tr>
+<tr><td><code>SessionEnd / Stop</code></td><td>会话结束时</td><td>清理临时文件、上报使用统计</td></tr>
+<tr><td><code>PreCompact</code></td><td>上下文压缩前</td><td>保存关键信息防止被压缩丢失</td></tr>
+</table>
+</div>
+
+<h4>5.3 权限模型（安全核心）</h4>
+
+<div class="mermaid">
+flowchart TD
+    ToolCall["LLM 发出工具调用"] --> Check{权限检查}
+    Check -->|"allow (白名单)"| Execute["直接执行"]
+    Check -->|"deny (黑名单)"| Block["阻止 + 告知 LLM"]
+    Check -->|"ask (需确认)"| Prompt["弹出确认框给用户"]
+    Prompt -->|"用户同意"| Execute
+    Prompt -->|"用户拒绝"| Block
+    Execute --> SandboxCheck{沙箱检查}
+    SandboxCheck -->|"在允许范围内"| Run["真正执行"]
+    SandboxCheck -->|"越界"| Block
+</div>
+
+<div class="card">
+<strong>权限粒度设计：</strong>
+<pre><code>// 权限配置示例（settings.json）
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",        // 允许运行 npm 脚本
+      "Bash(git diff *)",       // 允许查看 git diff
+      "Bash(git log *)"         // 允许查看 git log
+    ],
+    "deny": [
+      "Bash(rm -rf *)",         // 禁止递归删除
+      "Bash(git push --force)", // 禁止强制推送
+      "Read(.env)",             // 禁止读取环境变量文件
+      "Read(*credentials*)"     // 禁止读取凭证文件
+    ],
+    "ask": [
+      "Bash(git push *)"        // git push 需要确认
+    ]
+  }
+}</code></pre>
+
+<strong>银行场景的权限设计原则：</strong>
+• <strong>默认拒绝</strong>：非白名单操作一律拒绝或需审批
+• <strong>最小权限</strong>：Agent 只能访问完成任务所需的最小资源集
+• <strong>读写分离</strong>：读操作可宽松，写操作必须严格管控
+• <strong>审批链路</strong>：高风险操作（数据修改、生产部署）必须走审批 Hook
+</div>
+
+<h4>5.4 Harness 与 Agent 架构的关系</h4>
+
+<div class="mermaid">
+graph TD
+    subgraph "完整 Agent 技术栈"
+        L1["应用层<br/>Skills / Workflows / Plan Mode"]
+        L2["Agent 层<br/>ReAct 循环 / 任务规划 / 记忆管理"]
+        L3["Harness 层<br/>工具执行 / 权限 / Hook / 沙箱 / 会话"]
+        L4["协议层<br/>MCP / Function Calling / REST"]
+        L5["基础设施层<br/>LLM API / 向量库 / 数据库 / 文件系统"]
+    end
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+    L4 --> L5
+</div>
+
+<div class="highlight">
+<strong>面试加分点：</strong>能说出 Agent 不只是"LLM + 工具"，而是有一个完整的<strong>运行时引擎 (Harness)</strong> 在中间做安全管控和执行调度。这说明你理解 Agent 系统在<strong>企业落地</strong>时需要的基础设施，而不只是 demo 级别的玩具。
+<br/><br/>
+<strong>关键公式升级：</strong><code>Agent = LLM + Memory + Planning + Tool Use + <em>Harness(权限+Hook+沙箱)</em></code>
 </div>
 
 <!-- ==================== 二、MCP ==================== -->
