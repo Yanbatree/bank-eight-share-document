@@ -1,4 +1,4 @@
-const CACHE = 'bank-baguwen-v10';
+const CACHE = 'bank-baguwen-v11';
 
 const ASSETS = [
   // Root
@@ -20,6 +20,11 @@ const ASSETS = [
   '10-银行业务/银行业务八股文.html',
   '11-银行智能化/银行智能化八股文.html',
   '12-JAVA基础/JAVA基础八股文.html',
+  '13-设计模式/设计模式八股文.html',
+  '14-SpringBoot/SpringBoot八股文.html',
+  '15-操作系统/操作系统八股文.html',
+  '16-消息队列/消息队列八股文.html',
+  '17-Linux常用命令/Linux常用命令八股文.html',
   // External (cached for offline)
   'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js',
 ];

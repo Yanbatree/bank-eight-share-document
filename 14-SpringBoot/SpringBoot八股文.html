@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>SpringBoot八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #a3e635; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #4d7c0f; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+<script src="../nav.js"></script>
+<div class="main">
+<h1>Spring Boot 八股文</h1>
+
+<!-- ==================== 一、核心原理 ==================== -->
+<h2 id="core">一、核心原理</h2>
+
+<h3 id="core-1">1. @SpringBootApplication 注解</h3>
+
+<div class="mermaid">
+graph TD
+    SBA["@SpringBootApplication<br/>Spring Boot 核心注解"] --> SBC["@SpringBootConfiguration<br/>本质就是 @Configuration"]
+    SBA --> EAC["@EnableAutoConfiguration<br/>触发自动配置机制"]
+    SBA --> CS["@ComponentScan<br/>组件扫描"]
+    EAC --> Import["@Import(AutoConfigurationImportSelector.class)"]
+    Import --> File1["读取 META-INF/spring/<br/>org.springframework.boot.autoconfigure<br/>.AutoConfiguration.imports"]
+    Import --> File2["(旧版) 读取 META-INF/spring.factories<br/>中的 EnableAutoConfiguration 键"]
+    File1 --> Load["加载所有自动配置类"]
+    File2 --> Load
+    Load --> Cond["@ConditionalOnXxx 条件判断"]
+    Cond --> Auto["按需自动配置生效"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>三个核心注解逐一拆解：</strong>
+<ul>
+<li><strong>@SpringBootConfiguration：</strong>本质就是 @Configuration，标注该类是一个配置类。与标准 @Configuration 的唯一区别：它被 @Indexed 元注解标记，支持 Spring 的候选组件索引机制（提升大型项目的启动速度）。配置类中可以定义 @Bean 方法——Spring 会拦截这些方法的调用，确保返回的始终是容器中的单例 Bean（通过 CGLIB 代理增强配置类）。</li>
+<li><strong>@EnableAutoConfiguration：</strong>Spring Boot 的灵魂。内部通过 @Import 引入 <code>AutoConfigurationImportSelector</code>，该类在容器刷新时读取自动配置导入文件，筛选出满足条件的配置类并注册。这是"引入依赖即拥有功能"的实现基础——添加 spring-boot-starter-data-redis 后，RedisAutoConfiguration 自动注册 RedisTemplate、StringRedisTemplate 等 Bean，无需任何手动配置。</li>
+<li><strong>@ComponentScan：</strong>自动扫描当前类所在包及其子包中的 @Component、@Service、@Repository、@Controller 等注解，注册为 Spring Bean。这就是为什么主类建议放在根包下——如果放在 com.example.service 包中，com.example.controller 包中的组件就不会被扫描到。可以通过 basePackages 属性指定额外扫描路径。</li>
+</ul>
+<strong>为什么要把这三个注解合并？</strong>
+<p>在 Spring Boot 出现之前，Spring 项目需要在 XML 中声明组件扫描、导入各种配置、配置注解支持等，配置文件冗长且分散。Spring Boot 通过一个 @SpringBootApplication 将这三件事合为一体，提供了"开箱即用"的体验——只需要一个主类加一个注解就能启动完整的 Spring 应用。这背后体现了"约定大于配置"（Convention over Configuration）的设计哲学。</p>
+</div>
+
+<div class="card">
+<strong>注解层级结构：</strong>
+<pre style="font-size:0.82rem;"><code>@SpringBootApplication                          ← 应用主入口注解
+├── @SpringBootConfiguration                    ← = @Configuration，标记为配置类
+│       └── @Configuration                      ← Spring 标准配置注解
+├── @EnableAutoConfiguration                     ← 自动配置核心
+│       └── @Import(AutoConfigurationImportSelector.class)
+│               └── AutoConfigurationImportSelector
+│                       ├── selectImports() 方法
+│                       ├── 读取 AUTO_CONFIGURATION_IMPORT_FILE
+│                       └── 调用 SpringFactoriesLoader 加载配置类
+└── @ComponentScan                               ← 组件扫描
+        └── 默认扫描当前包及子包</code></pre>
+</div>
+
+<h3 id="core-2">2. 自动配置原理 (Auto-Configuration) -- 核心重点</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant App as SpringApplication
+    participant Ctx as ApplicationContext
+    participant ImportSel as AutoConfiguration<br/>ImportSelector
+    participant Loader as SpringFactoriesLoader
+    participant Cond as ConditionEvaluator
+    participant Auto as 自动配置类<br/>(如 DataSourceAutoConfiguration)
+
+    App->>Ctx: 启动 → refresh()
+    Ctx->>Ctx: invokeBeanFactoryPostProcessors()
+    Ctx->>ImportSel: 处理 @EnableAutoConfiguration 上的 @Import
+    ImportSel->>Loader: 读取 AUTO_CONFIGURATION_IMPORT_FILE
+    Loader-->>ImportSel: 返回候选配置列表（200+ 个）
+    ImportSel->>ImportSel: 去重、排序、过滤（@AutoConfigureBefore/After）
+    ImportSel->>Cond: 对每个配置类评估 @Conditional 条件
+    Cond->>Auto: @ConditionalOnClass(DataSource.class)?
+    Auto-->>Cond: 类路径检查通过/失败
+    Cond->>Auto: @ConditionalOnMissingBean(DataSource.class)?
+    Auto-->>Cond: Bean 已存在则跳过
+    Cond-->>ImportSel: 返回满足条件的配置类列表
+    ImportSel->>Ctx: 注册筛选后的配置类 BeanDefinition
+    Ctx->>Ctx: 实例化 Bean，自动配置生效
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>AutoConfigurationImportSelector 的完整工作机制：</strong>
+<ol>
+<li><strong>寻找候选配置：</strong>Spring Boot 2.7+ 从 <code>META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports</code> 读取（每行一个全限定类名）；旧版本从 <code>META-INF/spring.factories</code> 的 <code>org.springframework.boot.autoconfigure.EnableAutoConfiguration</code> 键读取。每个 Spring Boot Starter 的 jar 包中都有这个文件，声明了自己提供的自动配置类。</li>
+<li><strong>排序与过滤：</strong>候选配置通过 @AutoConfigureBefore、@AutoConfigureAfter 和 @AutoConfigureOrder 注解确定加载顺序。例如 DataSourceAutoConfiguration 必须在 JdbcTemplateAutoConfiguration 之前加载（JdbcTemplate 依赖于 DataSource）。</li>
+<li><strong>条件评估：</strong>这一步最为关键。ConditionEvaluator 对每个配置类上的 @Conditional 注解逐一评估：只有类路径中有对应依赖、用户没有自定义等价 Bean、配置属性值满足要求时，该自动配置类才会生效。</li>
+<li><strong>注册 BeanDefinition：</strong>筛选后的配置类被注册为 BeanDefinition 放入容器，Spring 后续的 refresh() 阶段会实例化其中的 @Bean 方法。</li>
+</ol>
+<strong>如何调试自动配置：</strong>
+<ul>
+<li>启动应用时添加 <code>--debug</code> 参数，控制台会输出完整的 Auto-Configuration Report（分为 Positive matches 和 Negative matches）。</li>
+<li>Positive matches 显示"为什么这个配置生效了"（满足了哪些条件）。</li>
+<li>Negative matches 显示"为什么这个配置没有生效"（缺了哪个条件——比如 @ConditionalOnClass 找不到类，或 @ConditionalOnMissingBean 发现 Bean 已存在）。</li>
+<li>也可以通过 Actuator 的 <code>/conditions</code> 端点在线查看。</li>
+</ul>
+</div>
+
+<div class="card">
+<strong>条件注解详解（决定自动配置是否生效的核心机制）：</strong>
+<table>
+<tr><th>注解</th><th>判断条件</th><th>典型应用</th></tr>
+<tr class="row-expandable"><td><code>@ConditionalOnClass</code></td><td>类路径存在指定类</td><td>最常用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>当指定类的 .class 文件在 classpath 上存在时条件成立。实现原理：通过 <code>Class.forName()</code> 尝试加载（使用 classloader.loadClass()，不初始化类）。</p>
+<p>典型场景：<code>@ConditionalOnClass(DataSource.class)</code> —— 如果引入了 JDBC 依赖（如 mysql-connector-j），DataSource 类就存在，DataSourceAutoConfiguration 就生效。这就是"引入依赖即可自动配置"的魔法核心。</p>
+<p><strong>银行场景：</strong>银行项目往往有私有的数据库连接封装，自定义了 DataSource Bean。当检测到自定义 DataSource 后，Spring Boot 默认的 HikariCP 数据源就不会自动创建（通过下一行的 @ConditionalOnMissingBean 配合实现）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@ConditionalOnMissingBean</code></td><td>容器中不存在指定类型的 Bean</td><td>允许用户覆盖默认配置</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>只在容器中不存在指定类型/名称的 Bean 时才创建。这是"用户自定义配置优先于自动配置"的核心机制——设计师的意图是：Spring Boot 提供默认配置，但如果用户自己定义了等价的东西，就用用户的。</p>
+<p>典型场景：<code>@ConditionalOnMissingBean(DataSource.class)</code> 配合上面的 @ConditionalOnClass —— 满足两个条件才创建默认 DataSource："有驱动"且"用户没自己配"。</p>
+<p><strong>注意：</strong>@ConditionalOnMissingBean 的判断时机是在 Bean 实例化顺序中的位置决定的——如果自动配置类注册得比用户配置类早，它可能误判"没有 Bean"。这就是为什么 @AutoConfigureBefore/@AutoConfigureAfter 排序如此重要。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@ConditionalOnProperty</code></td><td>指定配置属性满足某值</td><td>按开关控制功能</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>根据 application.yml/properties 中的配置值决定是否启用某个功能。支持 <code>prefix</code>（前缀）、<code>name</code>（属性名）、<code>havingValue</code>（期望值）、<code>matchIfMissing</code>（缺少属性时是否视为匹配）。</p>
+<p>典型场景：<code>@ConditionalOnProperty(prefix = "spring.cache", name = "type", havingValue = "redis")</code> —— 只有当配置文件中写的是 redis 缓存时才激活 Redis 缓存自动配置，否则不生效。</p>
+<p><strong>银行场景：</strong>某些安全功能（如 CSRF 保护、IP 白名单）可能在不同的部署环境中有不同需求。通过配置属性控制，可以在 UAT 环境关闭某些安全策略，在生产环境打开。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@ConditionalOnMissingClass</code></td><td>类路径不存在指定类</td><td>互补条件</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>与 @ConditionalOnClass 相反——当类不存在时条件成立。用于某些"缺少某依赖时使用替代方案"的场景。例如：如果缺少 Jackson 就回退到 Gson 作为 JSON 序列化器。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@ConditionalOnBean</code></td><td>容器中存在指定类型的 Bean</td><td>依赖其他 Bean 存在</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>某自动配置只在其依赖的 Bean 已被创建时才生效。例如 JdbcTemplateAutoConfiguration 使用 @ConditionalOnBean(DataSource.class)，确保 DataSource 已经注册后才创建 JdbcTemplate。</p>
+<p><strong>注意：</strong>这引入了 Bean 之间的顺序依赖——如果被依赖的 Bean 还没有被处理，这个条件会失败。AutoConfigurationImportSelector 中的排序策略（@AutoConfigureAfter）就是为了解决这个问题。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>@ConditionalOnWebApplication</code></td><td>是否为 Web 应用</td><td>区分 Web / 非 Web</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>通过检查当前 <code>ApplicationContext</code> 是否是 <code>WebApplicationContext</code> 的子类来判断。可以结合 type 参数指定具体类型：<code>@ConditionalOnWebApplication(type = Type.SERVLET)</code>（传统 Servlet 容器）vs <code>Type.REACTIVE</code>（WebFlux 响应式）。</p>
+<p>典型场景：DispatcherServlet 的自动配置只在 Servlet 类型的 Web 环境下生效；响应式应用使用不同的基础组件。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>DataSourceAutoConfiguration 完整条件分析（经典面试题）：</strong><br>
+<code>@ConditionalOnClass({DataSource.class, EmbeddedDatabaseType.class})</code> → 类路径有 DataSource 和 H2<br>
+<code>@ConditionalOnMissingBean(type = "io.r2dbc.spi.ConnectionFactory")</code> → 非响应式<br>
+<code>@EnableConfigurationProperties(DataSourceProperties.class)</code> → 绑定 spring.datasource.* 配置<br>
+→ 满足以上全部条件后，创建一个默认的 <code>HikariDataSource</code>（Spring Boot 2.x 默认连接池）<br>
+• 这个过程正是"自动配置"的完整体现：检测到依赖 → 判断用户是否自定义 → 创建默认 Bean。
+</div>
+
+<h3 id="core-3">3. Starter 机制</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "Starter 结构"
+        S["spring-boot-starter-xxx"] --> Auto["xxx-spring-boot-autoconfigure<br/>自动配置模块"]
+        S --> Deps["依赖管理<br/>引入所需 jar 包"]
+    end
+    subgraph "BOM 版本管理"
+        BOM["spring-boot-dependencies<br/>（pom.xml 中的 dependencyManagement）"]
+        BOM --> V1["统一管理 200+ 依赖版本"]
+        BOM --> V2["保证依赖版本兼容"]
+    end
+    Deps -.-> BOM
+    Auto --> CondLogic["包含 AutoConfiguration.imports<br/>+ @Conditional 条件判断"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Starter 的本质：</strong>
+<p>Starter 是一个"依赖描述符"（dependency descriptor），它本身不包含任何代码（或者只包含极少的自动配置类），核心作用是：通过传递性依赖（transitive dependency）一次性将某个功能所需的全部 jar 包引入，且保证版本兼容。</p>
+<p>例如 spring-boot-starter-web 包含了：spring-webmvc、spring-web、jackson-databind、hibernate-validator、tomcat-embed-core 等十几个依赖。开发者只需引入一个 starter 依赖，所有这些 jar 就自动出现在 classpath 上了。</p>
+<strong>Starter 的两层架构（推荐做法）：</strong>
+<ol>
+<li><strong>xxx-spring-boot-autoconfigure 模块：</strong>包含自动配置类（XXXAutoConfiguration.java）、配置属性类（XXXProperties.java）、条件注解判断、META-INF/spring/XXX.AutoConfiguration.imports 文件。这是核心模块。</li>
+<li><strong>xxx-spring-boot-starter 模块：</strong>纯粹的 POM 文件，引用 autoconfigure 模块和所有所需的第三方依赖。通过 pom.xml 的 dependency 声明传递依赖——开发者的项目中只引入 starter，所有依赖自动传递进来。</li>
+</ol>
+<strong>银行自研 Starter 案例：</strong>
+<p>银行通常有自研的中间件（如加密服务、审计组件、日志上报等）。通过封装成 Starter，各业务系统只需引入一个依赖，配置几行 yml，就能集成该功能。不需要每个项目重复写配置和初始化代码。</p>
+<strong>版本管理 — spring-boot-dependencies BOM：</strong>
+<p>Spring Boot 的父 POM（spring-boot-dependencies）通过 <code>&lt;dependencyManagement&gt;</code> 统一管理了所有官方依赖的版本号。开发者在项目中引入 starter 时不需要指定版本号——Spring Boot 保证了所有依赖版本之间的兼容性。这解决了 Spring 时代"jar 包地狱"的问题。</p>
+</div>
+
+<div class="card">
+<table>
+<tr><th>常用 Starter</th><th>功能</th></tr>
+<tr class="row-expandable"><td>spring-boot-starter-web</td><td>Web 应用（Spring MVC + Tomcat）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>包含：spring-webmvc（MVC 框架）、jackson-databind（JSON 序列化）、tomcat-embed-core（内嵌 Tomcat）、hibernate-validator（参数校验）、spring-boot-starter（核心 Starter）、spring-boot-starter-json（JSON 处理）。引入这一个就搭建了完整的 RESTful Web 服务。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>spring-boot-starter-data-redis</td><td>Redis 客户端（Lettuce 默认）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>Spring Boot 2.x 起默认使用 Lettuce 作为 Redis 客户端（替代 Jedis），因为 Lettuce 基于 Netty 实现，异步非阻塞，线程安全（单连接多路复用）。自动配置创建 RedisTemplate（默认 JDK 序列化）和 StringRedisTemplate（String 序列化）。<strong>银行场景注意：</strong>银行项目中一般自定义 RedisTemplate 的序列化器为 JSON（默认 JDK 序列化可读性差，且要求实体类实现 Serializable）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>spring-boot-starter-data-jpa</td><td>JPA/Hibernate</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>引入 Hibernate + Spring Data JPA + Spring ORM。自动配置创建 EntityManagerFactory、JpaTransactionManager（事务管理器），支持自动 DDL 生成（spring.jpa.hibernate.ddl-auto）。银行项目通常使用 create-none（生产环境禁自动建表），开发环境用 update。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>spring-boot-starter-security</td><td>安全框架</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>引入 Spring Security 所有核心模块。自动配置创建默认安全过滤器链、密码编码器（BCryptPasswordEncoder）、认证管理器。默认开启 CSRF 保护和 HTTP Basic 认证。<strong>银行场景：</strong>银行 OAuth 2.0 + SSO 单点登录通常在此 Starter 基础上扩展，配合自研的认证/授权服务。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>spring-boot-starter-actuator</td><td>监控和健康检查</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>暴露 /actuator/health、/actuator/metrics 等监控端点。生产环境务必配置只暴露有限端点（management.endpoints.web.exposure.include），并对端点做权限控制（通常配合 Spring Security 做角色限制）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>spring-boot-starter-test</td><td>测试框架集合</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>包含 JUnit 5、Mockito、Hamcrest、AssertJ、Spring Test、JSONassert。@SpringBootTest 注解自动加载完整 ApplicationContext 进行集成测试。@WebMvcTest 只加载 Controller 层做切片测试（轻量快速）。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="core-4">4. SpringApplication 启动流程</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["① SpringApplication.run()<br/>入口调用"] --> B["② 推断应用类型<br/>SERVLET / REACTIVE / NONE"]
+    B --> C["③ 创建 ApplicationContext<br/>AnnotationConfigServletWebServerApplicationContext"]
+    C --> D["④ 准备 Environment<br/>加载配置文件、环境变量等"]
+    D --> E["⑤ 打印 Banner<br/>（可自定义 banner.txt）"]
+    E --> F["⑥ 准备 ApplicationContext<br/>ApplicationContextInitializer"]
+    F --> G["⑦ refreshContext<br/>← Spring 的 refresh() 核心方法"]
+    G --> H["⑧ afterRefresh<br/>（扩展点，默认空实现）"]
+    H --> I["⑨ 调用 ApplicationRunner / CommandLineRunner"]
+    I --> J["⑩ 应用启动完成"]
+    G -.-> G1["refresh() 内部：<br/>Bean 扫描 → Bean 实例化<br/>→ DI → AOP 代理<br/>→ 自动配置生效<br/>→ 内嵌 Tomcat 启动"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>每个阶段的深入理解：</strong>
+<ol>
+<li><strong>推断应用类型：</strong>Spring Boot 通过类路径上是否存在特定的类来判断应用类型：存在 <code>DispatcherServlet</code> 但没有 <code>DispatcherHandler</code> → SERVLET（传统 MVC）；存在 <code>DispatcherHandler</code> → REACTIVE（WebFlux）；两者都不存在 → NONE（命令行工具或定时任务）。这个判断决定了创建哪种类型的 ApplicationContext。</li>
+<li><strong>创建 ApplicationContext：</strong>SERVLET 应用创建 <code>AnnotationConfigServletWebServerApplicationContext</code>，REACTIVE 创建 <code>AnnotationConfigReactiveWebServerApplicationContext</code>。这个选择直接影响后续 Bean 的注册——比如 Servlet 类型的容器会注册内嵌 Tomcat 相关的 Bean。</li>
+<li><strong>准备 Environment：</strong>这是外部化配置加载的核心阶段。Environment 对象中包含了多个 <code>PropertySource</code>，按照优先级从高到低排列（详见下一节"配置优先级"）。加载顺序：命令行参数 → SPIRNG_APPLICATION_JSON → 系统属性 → 环境变量 → application-{profile}.yml → application.yml → 默认值。</li>
+<li><strong>打印 Banner：</strong>在 classpath 根目录放置 <code>banner.txt</code> 可自定义启动横幅。银行项目通常用这个输出应用名称、版本号、环境等信息。</li>
+<li><strong>准备 Context：</strong>应用所有 <code>ApplicationContextInitializer</code> 对上下文做预处理（比如设置激活的 profile、添加自定义的 PropertySource）。</li>
+<li><strong>refreshContext：</strong>这是 Spring 框架最核心的方法——调用的是 AbstractApplicationContext.refresh()。在这里完成：BeanFactory 的初始化、BeanDefinition 的加载与解析、Bean 的实例化与依赖注入、BeanPostProcessor 的执行（包括 AOP 代理的生成）、Web 服务器的创建与启动（在 onRefresh 中）。<strong>自动配置就是在这个阶段生效的</strong>——ConfigurationClassPostProcessor 作为 BeanFactoryPostProcessor 处理 @EnableAutoConfiguration 注解，触发自动配置类的加载和条件判断。</li>
+<li><strong>afterRefresh：</strong>Spring 留的扩展钩子，默认空实现。子类可以重写来做自定义启动后处理。</li>
+<li><strong>调用 Runners：</strong>如果有实现了 <code>ApplicationRunner</code> 或 <code>CommandLineRunner</code> 接口的 Bean，容器启动后逐一调用。常用于数据预热（加载缓存）、启动后校验（检查依赖服务）、任务初始化等。<strong>银行场景：</strong>系统启动后加载黑/白名单到缓存、预加载字典数据等。</li>
+</ol>
+<strong>为什么是这个顺序？</strong>
+<p>这个启动流程体现了"准备 → 创建 → 配置 → 刷新 → 启动后处理"的分层设计：先准备好环境（Environment），才能在创建 Bean 时注入配置值；先完成 Bean 的创建和注入（refresh），才能调用 Runner 执行业务逻辑（此时所有依赖就绪）。</p>
+</div>
+
+<div class="card">
+<strong>Spring Boot 启动流程图总结：</strong>
+<pre><code>SpringApplication.run(主类.class, args)
+  ├── new SpringApplication(primarySources)
+  │       ├── 推断 WebApplicationType（SERVLET / REACTIVE / NONE）
+  │       └── 加载 ApplicationContextInitializer 和 ApplicationListener（通过 SPI）
+  ├── createApplicationContext()
+  │       └── 根据类型创建对应的 ApplicationContext
+  ├── prepareEnvironment()
+  │       └── 加载 PropertySource（配置优先级链）
+  ├── prepareContext()
+  │       ├── 应用 Initializer
+  │       └── 加载 sources（主类等）
+  ├── refreshContext()
+  │       └── AbstractApplicationContext.refresh() ← Spring 核心
+  │               ├── prepareRefresh()
+  │               ├── obtainFreshBeanFactory()
+  │               ├── prepareBeanFactory()
+  │               ├── postProcessBeanFactory()
+  │               ├── invokeBeanFactoryPostProcessors() ← 自动配置生效处
+  │               ├── registerBeanPostProcessors() ← AOP 代理注册处
+  │               ├── initMessageSource()
+  │               ├── initApplicationEventMulticaster()
+  │               ├── onRefresh() ← 内嵌 Tomcat 在此启动
+  │               ├── registerListeners()
+  │               └── finishBeanFactoryInitialization() ← Bean 实例化、DI
+  └── callRunners() → ApplicationRunner + CommandLineRunner</code></pre>
+</div>
+
+<!-- ==================== 二、配置与运维 ==================== -->
+<h2 id="config">二、配置与运维</h2>
+
+<h3 id="config-1">5. 配置文件加载优先级</h3>
+
+<div class="card">
+<strong>配置优先级（从高到低，高优先级覆盖低优先级）：</strong>
+<table>
+<tr><th>优先级</th><th>来源</th><th>说明</th></tr>
+<tr class="row-expandable"><td><strong>1（最高）</strong></td><td>命令行参数</td><td>--server.port=9090</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>启动命令中以 <code>--</code> 前缀传入的参数具有最高优先级。例如 <code>java -jar app.jar --server.port=9090 --spring.profiles.active=prod</code>。这在 Docker/K8s 部署中非常常用——通过容器启动参数覆盖镜像中的默认配置，而不需要重新构建镜像。</p>
+<p>实现原理：SpringApplication 启动时通过 SimpleCommandLinePropertySource 解析命令行参数并加入 Environment。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>2</strong></td><td>SPRING_APPLICATION_JSON</td><td>JSON 格式的环境变量/系统属性</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>通过环境变量或系统属性传入 JSON 格式的配置，适合批量设置多个属性值。例如：<code>export SPRING_APPLICATION_JSON='{"server":{"port":9090},"spring":{"profiles":{"active":"prod"}}}'</code>。在 K8s ConfigMap 场景下非常有用——一个变量传一组配置。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>3</strong></td><td>JNDI 属性（java:comp/env）</td><td>应用服务器 JNDI</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>仅在部署到传统 Java EE 应用服务器（如 WebLogic、WebSphere）时有效。银行项目中如果部署到 WebLogic 等传统中间件时可以在此配置数据库连接等信息。云原生部署中基本不使用。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>4</strong></td><td>Java 系统属性</td><td>-Dserver.port=9090</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>通过 <code>-D</code> 参数设置 JVM 系统属性，如 <code>java -Dserver.port=9090 -jar app.jar</code>。优先级低于命令行参数但高于环境变量。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>5</strong></td><td>操作系统环境变量</td><td>SERVER_PORT=9090</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring Boot 支持"relaxed binding"——环境变量可以使用大写+下划线格式（SERVER_PORT）自动映射到 server.port 属性。K8s 部署中最常用的配置方式：通过 ConfigMap/Secret 注入为环境变量。</p>
+<p>在银行项目的 K8s 部署中，数据库密码等敏感信息通过 Secret 挂载为环境变量注入，不在配置文件中明文存储。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>6</strong></td><td>application-{profile}.yml<br/>（jar 包外部）</td><td>部署目录/config/ 或同目录</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring Boot 默认按以下顺序搜索配置文件（以 jar 文件所在目录为基准）：
+1) <code>./config/application-{profile}.yml</code>（jar 同级 config 目录）
+2) <code>./application-{profile}.yml</code>（jar 同级目录）
+3) classpath:/config/application-{profile}.yml
+4) classpath:/application-{profile}.yml
+外部文件优先级高于内部文件（方便运维人员修改配置而不用重新打包）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>7</strong></td><td>application-{profile}.yml<br/>（jar 包内部）</td><td>classpath 下</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>打包在 jar 内的 profile 特定配置。如果 jar 包外部有同名配置文件，外部文件覆盖内部文件。银行项目通常将各环境（dev/sit/uat/prod）的差异配置放在对应的 profile 文件中，共通配置放在 application.yml。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>8</strong></td><td>application.yml<br/>（jar 包外部）</td><td>部署目录</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>无 profile 的通用配置的外部版本。覆盖 jar 内部的 application.yml。运维团队修改此文件即可调整配置而无须重新打包。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>9</strong></td><td>application.yml<br/>（jar 包内部）</td><td>classpath 下</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>项目中 src/main/resources/application.yml 打包在 jar 中。这是开发人员维护的默认配置——提供合理的默认值，让应用在开发环境能"开箱即用"。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>10（最低）</strong></td><td>@PropertySource 注解</td><td>额外指定的配置文件</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>通过 @PropertySource("classpath:custom.properties") 引入额外的配置文件。注意：@PropertySource 不支持 YAML 格式（只能加载 .properties），不支持 profiles 感知。推荐使用 application.yml 的 spring.config.import 来引入额外配置。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>Profile 切换方式：</strong>
+<ul>
+<li><strong>配置文件：</strong><code>spring.profiles.active=prod</code></li>
+<li><strong>命令行：</strong><code>java -jar app.jar --spring.profiles.active=prod</code></li>
+<li><strong>环境变量：</strong><code>export SPRING_PROFILES_ACTIVE=prod</code></li>
+<li><strong>@ActiveProfiles("test")</strong>：测试代码中指定 profile</li>
+<li><strong>银行场景：</strong>开发环境(dev)、测试环境(sit)、用户验收测试(uat)、生产环境(prod)，通过 K8s ConfigMap 或部署脚本中的环境变量注入 spring.profiles.active，而不在代码中硬编码。</li>
+</ul>
+</div>
+
+<h3 id="config-2">6. @ConfigurationProperties vs @Value</h3>
+
+<div class="card">
+<table>
+<tr><th>特性</th><th>@ConfigurationProperties</th><th>@Value</th></tr>
+<tr class="row-expandable"><td><strong>绑定方式</strong></td><td>按前缀批量映射（prefix）</td><td>逐个属性注入（SpEL）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>@ConfigurationProperties(prefix="app.datasource") 会将 app.datasource.url、app.datasource.username、app.datasource.password 等所有子属性一次性映射到 Java 类的同名字段上。适合管理一组相关的配置。</p>
+<p>@Value("${app.datasource.url}") 需要为每个属性写一行注解，10 个属性就需要 10 个 @Value。当配置项较多时，@ConfigurationProperties 明显更简洁。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Relaxed Binding（松散绑定）</strong></td><td>支持</td><td>不支持</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Relaxed Binding 是 @ConfigurationProperties 的重要特性：配置属性名和 Java 字段名不需要精确匹配。例如 Java 字段 <code>maxConnectionPool</code> 可以匹配以下全部格式：<code>max-connection-pool</code>（kebab-case，推荐）、<code>max_connection_pool</code>（snake_case）、<code>MAX_CONNECTION_POOL</code>（环境变量大写格式）。@Value 不支持这种缓冲映射——属性名必须严格精确匹配。</p>
+<p><strong>银行实践：</strong>运维人员习惯在配置文件中使用 kebab-case，开发人员代码中使用 camelCase。Relaxed Binding 让双方都不用迁就对方的命名习惯。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>JSR-303 校验</strong></td><td>支持（@Validated）</td><td>不支持</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>@ConfigurationProperties 配合 @Validated + Bean Validation 注解（@NotNull、@NotEmpty、@Min、@Max 等）可以在启动时校验配置的合法性。例如 <code>@NotEmpty private String url;</code> —— 如果配置中没有提供 url，应用启动时直接报错，而不是运行时才出现 NullPointerException。</p>
+<p>这是 fail-fast 理念的体现：配置错误应该在启动时就被发现，而不是在生产环境运行到某个功能时才崩溃。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>复杂类型支持</strong></td><td>支持（List、Map、嵌套对象）</td><td>仅基础类型和字符串</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>@ConfigurationProperties 可以映射嵌套对象（如 app.cache.redis.host）和集合类型（List 对应 YAML 的 - 列表语法，Map 对应 YAML 的 key: value 映射）。@Value 只能注入 String、int、boolean 等基础类型，复杂结构需要拼接或手动解析。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>元数据支持</strong></td><td>自动生成 IDE 提示</td><td>无</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>依赖 spring-boot-configuration-processor 后，编译时自动生成 META-INF/spring-configuration-metadata.json。IDE（IntelliJ IDEA、VS Code）读取该文件后可以在编辑 application.yml 时提供属性名自动补全、类型提示、文档说明等。@Value 没有这个能力。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>选择建议：</strong>
+<ul>
+<li><strong>推荐 @ConfigurationProperties：</strong>管理一组相关配置（数据库连接、第三方 API、缓存参数）。类型安全 + 自动补全 + 启动时校验。</li>
+<li><strong>用 @Value 的场景：</strong>只需要注入零散的一两个属性，或者需要使用 SpEL 表达式做计算（如 #{...}）。</li>
+<li><strong>启用方式：</strong>配置类上添加 <code>@ConfigurationPropertiesScan</code> 或 <code>@EnableConfigurationProperties(XXXProperties.class)</code>。</li>
+</ul>
+</div>
+
+<h3 id="config-3">7. 内嵌 Tomcat</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant SC as SpringApplication
+    participant Ctx as ServletWebServer<br/>ApplicationContext
+    participant Factory as ServletWebServer<br/>Factory
+    participant TC as Tomcat（内嵌）
+    participant Servlet as DispatcherServlet
+
+    SC->>Ctx: run() → refresh()
+    Ctx->>Ctx: refresh() 执行到 onRefresh()
+    Ctx->>Factory: createWebServer()
+    Factory->>TC: new Tomcat()
+    TC->>TC: 初始化 Connector<br/>（端口、协议）
+    TC->>TC: 初始化 Engine → Host → Context
+    TC->>TC: 启动 ProtocolHandler<br/>（NIO 接收 HTTP 请求）
+    Factory-->>Ctx: WebServer 就绪
+    Ctx->>Factory: getWebServer().start()
+    Factory->>TC: tomcat.start()
+    TC-->>Factory: 启动完成
+    Factory->>Servlet: 注册 DispatcherServlet
+
+    Note over TC,Servlet: 此后所有 HTTP 请求都通过<br/>内嵌 Tomcat → DispatcherServlet 处理
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>内嵌 Tomcat 的启动入口：</strong>
+<p>Spring Boot 通过 <code>ServletWebServerApplicationContext.onRefresh()</code> 方法创建并启动内嵌 Web 服务器。调用链：<code>createWebServer() → getWebServerFactory() → factory.getWebServer() → new Tomcat()</code>。</p>
+<p>关键代码位置：<code>TomcatServletWebServerFactory.getWebServer()</code> —— 这个方法创建 Tomcat 实例、配置 Connector（端口、协议、超时等）、启动 Tomcat、返回 TomcatWebServer。</p>
+
+<strong>内嵌 vs 外部部署对比：</strong>
+<table>
+<tr><th>方面</th><th>内嵌 Tomcat</th><th>外部 Tomcat</th></tr>
+<tr><td>启动方式</td><td>main() → java -jar</td><td>部署 WAR 到 Tomcat 容器</td></tr>
+<tr><td>依赖管理</td><td>应用自带 Tomcat 版本</td><td>依赖服务器上安装的 Tomcat</td></tr>
+<tr><td>部署复杂度</td><td>一个 jar 包即可</td><td>需要安装、配置 Tomcat，部署 WAR</td></tr>
+<tr><td>环境一致性</td><td>高（应用控制一切）</td><td>低（不同环境 Tomcat 版本可能不同）</td></tr>
+<tr><td>多应用隔离</td><td>每应用一个 Tomcat 实例（独立 JVM）</td><td>多个应用共享一个 Tomcat</td></tr>
+<tr><td>云原生适配</td><td>完美适配 Docker/K8s</td><td>需要额外适配</td></tr>
+</table>
+
+<strong>银行项目实际部署模式：</strong>
+<p>即使银行传统上习惯部署 WAR 到 WebLogic/WebSphere，新项目越来越多地采用内嵌模式——将 Spring Boot jar 打包为 Docker 镜像，运行在 K8s 集群中。内嵌模式的优势在于：每个 Pod 自带运行环境，不依赖宿主机的中间件版本；蓝绿部署和滚动升级更简单；资源隔离更彻底。</p>
+
+<strong>切换到 Undertow 或 Jetty：</strong>
+<p>修改 Maven 依赖即可切换 Web 容器：在 spring-boot-starter-web 中排除 tomcat-embed-core，添加 undertow-core 或 jetty-server。Undertow 在高并发场景下有更低的延迟（基于 XNIO 非阻塞架构），Jetty 在嵌入式场景下启动更快。</p>
+</div>
+
+<div class="highlight">
+<strong>内嵌 Tomcat 关键配置：</strong>
+<ul>
+<li><code>server.port=8080</code> — 端口号</li>
+<li><code>server.tomcat.max-threads=200</code> — 最大工作线程数（默认 200）</li>
+<li><code>server.tomcat.accept-count=100</code> — 等待队列长度（队列满后拒绝连接）</li>
+<li><code>server.tomcat.max-connections=8192</code> — 最大连接数（默认 8192，超过后排队）</li>
+<li><code>server.tomcat.connection-timeout=60000</code> — 连接超时（ms）</li>
+<li><strong>银行场景调优：</strong>并发交易高峰期，max-threads 和 accept-count 需根据压测结果设置。max-threads 过大导致线程切换开销大，过小导致请求排队超时。</li>
+</ul>
+</div>
+
+<!-- ==================== 三、高级特性 ==================== -->
+<h2 id="advanced">三、高级特性</h2>
+
+<h3 id="advanced-1">8. Actuator 监控</h3>
+
+<div class="mermaid">
+graph TD
+    Actuator[Actuator 监控体系] --> Health[health<br/>健康检查]
+    Actuator --> Metrics[metrics<br/>指标数据]
+    Actuator --> Env[env<br/>环境信息]
+    Actuator --> Loggers[loggers<br/>日志级别]
+    Actuator --> Thread[threaddump<br/>线程转储]
+    Actuator --> Heap[heapdump<br/>堆转储]
+    Actuator --> Info[info<br/>应用信息]
+
+    Health --> Hi1[DataSourceHealthIndicator<br/>数据库连接检查]
+    Health --> Hi2[RedisHealthIndicator<br/>Redis 连接检查]
+    Health --> Hi3[自定义 HealthIndicator<br/>银行：核心系统/ESB 连通性检查]
+
+    Metrics --> M1[JVM 内存/GC/线程]
+    Metrics --> M2[HTTP 请求统计]
+    Metrics --> M3[数据库连接池状态]
+    Metrics --> M4[自定义业务指标<br/>银行：交易量/成功率]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Actuator 核心端点详解：</strong>
+<ul>
+<li><strong>/actuator/health：</strong>健康检查端点。聚合所有 HealthIndicator 的状态，返回 UP/DOWN。K8s 的 liveness 和 readiness 探针就依赖这个端点——健康返回 UP = Pod 存活，不健康返回 DOWN = K8s 重启 Pod。<br/>
+银行项目通常自定义 HealthIndicator 检查核心系统连通性（如 ESB 服务总线、核心账务系统），确保应用在依赖系统都可用时才接收流量。</li>
+<li><strong>/actuator/metrics：</strong>Micrometer 指标端点。内置 JVM 指标（内存使用、GC 次数和耗时、线程数）、HTTP 请求指标（请求数、响应时间分布）、Tomcat 指标（活跃线程、连接数）。可以通过 Micrometer 集成 Prometheus（添加 micrometer-registry-prometheus 依赖），实现指标暴露和 Grafana 监控面板。</li>
+<li><strong>/actuator/env：</strong>查看所有 PropertySource 和配置值。注意：包含敏感信息（如数据库密码），生产环境必须配置不暴露。</li>
+<li><strong>/actuator/loggers：</strong>运行时动态修改日志级别（POST /actuator/loggers/com.example → {"configuredLevel": "DEBUG"}），不需要重启应用。<strong>银行运维场景：</strong>出现问题时临时开启 DEBUG 日志排查，问题解决后改回 INFO。</li>
+<li><strong>/actuator/threaddump：</strong>获取 JVM 线程转储（类似 jstack），排查线程死锁、线程阻塞等问题。</li>
+<li><strong>/actuator/heapdump：</strong>下载堆转储文件（hprof），用于离线分析内存泄漏。导入 Eclipse MAT 或 JProfiler 分析。</li>
+</ul>
+<strong>生产安全配置（银行项目必备）：</strong>
+<ul>
+<li><code>management.endpoints.web.exposure.include=health,info,metrics</code> —— 只暴露少数安全端点。</li>
+<li><code>management.endpoint.health.show-details=when-authorized</code> —— 健康详情需要授权才能看到。</li>
+<li>配合 Spring Security 对 /actuator/** 路径做角色限制（只允许运维/监控角色访问）。</li>
+<li>建议使用不同的端口暴露管理端点（management.server.port=8081），将管理流量和业务流量分开（甚至可以从网络层面隔离——管理端口只对内部 IP 开放）。</li>
+</ul>
+</div>
+
+<div class="card">
+<strong>健康检查汇总表：</strong>
+<table>
+<tr><th>HealthIndicator</th><th>检查内容</th></tr>
+<tr class="row-expandable"><td>DataSourceHealthIndicator</td><td>数据库连接健康</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>执行 <code>SELECT 1</code> 或 <code>validationQuery</code> 验证数据源是否可用。可以配置连接超时时间，避免检查本身成为性能瓶颈。在数据库主从切换时，这个端点会短暂返回 DOWN，K8s 根据 liveness probe 的失败次数和间隔决定是否重启 Pod。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>RedisHealthIndicator</td><td>Redis 连接健康</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>执行 PING 命令验证 Redis 连接是否存活。集群模式下检查所有节点（或主节点）。银行系统中的 Redis 通常作为分布式缓存/分布式锁——如果 Redis 不可用，需要切换到降级模式（如直接查数据库）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>DiskSpaceHealthIndicator</td><td>磁盘剩余空间</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>默认检查当前工作目录的剩余空间，阈值低于 10MB 时报警。在频繁产生日志文件或缓存的场景下，磁盘满可能导致应用无法写入日志、存储文件而异常。K8s Pod 的临时存储耗尽也会触发驱逐（Eviction）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>自定义 HealthIndicator</td><td>第三方服务/核心系统</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>实现 HealthIndicator 接口，在 health() 方法中检查第三方服务可用性。银行场景：检查 ESB 服务总线的连通性、核心账务系统的心跳、加密机的可用性等。各服务的健康状态会被 aggregated 到整体 health 端点中。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="advanced-2">9. 全局异常处理</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as Controller
+    participant Advice as @RestControllerAdvice
+    participant DS as DispatcherServlet
+    participant Resp as HTTP Response
+
+    C->>C: 执行业务逻辑
+    C-->>C: 抛出异常（如 BusinessException）
+    C->>DS: 异常向上传播
+    DS->>DS: 遍历 HandlerExceptionResolver 链
+    DS->>Advice: 匹配 @ExceptionHandler 方法
+    Advice->>Advice: 根据异常类型选择处理方法
+    Advice-->>DS: 返回统一响应格式 ResultVO
+    DS->>DS: HttpMessageConverter 序列化为 JSON
+    DS-->>Resp: 200 OK / 自定义状态码 + JSON 响应体
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>@RestControllerAdvice + @ExceptionHandler 完整工作机制：</strong>
+<ol>
+<li><strong>异常传播链：</strong>Controller 方法抛出异常 → Spring MVC 的 DispatcherServlet 捕获 → 遍历 HandlerExceptionResolver 链 → ExceptionHandlerExceptionResolver 匹配 @ExceptionHandler 方法。</li>
+<li><strong>异常匹配规则：</strong>Spring 按照异常类型选择最精确的 @ExceptionHandler 方法。如果抛出了 BusinessException（继承 RuntimeException），先找 @ExceptionHandler(BusinessException.class)，找不到再找 @ExceptionHandler(RuntimeException.class)，最后找 @ExceptionHandler(Exception.class)。</li>
+<li><strong>返回统一格式：</strong>@ExceptionHandler 方法将异常转换为统一响应对象（如 ResultVO(code, message, data)），通过 HttpMessageConverter 序列化为 JSON 返回给客户端。</li>
+</ol>
+<strong>银行项目中的标准异常处理设计：</strong>
+<ul>
+<li><strong>业务异常 BusinessException：</strong>带错误码和错误消息的业务异常（如"账户余额不足"），返回给前端显示。</li>
+<li><strong>参数校验异常 MethodArgumentNotValidException：</strong>配合 @Valid/@Validated 使用，自动收集字段校验失败信息并返回。</li>
+<li><strong>系统异常（兜底）：</strong>RuntimeException 及以上异常统一记录详细错误日志（含请求参数、堆栈），返回"系统繁忙，请稍后重试"遮蔽内部细节，避免敏感信息泄露。</li>
+<li><strong>金融安全要求：</strong>异常返回不能暴露内部结构（如数据库字段名、SQL 语句）、不能暴露框架版本信息、敏感操作（转账、密码验证）失败时返回模糊消息。</li>
+</ul>
+</div>
+
+<div class="card">
+<strong>标准 @RestControllerAdvice 代码结构：</strong>
+<pre><code>@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResultVO handleValidation(MethodArgumentNotValidException e) {
+        // 参数校验异常 → 400
+        String msg = e.getBindingResult().getFieldErrors()
+            .stream().map(FieldError::getDefaultMessage)
+            .collect(Collectors.joining("; "));
+        return ResultVO.fail(400, msg);
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    public ResultVO handleBusiness(BusinessException e) {
+        // 业务异常 → 自定义错误码
+        return ResultVO.fail(e.getCode(), e.getMessage());
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResultVO handleUnknown(Exception e) {
+        // 未知异常 → 记录日志 + 返回模糊提示
+        log.error("未知异常", e);
+        return ResultVO.fail(500, "系统繁忙，请稍后重试");
+    }
+}</code></pre>
+</div>
+
+<h3 id="advanced-3">10. 拦截器 vs 过滤器</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 客户端
+    participant F as Filter<br/>(Servlet 层)
+    participant DS as DispatcherServlet
+    participant I as HandlerInterceptor<br/>(Spring MVC 层)
+    participant Ctrl as Controller
+
+    C->>F: HTTP 请求
+    F->>F: filter.doFilter()
+    Note over F: Filter 链执行（编码/日志）
+    F->>DS: 请求达到 DispatcherServlet
+    DS->>DS: 查找 Handler
+    DS->>I: interceptor.preHandle()
+    Note over I: 权限校验/登录检查<br/>返回 false 则中断
+    I-->>DS: true（继续）
+    DS->>Ctrl: 调用 Controller 方法
+    Ctrl-->>DS: 业务处理完成
+    DS->>I: interceptor.postHandle()
+    Note over I: 后处理（修改 ModelAndView）
+    DS->>DS: 视图渲染 / JSON 序列化
+    DS->>I: interceptor.afterCompletion()
+    Note over I: 收尾（清 ThreadLocal / 记录耗时）
+    I-->>DS: 完成
+    DS-->>F: 响应
+    F->>F: Filter 出站处理
+    F-->>C: HTTP 响应
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>核心区别总结：</strong>
+<p>Filter 工作在 Servlet 容器层面（Tomcat），是所有请求到达 DispatcherServlet 之前的第一道关卡。HandlerInterceptor 工作在 Spring MVC 层面，只在 DispatcherServlet 接收到请求之后、Controller 执行前后工作。</p>
+
+<strong>两者的能力差异：</strong>
+<ul>
+<li><strong>Filter 可以修改请求和响应：</strong>通过包装 HttpServletRequestWrapper / HttpServletResponseWrapper 修改请求头、请求参数、响应体。典型的例子：XSS 过滤器包装请求，将请求参数中的特殊字符转义。</li>
+<li><strong>Interceptor 可以获取 Controller 信息：</strong>preHandle 的 handler 参数包含了即将执行的 HandlerMethod（Controller 类名、方法名、方法参数等），可以根据方法上的注解做精细控制（如检查方法上是否有 @RequiresPermissions 注解）。</li>
+<li><strong>Filter 可以拦截所有请求：</strong>包括静态资源（CSS/JS/图片）。Interceptor 默认不拦截静态资源（通过 WebMvcConfigurer 配置）。</li>
+<li><strong>afterCompletion 的独特性：</strong>Interceptor 的 afterCompletion 方法在视图渲染完成或响应已提交后执行，保证一定能执行（类似 finally）。常用于清理 ThreadLocal，防止内存泄漏。</li>
+</ul>
+
+<strong>银行项目中的典型分工：</strong>
+<ul>
+<li><strong>Filter 适合：</strong>编码设置（UTF-8 字符编码）、CORS 跨域处理、请求/响应日志记录（访问日志包括请求 IP、URL、响应时间）、XSS 攻击防护（过滤请求参数中的 script 标签）、SQL 注入防护。</li>
+<li><strong>Interceptor 适合：</strong>用户认证（从 Token 中解析用户信息并存入 ThreadLocal）、权限校验（检查用户角色/权限是否满足接口要求）、操作审计日志（记录用户操作了什么功能）、API 调用限流（根据用户维度计数）。</li>
+</ul>
+</div>
+
+<div class="card">
+<strong>Filter vs HandlerInterceptor 对比表：</strong>
+<table>
+<tr><th>对比维度</th><th>Filter（过滤器）</th><th>HandlerInterceptor（拦截器）</th></tr>
+<tr class="row-expandable"><td><strong>所属层级</strong></td><td>Servlet 容器层（Tomcat）</td><td>Spring MVC 层</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Filter 是 Java Servlet 规范（javax.servlet.Filter）定义的组件，由 Servlet 容器（如 Tomcat）管理。它不依赖 Spring 框架——即使不用 Spring，纯粹的 Servlet 项目也能使用 Filter。</p>
+<p>HandlerInterceptor 是 Spring MVC 提供的扩展接口（org.springframework.web.servlet.HandlerInterceptor），它完全在 Spring 框架内部工作——请求必须先经过 Filter 链到达 DispatcherServlet，然后才进入 Interceptor 链。因此 Interceptor 的生命周期和功能范围都受 Spring 框架限制。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>执行时机</strong></td><td>DispatcherServlet 之前</td><td>DispatcherServlet 之后，Controller 之前/后</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>完整执行顺序（从外到内）：</strong><br/>
+Filter.doFilter() 入站 → ... → DispatcherServlet.doDispatch() → Interceptor.preHandle() → Controller.method() → Interceptor.postHandle() → ViewResolver → View.render() → Interceptor.afterCompletion() → ... → Filter.doFilter() 出站</p>
+<p>这就像洋葱模型：Filter 是最外层，Interceptor 是中间层，Controller 是核心。每一层都可以在请求进入和请求离开时执行额外逻辑。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>依赖注入</strong></td><td>不能直接注入 Bean（非 Spring 管理）</td><td>可以，因为 Interceptor 注册在 Spring 容器中</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Filter 默认由 Servlet 容器管理（不是 Spring Bean），因此不能直接使用 @Autowired。但可以通过 Spring 的 <code>DelegatingFilterProxy</code> 将 Filter 注册到 Spring 容器中，从而实现依赖注入。Spring Security 的过滤器链（springSecurityFilterChain）就是这样实现的。</p>
+<p>HandlerInterceptor 注册在 WebMvcConfigurer.addInterceptors() 中，可以正常使用 @Autowired/@Resource 注入任何 Spring Bean。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>拦截范围</strong></td><td>所有请求（包括静态资源）</td><td>仅进入 DispatcherServlet 的请求</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Filter 的 url-pattern 可以配置为 /*（拦截所有请求），包括 /static/js/app.js、/favicon.ico 等静态资源。这是 Filter 的优势——可以做全局性的处理（如统计每个请求的响应时间，包括静态资源加载时间）。</p>
+<p>HandlerInterceptor 通过 addPathPatterns / excludePathPatterns 配置拦截路径，但只对进入 DispatcherServlet 的请求有效。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>中断请求</strong></td><td>filterChain.doFilter() 不调用即可中断</td><td>preHandle 返回 false 即中断</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Filter 中断请求并不调用 filterChain.doFilter()，自行向 response 写入响应（如返回 403 状态码）。Interceptor 更简洁——preHandle() 返回 false 即表示请求被拒绝，DispatcherServlet 不再调用后续的 Interceptor 和 Controller。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ==================== 四、Spring Boot 与银行场景 ==================== -->
+<h2 id="banking">四、银行面试拓展</h2>
+
+<h3 id="banking-1">11. 银行项目中的 Spring Boot 实践要点</h3>
+
+<div class="card">
+<table>
+<tr><th>关注点</th><th>Spring Boot 方案</th><th>银行特殊要求</th></tr>
+<tr class="row-expandable"><td><strong>配置管理</strong></td><td>application.yml + Profile</td><td>敏感信息加密、配置审计</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>银行要求配置文件中的密码、密钥等敏感信息必须加密存储（不能明文）。可使用 Jasypt 加密（jasypt-spring-boot-starter）或 Vault（HashiCorp Vault）管理敏感配置。Spring Cloud Config Server + Git 可以作为统一配置中心，实现配置的版本管理和变更审计（谁、什么时间、修改了什么配置）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>日志规范</strong></td><td>Logback / Log4j2</td><td>日志保留周期、脱敏、合规审计</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>银行业务日志需要保留至少 6 个月（监管要求）。日志中不能记录客户敏感信息明文（如身份证号、银行卡号、手机号），需要在日志框架的 Converter/Layout 层面做敏感信息脱敏。使用 MDC（Mapped Diagnostic Context）在每个请求开始时设置 traceId，实现全链路日志追踪。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>交易一致性</strong></td><td>@Transactional + 分布式事务</td><td>资金交易强一致性</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>资金交易场景下，数据库事务不能丢（@Transactional(rollbackFor = Exception.class)）。跨系统的分布式事务（如扣款 + 记账 + 短信通知）通常采用最终一致性方案（本地消息表 + 定时补偿），而不是强一致的 2PC（性能差、单点故障）。Seata 的 AT 模式在银行场景中需谨慎评估——它通过数据源代理实现自动回滚，但可能与某些银行自研的数据访问层冲突。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>安全防护</strong></td><td>Spring Security + OAuth 2.0</td><td>多因素认证、国密算法</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>金融应用需要满足等保三级要求：认证（多因素认证 MFA）、授权（RBAC/ABAC）、审计（操作日志不可删除）、数据加密（传输层 TLS 1.2+、存储层 AES-256）、国密算法支持（SM2/SM3/SM4）。Spring Security 提供可定制的认证过滤器链，可以集成银行自研的认证中心。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>高可用</strong></td><td>Actuator + K8s 探针</td><td>双活/灾备、优雅停机</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>银行系统要求 99.99% 以上的可用性。Spring Boot 应用配合 K8s 的 liveness probe（/actuator/health/liveness）和 readiness probe（/actuator/health/readiness）实现自动故障恢复。优雅停机（server.shutdown=graceful）确保正在处理的交易完成后才关闭 Pod，避免交易中断。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="banking-2">12. Spring Boot 常见面试追问</h3>
+
+<div class="highlight">
+<strong>Q1: 如何让自动配置不生效？</strong><br>
+<ul>
+<li>排除特定自动配置类：<code>@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})</code></li>
+<li>配置文件排除：<code>spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration</code></li>
+<li>自定义同等类型 Bean 覆盖默认（@ConditionalOnMissingBean 会跳过自动配置）</li>
+</ul>
+
+<strong>Q2: Spring Boot 如何处理跨域（CORS）？</strong><br>
+<ul>
+<li>全局配置：<code>WebMvcConfigurer.addCorsMappings()</code></li>
+<li>局部注解：<code>@CrossOrigin(origins = "https://example.com")</code></li>
+<li>过滤器：自定义 CorsFilter 注册到容器中</li>
+<li><strong>银行场景：</strong>通常通过网关（如 Kong、Spring Cloud Gateway）统一处理跨域，后端服务本身不配置 CORS。</li>
+</ul>
+
+<strong>Q3: Spring Boot 应用如何优化启动速度？</strong><br>
+<ul>
+<li>排除不需要的自动配置类（减少自动配置评估的类数量）</li>
+<li>使用 @Lazy 延迟初始化非关键 Bean</li>
+<li>开启 spring.context.index（候选组件索引，减少组件扫描时间）</li>
+<li>使用 Spring AOT（Ahead-of-Time）编译生成 GraalVM 原生镜像（启动时间 < 0.1s）</li>
+</ul>
+
+<strong>Q4: Spring Boot 热部署原理？</strong><br>
+<ul>
+<li>spring-boot-devtools 使用双 ClassLoader：基础 ClassLoader 加载不变的 jar 包，Restart ClassLoader 加载项目类。检测到文件变化后，替换 Restart ClassLoader，重新加载项目类（比完全重启快）。</li>
+<li>devtools 还会禁用模板缓存（Thymeleaf、FreeMarker），使模板修改即时生效。</li>
+<li>JRebel（商业工具）在 JVM 层面直接替换已加载的类字节码，不需要重新初始化 Spring 上下文——比 devtools 更快，但需要付费。</li>
+</ul>
+</div>
+
+<div class="nav-bottom">
+  <a href="../13-设计模式/设计模式八股文.html">← 上一篇：设计模式</a>
+  <a href="../15-操作系统/操作系统八股文.html">下一篇：操作系统 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

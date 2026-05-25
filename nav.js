@@ -19,6 +19,11 @@
     { href: '10-银行业务/银行业务八股文.html',        label: '银行业务',     accent: '#f97316' },
     { href: '11-银行智能化/银行智能化八股文.html',    label: '银行智能化',   accent: '#818cf8' },
     { href: '12-JAVA基础/JAVA基础八股文.html',        label: 'JAVA 基础',    accent: '#f87171' },
+    { href: '13-设计模式/设计模式八股文.html',          label: '设计模式',     accent: '#2dd4bf' },
+    { href: '14-SpringBoot/SpringBoot八股文.html',      label: 'Spring Boot',  accent: '#a3e635' },
+    { href: '15-操作系统/操作系统八股文.html',          label: '操作系统',     accent: '#eab308' },
+    { href: '16-消息队列/消息队列八股文.html',          label: '消息队列',     accent: '#d946ef' },
+    { href: '17-Linux常用命令/Linux常用命令八股文.html', label: 'Linux 命令',   accent: '#0ea5e9' },
   ];
 
   // Normalize Windows backslashes in pathname

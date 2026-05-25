@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>设计模式八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #2dd4bf; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #0f7668; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+<script src="../nav.js"></script>
+<div class="main">
+<h1>设计模式八股文</h1>
+
+<div class="highlight">
+<strong>银行面试中的设计模式考察重点：</strong>设计模式是银行科技岗面试的高频考点，尤其关注单例模式、代理模式、策略模式和模板方法模式。面试官不仅会问"是什么"，更会追问"为什么这样设计"、"在 Spring 框架中哪里用到了"、"你在项目中怎么用的"。掌握每种模式背后的设计原则（开闭原则、单一职责、依赖倒置等）同样重要。
+</div>
+
+<!-- ==================== 一、设计模式总览 ==================== -->
+<h2 id="design-overview">一、设计模式概述</h2>
+
+<div class="mermaid">
+graph TD
+    DP["23种设计模式 (GoF)"]
+    DP --> A["创建型 (5种)<br/>对象的创建"]
+    DP --> B["结构型 (7种)<br/>类/对象的组合"]
+    DP --> C["行为型 (11种)<br/>对象间的交互"]
+
+    A --> A1["单例 Singleton"]
+    A --> A2["工厂方法 Factory Method"]
+    A --> A3["抽象工厂 Abstract Factory"]
+    A --> A4["建造者 Builder"]
+    A --> A5["原型 Prototype"]
+
+    B --> B1["代理 Proxy"]
+    B --> B2["装饰器 Decorator"]
+    B --> B3["适配器 Adapter"]
+    B --> B4["桥接 Bridge"]
+    B --> B5["组合 Composite"]
+    B --> B6["外观 Facade"]
+    B --> B7["享元 Flyweight"]
+
+    C --> C1["策略 Strategy"]
+    C --> C2["观察者 Observer"]
+    C --> C3["模板方法 Template Method"]
+    C --> C4["责任链 Chain of Responsibility"]
+    C --> C5["命令 Command"]
+    C --> C6["迭代器 Iterator"]
+    C --> C7["状态 State"]
+    C --> C8["备忘录 Memento"]
+    C --> C9["中介者 Mediator"]
+    C --> C10["解释器 Interpreter"]
+    C --> C11["访问者 Visitor"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>GoF 设计模式的六大原则：</strong>
+<p><strong>1. 单一职责原则 (SRP)：</strong>一个类只负责一项职责。如果类承担过多职责，任意一个职责的变更都可能影响到其他职责。Spring 的 Controller-Service-Dao 分层就是 SRP 的体现。</p>
+<p><strong>2. 开闭原则 (OCP)：</strong>对扩展开放，对修改关闭。应通过扩展（新增类/方法）而非修改已有代码来实现新功能。策略模式、装饰器模式都是 OCP 的典型应用。</p>
+<p><strong>3. 里氏替换原则 (LSP)：</strong>子类必须能够替换其父类。任何使用父类引用的地方，替换为子类实例后行为应保持一致。</p>
+<p><strong>4. 接口隔离原则 (ISP)：</strong>不应强迫客户端依赖它不使用的方法。一个大接口应拆分为多个小接口。</p>
+<p><strong>5. 依赖倒置原则 (DIP)：</strong>依赖抽象而非具体实现。高层模块不应依赖低层模块，两者都应依赖抽象。Spring 的 IoC/DI 就是这个原则的最佳实践。</p>
+<p><strong>6. 迪米特法则 (LoD / 最少知识原则)：</strong>一个对象应对其他对象有尽可能少的了解，只与直接朋友通信。</p>
+</div>
+
+<div class="card card--accent">
+<h3 style="margin-top:0; font-size:1.1rem;">银行面试高频排序</h3>
+<table>
+<tr><th>优先级</th><th>设计模式</th><th>面试频率</th><th>典型考点</th></tr>
+<tr><td><span class="badge badge--red">必问</span></td><td>单例模式</td><td>极高</td><td>五种写法对比、DCL volatile 原理、枚举单例</td></tr>
+<tr><td><span class="badge badge--red">必问</span></td><td>代理模式</td><td>极高</td><td>JDK vs CGLIB 区别、Spring AOP 用了哪种</td></tr>
+<tr><td><span class="badge badge--orange">高频</span></td><td>工厂模式</td><td>高</td><td>简单工厂/工厂方法/抽象工厂区别</td></tr>
+<tr><td><span class="badge badge--orange">高频</span></td><td>策略模式</td><td>高</td><td>消除 if-else、与 Spring 结合</td></tr>
+<tr><td><span class="badge badge--orange">高频</span></td><td>模板方法模式</td><td>高</td><td>Spring JdbcTemplate、RestTemplate</td></tr>
+<tr><td><span class="badge badge--blue">常考</span></td><td>观察者模式</td><td>中</td><td>Spring 事件机制</td></tr>
+<tr><td><span class="badge badge--blue">常考</span></td><td>责任链模式</td><td>中</td><td>Servlet Filter、Spring Security</td></tr>
+<tr><td><span class="badge badge--blue">常考</span></td><td>装饰器模式</td><td>中</td><td>Java IO 流</td></tr>
+<tr><td><span class="badge badge--blue">常考</span></td><td>适配器模式</td><td>中</td><td>Spring MVC HandlerAdapter</td></tr>
+</table>
+</div>
+
+<!-- ==================== 二、创建型模式 ==================== -->
+<h2 id="creational">二、创建型模式</h2>
+
+<!-- === 单例模式 === -->
+<h3 id="singleton">1. 单例模式 (Singleton) <span class="badge badge--red">必问</span></h3>
+
+<div class="card">
+<p><strong>定义：</strong>确保一个类只有一个实例，并提供一个全局访问点。</p>
+<p><strong>核心要点：</strong>构造器私有化 + 静态变量持有唯一实例 + 静态方法返回实例。</p>
+</div>
+
+<h3>五种实现方式对比</h3>
+
+<div class="card">
+<table>
+<tr><th>实现方式</th><th>线程安全</th><th>是否懒加载</th><th>防反射</th><th>防序列化</th><th>推荐度</th></tr>
+<tr class="row-expandable"><td>饿汉式 (Eager)</td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--red">否</span></td><td><span class="badge badge--red">否</span></td><td><span class="badge badge--red">否</span></td><td>★★☆☆☆</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>实现方式：</strong>
+<pre><code>public class Singleton {
+    private static final Singleton INSTANCE = new Singleton();
+    private Singleton() {}
+    public static Singleton getInstance() { return INSTANCE; }
+}</code></pre>
+<p><strong>原理：</strong>类加载时由 JVM 在 &lt;clinit&gt; 阶段初始化 static 变量。JVM 保证类初始化过程是线程安全的（加锁），多线程同时触发类加载时只有一个线程执行初始化。所以饿汉式天然线程安全。</p>
+<p><strong>缺点：</strong>非懒加载——无论用不用，类一加载实例就创建了。如果单例类很重（初始化耗时长、占内存大），会造成资源浪费。此外，饿汉式无法通过参数控制实例的创建过程。</p>
+<p><strong>防反射？</strong>可以通过反射调用私有构造器破坏单例。防序列化？反序列化会创建新对象。</p>
+</div></td></tr>
+
+<tr class="row-expandable"><td>懒汉式 (Lazy)</td><td><span class="badge badge--red">否</span></td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--red">否</span></td><td><span class="badge badge--red">否</span></td><td>☆☆☆☆☆</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>实现方式：</strong>
+<pre><code>public class Singleton {
+    private static Singleton instance;
+    private Singleton() {}
+    public static Singleton getInstance() {
+        if (instance == null) {
+            instance = new Singleton();  // 非原子操作！
+        }
+        return instance;
+    }
+}</code></pre>
+<p><strong>为什么不安全？</strong>假设线程 A 和线程 B 同时调用 getInstance()：A 执行到 <code>if (instance == null)</code> 时发现为 null，进入创建逻辑；此时 CPU 切换到 B，B 也发现 instance 为 null，也进入创建逻辑。结果：两个线程各自创建了一个实例，违背了单例原则。</p>
+<p><strong>一个简单的改进</strong>是给 getInstance 方法加 synchronized——但性能极差，每次获取实例都要竞争锁。这就是 DCL 要解决的问题。</p>
+</div></td></tr>
+
+<tr class="row-expandable"><td>DCL (Double-Checked Locking)</td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--red">否</span></td><td><span class="badge badge--red">否</span></td><td>★★★★☆</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>实现方式：</strong>
+<pre><code>public class Singleton {
+    private static volatile Singleton instance;  // volatile 必不可少！
+    private Singleton() {}
+    public static Singleton getInstance() {
+        if (instance == null) {                  // 第一次检查（无锁）
+            synchronized (Singleton.class) {
+                if (instance == null) {          // 第二次检查（加锁）
+                    instance = new Singleton();
+                }
+            }
+        }
+        return instance;
+    }
+}</code></pre>
+<p><strong>为什么需要 volatile？——指令重排序问题：</strong></p>
+<p><code>instance = new Singleton();</code> 这一行代码在 JVM 层面不是一个原子操作，它分解为三个步骤：</p>
+<p>① 分配内存空间（allocate memory）<br>② 初始化对象（调用构造器，init object）<br>③ 将引用指向内存地址（assign reference to variable）</p>
+<p>由于 CPU 和 JIT 编译器的指令重排序优化，步骤②和③可能被交换：先执行③（将引用指向未初始化完成的内存），再执行②（初始化对象）。</p>
+<p><strong>如果不用 volatile 会怎样？</strong>线程 A 执行到 <code>instance = new Singleton()</code>，由于指令重排序，先执行了步骤①→③→②。此时 instance 已经不为 null（步骤③已完成），但对象尚未初始化（步骤②未执行）。线程 B 恰好此时调用 getInstance()，第一次检查发现 instance 不为 null，直接返回了一个<strong>未初始化完成</strong>的"半成品"对象——轻则读到 null 字段，重则程序崩溃。</p>
+<p><strong>volatile 的作用：</strong>volatile 禁止指令重排序——保证了 <code>instance = new Singleton()</code> 的三步操作严格按顺序执行，且 volatile 写操作之前的动作不会被重排到写操作之后。当线程 B 读到 volatile 变量 instance 的值时，一定也能看到 volatile 写操作之前的所有操作（Happens-Before 语义）。</p>
+<p><strong>面试扩展：</strong>JDK 5 之前的 volatile 语义不完整，DCL 模式在当时是有 bug 的。JDK 5 引入了新的内存模型（JSR-133），修复了 volatile 的语义，使 DCL 正确工作。</p>
+</div></td></tr>
+
+<tr class="row-expandable"><td>静态内部类 (Holder)</td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--red">否</span></td><td><span class="badge badge--red">否</span></td><td>★★★★★</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>实现方式：</strong>
+<pre><code>public class Singleton {
+    private Singleton() {}
+    private static class Holder {
+        private static final Singleton INSTANCE = new Singleton();
+    }
+    public static Singleton getInstance() {
+        return Holder.INSTANCE;
+    }
+}</code></pre>
+<p><strong>原理：</strong>利用了 JVM 类加载机制的"延迟初始化"特性。外部类 Singleton 加载时，内部类 Holder 不会被加载。只有当 getInstance() 首次被调用、访问 Holder.INSTANCE 时，JVM 才加载 Holder 类并初始化 INSTANCE。而 JVM 保证类初始化过程是线程安全的（&lt;clinit&gt; 方法被 JVM 隐式加锁）。</p>
+<p><strong>为什么推荐？</strong>它同时实现了懒加载 + 线程安全，且代码简洁无锁，没有 volatile 的认知负担，没有 synchronized 的性能开销。这是 Effective Java 作者 Joshua Bloch 推荐的首选单例实现方式（当他没推荐枚举时）。</p>
+<p><strong>缺点：</strong>仍然无法防止反射攻击和序列化破坏。可以给构造器加判断抛出异常来防反射，但这不是完美方案。</p>
+</div></td></tr>
+
+<tr class="row-expandable"><td>枚举 (Enum)</td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--green">是</span></td><td>★★★★★</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>实现方式：</strong>
+<pre><code>public enum Singleton {
+    INSTANCE;
+    public void doSomething() { /* 业务逻辑 */ }
+}
+// 使用：Singleton.INSTANCE.doSomething();</code></pre>
+<p><strong>为什么枚举是最好的单例实现？</strong></p>
+<p><strong>1. 防反射：</strong>反射的 newInstance() 内部对枚举类型做了特殊判断，会抛出 IllegalArgumentException——"Cannot reflectively create enum objects"。这是 JVM 层面的保护。</p>
+<p><strong>2. 防序列化：</strong>Java 的序列化机制对枚举做了特殊处理——反序列化时不会创建新实例，而是通过 Enum.valueOf() 获取已存在的枚举常量。这是由 ObjectInputStream 的 readEnum() 方法保证的，无需实现 readResolve()。</p>
+<p><strong>3. 线程安全：</strong>枚举的实例创建由 JVM 在类加载时完成，自然线程安全。</p>
+<p><strong>4. 简洁：</strong>比任何其他实现都简洁，没有样板代码。</p>
+<p><strong>局限性：</strong>枚举不能被继承（因为 enum 隐式继承 java.lang.Enum，Java 是单继承）。如果单例类需要继承其他父类，就不能使用枚举。但大多数情况下，单例不需要继承。</p>
+<p><strong>Spring 的态度：</strong>Spring 框架中较少使用枚举单例（Spring 更倾向于通过容器管理 Bean 来实现单例），但在 JDK 源码和日常开发中，枚举是最安全的选择。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试答题口诀：</strong><br/>
+<strong>饿汉式：</strong>类加载即创建，线程安全但不懒，浪费资源。<br/>
+<strong>懒汉式：</strong>用才创建但不安全，加 synchronized 太慢。<br/>
+<strong>DCL：</strong>双重检查 + volatile，高效但稍复杂，volatile 防止指令重排导致半成品对象。<br/>
+<strong>静态内部类：</strong>利用类加载机制延迟初始化，简洁高效，推荐但不防反射/序列化。<br/>
+<strong>枚举：</strong>最完美——防反射、防序列化、天然线程安全，唯一缺点是不能继承类。
+</div>
+
+<div class="highlight">
+<strong>Spring 框架中的单例模式：</strong><br/>
+Spring 容器默认管理的 Bean 都是单例（singleton scope）。Spring 采用<strong>ConcurrentHashMap</strong>（三级缓存：singletonObjects、earlySingletonObjects、singletonFactories）来存储单例实例，通过 DCL + synchronized 实现线程安全的 Bean 创建。这是在"容器层面"实现单例，而非在类层面，因此 Bean 类本身可以是非单例设计——这比传统的单例模式更灵活。
+</div>
+
+<!-- === 工厂模式 === -->
+<h3 id="factory">2. 工厂模式 (Factory)</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph 简单工厂
+        A1["Client"] --> B1["SimpleFactory.createProduct(type)"]
+        B1 --> C1A["Product A"]
+        B1 --> C1B["Product B"]
+    end
+    subgraph 工厂方法
+        A2["Client"] --> B2A["FactoryA.createProduct()"]
+        A2 --> B2B["FactoryB.createProduct()"]
+        B2A --> C2A["Product A"]
+        B2B --> C2B["Product B"]
+    end
+    subgraph 抽象工厂
+        A3["Client"] --> B3A["AbstractFactory"]
+        B3A --> B3B["ConcreteFactory1"]
+        B3A --> B3C["ConcreteFactory2"]
+        B3B --> C3A["ProductA1 + ProductB1 (一套产品族)"]
+        B3C --> C3C["ProductA2 + ProductB2 (一套产品族)"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>三种工厂模式的核心区别：</strong>
+<p><strong>简单工厂：</strong>一个工厂类根据参数创建不同类型的产品。不符合开闭原则——新增产品需要修改工厂类的 if-else。严格来说不是 GoF 的 23 种设计模式之一，更像一种编程习惯。</p>
+<p><strong>工厂方法：</strong>定义一个创建对象的接口，让子类决定实例化哪个类。每个具体工厂只创建一种产品。符合开闭原则——新增产品只需新增一个具体工厂类。</p>
+<p><strong>抽象工厂：</strong>创建一组相关或相互依赖的对象（产品族），而不需要指定它们的具体类。例如：同一个 UI 工厂可以创建相匹配的 Button 和 TextField（Windows 风格或 Mac 风格）。</p>
+</div>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>简单工厂</th><th>工厂方法</th><th>抽象工厂</th></tr>
+<tr><td>产品种类</td><td>单一产品等级</td><td>单一产品等级</td><td>多个产品等级（产品族）</td></tr>
+<tr><td>符合开闭原则</td><td><span class="badge badge--red">否</span></td><td><span class="badge badge--green">是</span></td><td><span class="badge badge--green">是</span></td></tr>
+<tr><td>类的数量</td><td>少</td><td>较多</td><td>很多</td></tr>
+<tr><td>使用场景</td><td>产品类型少、变化小</td><td>单一产品有多种变体</td><td>创建一组相关对象</td></tr>
+<tr class="row-expandable"><td>Spring 中的体现</td><td colspan="3">BeanFactory / ApplicationContext</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>Spring BeanFactory 与工厂模式：</strong>
+<p>Spring 的 BeanFactory 可以看作是一个"超级简单工厂"——它通过 Bean 名称或类型从容器中获取对象，但产生对象的逻辑比传统工厂复杂得多（涉及依赖注入、AOP、生命周期管理等）。</p>
+<p>更准确的类比：Spring 的 FactoryBean 接口是工厂方法模式的体现——<code>getObject()</code> 方法返回产品，<code>getObjectType()</code> 返回产品类型。MyBatis-Spring 的 SqlSessionFactoryBean 就是通过 FactoryBean 创建 SqlSessionFactory 的。</p>
+<p>Spring 的 ApplicationContext 层次结构则体现了抽象工厂模式的思想——不同的 ApplicationContext 实现（ClassPathXmlApplicationContext、AnnotationConfigApplicationContext）创建出整套 Bean 实例（产品族）。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ==================== 三、结构型模式 ==================== -->
+<h2 id="structural">三、结构型模式</h2>
+
+<!-- === 代理模式 === -->
+<h3 id="proxy">3. 代理模式 (Proxy) <span class="badge badge--red">必问</span></h3>
+
+<div class="card card--accent">
+<p><strong>定义：</strong>为其他对象提供一种代理，以控制对这个对象的访问。代理对象和真实对象实现相同的接口。</p>
+<p><strong>银行面试最常问的代理模式考点：</strong>JDK 动态代理 vs CGLIB 代理的区别，以及 Spring AOP 如何选择代理方式。</p>
+</div>
+
+<h3>三种代理方式</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant Caller as 调用者
+    participant Proxy as JDK动态代理<br/>(Proxy.newProxyInstance)
+    participant Handler as InvocationHandler<br/>(invoke方法)
+    participant Target as 目标对象<br/>(实现接口)
+
+    Caller->>Proxy: 调用接口方法 sayHello()
+    Proxy->>Handler: invoke(proxy, method, args)
+    Handler->>Handler: 前置增强（日志/事务/权限）
+    Handler->>Target: method.invoke(target, args)
+    Target-->>Handler: 返回结果
+    Handler->>Handler: 后置增强（提交/清理）
+    Handler-->>Proxy: 返回结果
+    Proxy-->>Caller: 返回结果
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>JDK 动态代理的执行流程：</strong>
+<ol>
+<li>调用者通过代理对象调用方法（实际调用的是生成的代理类的方法）</li>
+<li>代理类内部持有 InvocationHandler 引用，将调用委托给 handler.invoke()</li>
+<li>在 invoke 方法中，我们可以织入增强逻辑（AOP 的 advice）</li>
+<li>通过反射 method.invoke(target, args) 调用真实目标对象的方法</li>
+<li>返回结果给调用者</li>
+</ol>
+<p><strong>为什么 JDK 动态代理必须基于接口？</strong>因为 JDK 动态代理生成的代理类 <code>extends java.lang.reflect.Proxy</code>，而 Java 是单继承的——代理类已经继承了 Proxy，不能再继承目标类，只能通过实现目标类所实现的接口来完成代理。这也是 Spring AOP 在目标类没有实现接口时需要切换到 CGLIB 的原因。</p>
+</div>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>JDK 动态代理</th><th>CGLIB 代理</th></tr>
+<tr class="row-expandable"><td>原理</td><td>通过实现目标接口生成代理类</td><td>通过继承目标类生成子类作为代理</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>JDK 动态代理：</strong>使用 <code>java.lang.reflect.Proxy.newProxyInstance()</code> 在运行时动态生成一个实现了指定接口的代理类。这个代理类继承自 Proxy，方法调用通过反射转发到 InvocationHandler.invoke()。</p>
+<p><strong>CGLIB：</strong>使用 ASM 字节码框架在运行时动态生成目标类的子类。方法调用通过 FastClass 机制（不使用反射，而是通过索引直接定位方法）转发到 MethodInterceptor.intercept()。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>目标要求</td><td>必须实现至少一个接口</td><td>不需要实现接口（但不能是 final 类）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>JDK 代理要求目标类必须实现接口——因为生成的代理类 extends Proxy，只能通过 implements 接口来"伪装"成目标类型。</p>
+<p>CGLIB 通过继承目标类生成代理，所以目标类不能是 final（final 类不能被继承）。同样，代理的目标方法不能是 final（final 方法不能被重写）。如果方法被 final 修饰，CGLIB 无法代理该方法，增强逻辑不会生效——这是一个常见的开发坑。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>性能</td><td>创建开销小，调用开销大（反射）</td><td>创建开销大（字节码生成），调用快</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>JDK 动态代理在方法调用时依赖反射（Method.invoke），有性能损耗。虽然 JDK 内部对反射做了优化（如 MethodAccessor 的 inflation 机制，切换为生成的字节码访问器），但仍有一定开销。</p>
+<p>CGLIB 使用 FastClass 机制——为代理类和目标类各自生成一个 FastClass，其中每个方法有一个 index，调用时直接用 index 查找而非反射。此外，CGLIB 还可以利用 MethodProxy 的 invokeSuper 直接调用父类方法，进一步减少开销。在现代 JDK（8+）中，由于反射的持续优化，两者差距已经不大。CGLIB 的劣势在于生成字节码耗时较长，代理类多时启动较慢。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Spring 中的选择</td><td>目标有接口时默认使用</td><td>目标无接口时使用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Spring AOP 的代理选择策略：</strong>
+<p>Spring AOP 默认使用 JDK 动态代理（如果目标类实现了至少一个接口）。如果目标类没有实现接口，则自动使用 CGLIB。</p>
+<p>从 Spring Boot 2.0 / Spring Framework 5 开始，默认的代理策略发生了变化：<code>spring.aop.proxy-target-class</code> 默认值改为 <code>true</code>，即默认使用 CGLIB 代理。这是因为现代项目中，很少有人为每个 Service 都抽取接口，CGLIB 更符合实际开发习惯。</p>
+<p>可以通过配置强制使用 CGLIB：<code>@EnableAspectJAutoProxy(proxyTargetClass = true)</code>。</p>
+<p><strong>注意：</strong>Spring AOP 是方法级别的代理，不能拦截方法内部的 self-invocation（同一个类中方法 A 调用方法 B，B 的增强逻辑不会生效）。这是因为调用 this.methodB() 时，this 指向的是目标对象本身，而非代理对象。解决方式：通过 AopContext.currentProxy() 获取当前代理对象，或者将方法拆分到不同的 Bean 中。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>静态代理 vs 动态代理：</strong><br/>
+<strong>静态代理：</strong>代理类在编译时已确定，需要为每个目标类手动编写一个代理类。类文件数量随业务增长爆炸。<br/>
+<strong>动态代理：</strong>代理类在运行时动态生成，一个 InvocationHandler 可以处理多个目标类的方法调用。Spring AOP 的核心就是动态代理。
+</div>
+
+<!-- === 装饰器模式 === -->
+<h3 id="decorator">4. 装饰器模式 (Decorator)</h3>
+
+<div class="card">
+<p><strong>定义：</strong>动态地给一个对象添加额外的职责，比继承更灵活。</p>
+<p><strong>核心思想：</strong>装饰器和被装饰对象实现同一个接口，装饰器内部持有被装饰对象的引用，在调用前后可以添加额外的行为。</p>
+</div>
+
+<div class="card card--accent">
+<h3 style="margin-top:0; font-size:1rem;">Java IO —— 装饰器模式的经典应用</h3>
+<pre><code>// 最内层：提供基本的字节读取能力
+InputStream raw = new FileInputStream("data.txt");
+
+// 第一层装饰：添加缓冲，减少系统调用，提升性能
+InputStream buffered = new BufferedInputStream(raw);
+
+// 第二层装饰：添加基本类型读取能力（readInt、readDouble 等）
+DataInputStream data = new DataInputStream(buffered);
+
+// 使用：可以一行行读取，也可以读取 int/double 等类型化数据
+int value = data.readInt();  // 缓冲读取 + 类型化解析</code></pre>
+</div>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>装饰器模式</th><th>代理模式</th></tr>
+<tr class="row-expandable"><td>关注点</td><td>增强对象功能（添加新行为）</td><td>控制对象访问（权限/延迟/日志）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>装饰器模式的目的是"给对象增加新能力"——比如给 InputStream 添加缓冲、加密、压缩等能力。每个装饰器层增加一项独立功能，装饰器之间可以任意组合。</p>
+<p>代理模式的目的是"控制对目标对象的访问"——比如远程代理（RMI）、虚拟代理（延迟加载大对象）、保护代理（权限控制）。代理通常不改变原有行为，只在调用前后做一些控制。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>关系</td><td>装饰器持有被装饰对象引用（外部传入）</td><td>代理内部自行创建/持有目标对象</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>装饰器模式的典型特征：装饰器通过构造器接收被装饰对象（依赖注入），调用方决定装饰层的组合顺序。例如 <code>new DataInputStream(new BufferedInputStream(new FileInputStream("f")))</code>。</p>
+<p>代理模式中，代理对象通常对调用方隐藏目标对象的存在——调用方以为自己直接在使用目标对象，实际上使用的是代理。例如 Spring AOP 返回的代理 Bean，调用方无需感知代理的存在。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>典型例子</td><td>Java IO 流体系</td><td>Spring AOP、MyBatis Mapper 代理</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>Java IO 流是装饰器模式的最经典案例：</strong></p>
+<p><code>InputStream</code> 是抽象组件，<code>FileInputStream</code>、<code>ByteArrayInputStream</code> 是具体组件，<code>FilterInputStream</code> 是抽象装饰器（继承 InputStream 并持有一个 InputStream），<code>BufferedInputStream</code>、<code>DataInputStream</code>、<code>CheckedInputStream</code> 等是具体装饰器。每一层装饰器都在前一层的基础上增加一项新的能力，各层职责单一且可任意组合。</p>
+<p>如果不用装饰器模式而用继承，就需要为每种功能组合创建子类（BufferedFileInputStream、BufferedDataFileInputStream、DataBufferedFileInputStream...），会导致<strong>类爆炸</strong>。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- === 适配器模式 === -->
+<h3 id="adapter">5. 适配器模式 (Adapter)</h3>
+
+<div class="card">
+<p><strong>定义：</strong>将一个类的接口转换成客户希望的另一个接口，使原本因接口不兼容而不能一起工作的类可以协同工作。</p>
+<p><strong>比喻：</strong>电源适配器——把 220V 转换成手机需要的 5V。</p>
+</div>
+
+<div class="card card--accent">
+<h3 style="margin-top:0; font-size:1rem;">Spring MVC HandlerAdapter —— 适配器模式的经典应用</h3>
+<p>Spring MVC 中，不同类型的 Controller（或 Handler）有不同的接口：普通 Controller 实现了 <code>Controller</code> 接口，注解驱动的 Controller 使用 <code>@RequestMapping</code> 注解，Servlet 本身也可以作为 Handler。DispatchServlet 如何统一调用这些不同类型的 Handler？</p>
+<p>答案就是 HandlerAdapter：</p>
+<pre><code>public interface HandlerAdapter {
+    boolean supports(Object handler);           // 是否支持该 handler
+    ModelAndView handle(HttpServletRequest req,
+                        HttpServletResponse res,
+                        Object handler);        // 调用 handler
+}
+
+// 实现类示例：
+// SimpleControllerHandlerAdapter  → 处理普通的 Controller 接口
+// RequestMappingHandlerAdapter   → 处理 @RequestMapping 注解
+// HttpRequestHandlerAdapter      → 处理 HttpRequestHandler 类型
+// SimpleServletHandlerAdapter    → 处理 Servlet 类型</code></pre>
+<p>DispatchServlet 遍历所有 HandlerAdapter，找到支持当前 Handler 的一个，然后调用 adapter.handle()——这就是适配器模式："将不同接口的 Handler 适配成统一的 handle() 调用方式"。</p>
+</div>
+
+<div class="highlight">
+<strong>适配器模式 vs 装饰器模式 vs 代理模式：</strong><br/>
+<strong>适配器：</strong>改变接口——让不兼容的接口变得兼容（220V → 5V）。适配前后的接口不同。<br/>
+<strong>装饰器：</strong>增强功能——保持原有接口不变，添加新能力。装饰前后的接口相同。<br/>
+<strong>代理：</strong>控制访问——保持原有接口不变，在访问前后做控制。代理前后的接口相同。
+</div>
+
+<!-- ==================== 四、行为型模式 ==================== -->
+<h2 id="behavioral">四、行为型模式</h2>
+
+<!-- === 策略模式 === -->
+<h3 id="strategy">6. 策略模式 (Strategy) <span class="badge badge--orange">高频</span></h3>
+
+<div class="card">
+<p><strong>定义：</strong>定义一系列算法，把它们封装起来，并使它们可以相互替换。策略模式让算法的变化独立于使用算法的客户端。</p>
+<p><strong>核心价值：</strong>消除大量 if-else 或 switch-case 的分支判断，符合开闭原则。</p>
+</div>
+
+<div class="mermaid">
+graph TD
+    Context["上下文 Context<br/>(持有 Strategy 引用)"] --> Strategy["策略接口 Strategy<br/>doPay(amount)"]
+    Strategy --> A["支付宝支付<br/>AliPayStrategy"]
+    Strategy --> B["微信支付<br/>WechatPayStrategy"]
+    Strategy --> C["银行卡支付<br/>CardPayStrategy"]
+    Strategy --> D["... 新增支付方式<br/>无需修改原有代码"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>策略模式的标准实现步骤：</strong>
+<ol>
+<li>定义策略接口（如 PaymentStrategy，有一个 pay(amount) 方法）</li>
+<li>实现具体策略类（AliPayStrategy、WechatPayStrategy、CardPayStrategy）</li>
+<li>Context 类持有策略引用，通过构造器或 setter 注入</li>
+<li>Context 调用 strategy.pay(amount) 时，实际执行的是具体策略的支付逻辑</li>
+</ol>
+<p><strong>消除 if-else 的方式：</strong>可以配合工厂模式或依赖注入，在系统初始化阶段将所有策略实现注册到一个 Map 中（如 paymentType → Strategy 的映射），运行时通过 key 直接获取对应的策略实例，完全消除分支判断。</p>
+</div>
+
+<div class="card card--accent">
+<h3 style="margin-top:0; font-size:1rem;">策略模式在 Spring 中的应用</h3>
+<p><strong>1. Spring 的 Resource 抽象：</strong><code>org.springframework.core.io.Resource</code> 接口可以有多种策略实现——ClassPathResource、FileSystemResource、UrlResource、ServletContextResource。ApplicationContext 根据资源路径的前缀（classpath: / file: / http:）自动选择合适的 Resource 实现。这是策略模式 + 工厂模式的组合应用。</p>
+<p><strong>2. Spring Security 的 PasswordEncoder：</strong>BCryptPasswordEncoder、SCryptPasswordEncoder、NoOpPasswordEncoder 等不同编码策略，运行时根据配置选择。</p>
+<p><strong>3. Spring 事务管理器的选择：</strong>DataSourceTransactionManager、JtaTransactionManager、HibernateTransactionManager——都是 PlatformTransactionManager 接口的不同策略实现。</p>
+</div>
+
+<div class="highlight">
+<strong>银行项目实战场景：</strong><br/>
+在银行支付系统中，不同支付渠道（网银支付、快捷支付、代扣、代付）的核心流程相似但细节各异。使用策略模式将每个支付渠道封装为独立的策略类，新增渠道只需新增一个策略类并注册到策略工厂，不修改已有代码。配合 Spring 的依赖注入，可以使用 <code>Map&lt;String, PaymentStrategy&gt;</code> 自动收集所有策略实现（Spring 会将所有 PaymentStrategy 类型的 Bean 注入到这个 Map 中，key 为 Bean 名称）。
+</div>
+
+<!-- === 观察者模式 === -->
+<h3 id="observer">7. 观察者模式 (Observer)</h3>
+
+<div class="card">
+<p><strong>定义：</strong>定义对象间的一对多依赖关系，当一个对象的状态发生改变时，所有依赖它的对象都会得到通知并自动更新。</p>
+<p><strong>别名：</strong>发布-订阅模式 (Publish-Subscribe)。</p>
+</div>
+
+<div class="mermaid">
+sequenceDiagram
+    participant Publisher as 发布者<br/>ApplicationEventPublisher
+    participant Container as Spring 事件容器<br/>ApplicationEventMulticaster
+    participant L1 as 监听器1<br/>(发短信)
+    participant L2 as 监听器2<br/>(发邮件)
+    participant L3 as 监听器3<br/>(记日志)
+
+    Publisher->>Container: publishEvent(new OrderEvent(order))
+    Container->>L1: onApplicationEvent(event)
+    Container->>L2: onApplicationEvent(event)
+    Container->>L3: onApplicationEvent(event)
+    Note over L1,L3: 三个监听器都收到事件<br/>各司其职，互不影响
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Spring 事件机制的使用步骤：</strong>
+<ol>
+<li>定义事件类：继承 <code>ApplicationEvent</code>（或直接使用任意对象，Spring 4.2+ 支持）</li>
+<li>发布事件：通过 <code>ApplicationEventPublisher.publishEvent()</code></li>
+<li>监听事件：使用 <code>@EventListener</code> 注解或实现 <code>ApplicationListener</code> 接口</li>
+<li>默认同步执行（在同一个线程中顺序调用所有监听器），可通过 <code>@Async</code> + <code>@EnableAsync</code> 切换为异步</li>
+</ol>
+<p><strong>实际应用场景：</strong>用户注册后——发送欢迎短信、赠送新人优惠券、记录注册日志。这三件事与注册核心逻辑解耦，通过事件发布让各模块独立处理。</p>
+<p><strong>JDK 内置的 Observable/Observer：</strong>已被标记为 deprecated（JDK 9+）。因为它基于类而非接口（Observable 是类，Java 单继承限制了灵活性），且不支持事件类型的区分和异步处理。Spring 的事件机制是更好的替代方案。</p>
+</div>
+
+<div class="highlight">
+<strong>观察者模式在银行业务中的应用：</strong><br/>
+转账完成后，需要触发一系列后续操作：通知收款方、更新账户余额缓存、上报反洗钱系统、记录交易流水、发送短信通知。使用 Spring 事件机制，转账核心服务只需发布一个 TransferEvent，各后续操作通过 @EventListener 异步处理，实现业务解耦。
+</div>
+
+<!-- === 模板方法模式 === -->
+<h3 id="template-method">8. 模板方法模式 (Template Method) <span class="badge badge--orange">高频</span></h3>
+
+<div class="card">
+<p><strong>定义：</strong>在父类中定义一个操作中的算法骨架，将一些步骤延迟到子类中实现。子类可以不改变算法结构，重新定义某些步骤。</p>
+<p><strong>核心思想：</strong>"好莱坞原则"——"Don't call us, we'll call you."父类调用子类，而不是子类调用父类。</p>
+</div>
+
+<div class="card card--accent">
+<h3 style="margin-top:0; font-size:1rem;">Spring 中的模板方法模式</h3>
+<table>
+<tr><th>Spring 类</th><th>模板方法</th><th>子类可重写的钩子方法</th></tr>
+<tr class="row-expandable"><td>JdbcTemplate</td><td>execute() / query() / update()</td><td>RowMapper.mapRow() / PreparedStatementSetter</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>JdbcTemplate 是如何运用模板方法模式的：</strong></p>
+<p>JdbcTemplate 的 <code>query()</code> 方法定义了固定的算法骨架：获取连接 → 创建 PreparedStatement → 设置参数 → 执行查询 → 遍历 ResultSet（模板骨架：驱动查询流程）→ <strong>将 ResultSet 的每一行映射为对象（变化点，由 RowMapper 实现）</strong> → 关闭资源。所有资源管理、异常处理、事务同步代码都在模板中固定写好，开发者只需实现 RowMapper 这一个变化点。</p>
+<p>在传统的 JDBC 编码中，获取连接、创建 Statement、关闭资源这些样板代码需要重复编写，容易遗漏资源关闭。JdbcTemplate 封装了这些不变的部分，让开发者专注于业务逻辑——这正是模板方法模式的核心价值。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>RestTemplate</td><td>doExecute() → getForObject() / postForEntity()</td><td>RequestCallback / ResponseExtractor</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>RestTemplate 的模板骨架：准备 URI → 创建请求 → 执行 HTTP 调用 → 提取响应 → 处理异常 → 转换响应结果。开发者只需提供 URL、请求参数、期望的响应类型。底层的连接管理、超时重试等逻辑由模板统一处理。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>TransactionTemplate</td><td>execute(TransactionCallback)</td><td>TransactionCallback.doInTransaction()</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>TransactionTemplate 定义了事务管理的模板骨架：获取事务 → 执行业务逻辑 → 提交/回滚 → 清理资源。开发者只需在 doInTransaction() 中编写业务逻辑，事务的开启/提交/回滚/异常处理由模板处理。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>RedisTemplate</td><td>execute(RedisCallback)</td><td>RedisCallback.doInRedis()</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>RedisTemplate 的模板骨架：获取连接 → 序列化 key/value → 执行 Redis 命令 → 反序列化结果 → 释放连接。开发者只需关注"执行什么 Redis 命令"，连接管理、序列化、异常处理等由模板统一处理。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>模板方法模式 vs 策略模式：</strong><br/>
+<strong>模板方法：</strong>用继承实现，父类控制流程，子类填充细节——适合"主流程固定、部分步骤可变"的场景。<br/>
+<strong>策略模式：</strong>用组合实现，Context 持有策略接口，运行时替换整个算法——适合"整个算法可以完全替换"的场景。<br/>
+Spring 中两个模式经常组合使用：JdbcTemplate 通过不同的 RowMapper 策略来处理结果集的映射。
+</div>
+
+<!-- === 责任链模式 === -->
+<h3 id="chain">9. 责任链模式 (Chain of Responsibility)</h3>
+
+<div class="card">
+<p><strong>定义：</strong>将请求的发送者和接收者解耦，让多个对象都有机会处理请求。将这些对象连成一条链，沿着链传递请求，直到某个对象处理它为止。</p>
+<p><strong>核心结构：</strong>每个处理器（Handler）持有下一个处理器的引用。如果当前处理器不能处理，则传递给下一个；如果能处理，可以选择是否继续传递。</p>
+</div>
+
+<div class="mermaid">
+graph LR
+    Request["HTTP 请求"] --> F1["Filter 1<br/>(编码过滤)"]
+    F1 --> F2["Filter 2<br/>(认证过滤)"]
+    F2 --> F3["Filter 3<br/>(鉴权过滤)"]
+    F3 --> F4["Filter 4<br/>(日志过滤)"]
+    F4 --> Servlet["DispatcherServlet"]
+    F4 -.->|"不通过则中断"| R["直接返回<br/>401/403 等"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Servlet Filter 链是责任链模式的标准实现：</strong>
+<p>每个 Filter 都实现 <code>doFilter(ServletRequest, ServletResponse, FilterChain)</code> 方法。在方法内部调用 <code>chain.doFilter(request, response)</code> 将请求传递给下一个 Filter。如果某个 Filter 决定不传递（如认证失败直接返回 401），责任链在这一点就中断了——请求不会到达目标 Servlet。</p>
+<p>这是一个"纯责任链"——请求在链上传递，直到被某个处理器处理或被拒绝。Spring Security 的 SecurityFilterChain 在此基础上增加了更丰富的安全逻辑。</p>
+</div>
+
+<div class="card card--accent">
+<h3 style="margin-top:0; font-size:1rem;">Spring 中的责任链模式应用</h3>
+<table>
+<tr><th>组件</th><th>模式体现</th><th>说明</th></tr>
+<tr class="row-expandable"><td>Servlet FilterChain</td><td>标准的责任链</td><td>多个 Filter 按顺序过滤请求，每个 Filter 决定是否放行</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>在 web.xml 或 @WebFilter 中配置 Filter 和它们的执行顺序。每个 Filter 在 doFilter 方法中：1) 对请求做预处理，2) 调用 chain.doFilter() 传递给下一个，3) 对响应做后处理。当某个 Filter 不调用 chain.doFilter() 时（如认证失败），请求不会到达目标 Servlet，而是在该 Filter 处被拦截返回。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Spring Security FilterChain</td><td>扩展的责任链</td><td>多个 Security Filter（认证、鉴权、CSRF、Session管理等）组成链</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring Security 的过滤器链比 Servlet Filter 更复杂——它内部可能包含多条链（通过 SecurityFilterChain 接口），根据请求 URL 匹配不同的链。例如 /api/** 走一条无状态的 JWT 认证链，/admin/** 走另一条有 Session 的表单登录链。</p>
+<p>Security 的拦截器链采用"投票机制"——每个 Filter 可以对请求投赞成/反对/弃权票，最终根据投票结果决定是否放行。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Spring Interceptor</td><td>HandlerInterceptor 链</td><td>DispatcherServlet 到 Controller 之间，由多个拦截器组成链</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Spring 的 HandlerInterceptor 有 3 个拦截点：preHandle（Controller 执行前）、postHandle（Controller 执行后、视图渲染前）、afterCompletion（视图渲染后、请求完成时）。多个 Interceptor 按注册顺序依次执行 preHandle，再按逆序执行 postHandle 和 afterCompletion。</p>
+<p>与 Filter 的区别：Filter 是 Servlet 层面的（在到达 DispatcherServlet 之前），Interceptor 是 Spring 层面的（在 DispatcherServlet 内部）。Filter 优先级更高。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>AOP 的拦截器链</td><td>AspectJ MethodInvocation</td><td>多个 Advice 环绕目标方法，按优先级形成调用链</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>当一个 Bean 的方法被多个切面拦截时，Spring 会将这些 Advice 组织成一条"责任链"——ReflectiveMethodInvocation 持有拦截器链，按顺序执行每个 Advice 的 before、proceed（传递）、after 等逻辑。proceed() 方法的调用本质上就是责任链的"传递给下一个"。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试技巧——如何回答"Spring 中哪里用到了责任链模式"：</strong><br/>
+优先答 Servlet FilterChain（最经典、最容易被认可）→ 其次答 Spring Security SecurityFilterChain → 再答 Spring Interceptor 执行链 → 最后可以补充 AOP 的 Advice 链（加分项，体现对 Spring 的深入理解）。银行面试官一般听到前两个答案就满意了。
+</div>
+
+<!-- ==================== 五、模式对比总结 ==================== -->
+<h2 id="comparison">五、易混淆模式对比</h2>
+
+<div class="card">
+<table>
+<tr><th>模式对</th><th>关键区别</th><th>一句话总结</th></tr>
+<tr class="row-expandable"><td>代理 vs 装饰器</td><td>代理控制访问，装饰器增强功能</td><td>代理是"有人替我开门"，装饰器是"开门前先消毒"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>代理模式的目标是<strong>控制访问</strong>——延迟创建（虚拟代理）、权限检查（保护代理）、远程调用（远程代理）、缓存（缓存代理）。代理对象通常与目标对象同时创建。</p>
+<p>装饰器模式的目标是<strong>增强功能</strong>——给对象增加新能力，而且装饰器可以自由叠加组合（如 BufferedInputStream + DataInputStream）。装饰器的组合顺序由调用方控制。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>代理 vs 适配器</td><td>代理保持接口不变，适配器改变接口</td><td>代理是"同一个接口下的中间人"，适配器是"接口转换器"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>代理模式中，代理类和目标类实现同一个接口——调用方无需知道自己拿到的是代理还是目标对象。</p>
+<p>适配器模式中，适配器的目的是让"不兼容的接口"可以一起工作——例如将 220V 电流适配为 5V 供电给手机。适配器实现了客户端期望的接口，内部持有被适配者的引用，完成接口转换。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>模板方法 vs 策略</td><td>继承（父类控制骨架）vs 组合（接口定义算法）</td><td>模板方法是"骨架你定，细节我填"；策略是"整个算法都可以换"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>模板方法模式使用<strong>继承</strong>——父类定义算法骨架，子类重写特定步骤。控制权在父类，子类只能填充但不能改变流程。</p>
+<p>策略模式使用<strong>组合</strong>——Context 持有策略接口引用，可以运行时切换整个算法实现。控制权在 Strategy 实现类，Context 只是一个调用者。</p>
+<p>选择原则：如果算法的主流程相对稳定、只有部分步骤会变化，用模板方法。如果整个算法都可能被替换，用策略模式。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>工厂方法 vs 模板方法</td><td>关注对象创建 vs 关注行为流程</td><td>工厂方法是"生产一个产品的模板"，模板方法是"执行一个任务的模板"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>工厂方法模式是<strong>模板方法模式的一种特殊应用</strong>——"创建对象"是"算法"的一种。工厂方法中，父类定义了获取对象的模板流程，子类决定创建哪种具体的产品。</p>
+<p>在很多框架中（如 Spring 的 AbstractApplicationContext），工厂方法（getBeanFactory()、refreshBeanFactory()）被嵌入到模板方法（refresh()）中协同工作。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>责任链 vs 装饰器</td><td>链中某一节点处理即终止 vs 每一层都执行</td><td>责任链是"找到能处理的人就停下"，装饰器是"每层都过一遍"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>责任链模式中，请求沿链传递，<strong>某个处理器处理完成后可能不再传递</strong>（纯责任链）。例如 Spring Security 中的某个 Filter 认证失败，直接返回 401，后续 Filter 不再执行。</p>
+<p>装饰器模式中，<strong>请求会经过每一层装饰器</strong>——最外层装饰器调用内层装饰器，直到最内层的真实对象，然后层层返回。每一层都会执行。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ==================== 六、设计原则（SOLID） ==================== -->
+<h2 id="solid">六、六大设计原则 (SOLID)</h2>
+
+<div class="mermaid">
+graph TD
+    SOLID["SOLID 六大原则"]
+    SOLID --> S["S: 单一职责原则 SRP<br/>一个类只负责一项职责"]
+    SOLID --> O["O: 开闭原则 OCP<br/>对扩展开放，对修改关闭"]
+    SOLID --> L["L: 里氏替换原则 LSP<br/>子类必须能替换父类"]
+    SOLID --> I["I: 接口隔离原则 ISP<br/>不应强迫客户端依赖不需要的接口"]
+    SOLID --> D["D: 依赖倒置原则 DIP<br/>依赖抽象而非具体实现"]
+
+    S --> S1["体现: Controller-Service-Dao 分层"]
+    O --> O1["体现: 策略模式、装饰器模式"]
+    L --> L1["体现: 子类重写不改变父类契约"]
+    I --> I1["体现: 大接口拆小接口"]
+    D --> D1["体现: Spring IoC / DI"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>各原则的面试考察方式：</strong>
+<p><strong>单一职责原则：</strong>面试官会让你分析一段"大而全"的代码有什么问题。要点：一个类做了多个不同的职责，任何一方的变更都可能影响其他方。</p>
+<p><strong>开闭原则：</strong>银行面试最爱结合策略模式考察——"如何在不修改现有代码的前提下增加一个新的支付方式？"答案就是策略模式 + 依赖注入。</p>
+<p><strong>里氏替换原则：</strong>经典的"正方形是否是长方形的子类"问题。数学上正方形是长方形，但编程中如果正方形重写 setWidth/setHeight 导致行为不一致，就违反了 LSP。这告诉我们——继承关系不应只看"is-a"的语义，还要看行为兼容性。</p>
+<p><strong>依赖倒置原则：</strong>Spring 的核心理念。传统的做法是 Service 自己 new 一个 Dao；依赖倒置后，Service 声明需要什么类型的 Dao（接口），Spring 容器负责注入具体实现。这就是"控制反转 (IoC)"。</p>
+</div>
+
+<div class="highlight">
+<strong>银行面试 SOLID 经典问题：</strong><br/>
+问："依赖倒置原则和依赖注入有什么关系？"<br/>
+答：依赖倒置原则 (DIP) 是一种<strong>设计原则</strong>——高层模块不应依赖低层模块，两者都应依赖抽象。依赖注入 (DI) 是实现 DIP 的<strong>具体技术手段</strong>——通过外部容器将依赖（通常是实现了抽象接口的具体类）注入到对象中，而非在对象内部自行创建。Spring 的 IoC 容器就是 DI 的实现。三者关系：<strong>DIP 是原则 → DI 是实现方式 → Spring IoC 是框架</strong>。
+</div>
+
+<div class="nav-bottom">
+  <a href="../12-JAVA基础/JAVA基础八股文.html">上一篇：JAVA 基础</a>
+  <a href="../14-SpringBoot/SpringBoot八股文.html">下一篇：SpringBoot</a>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+<script>
+// Expandable table rows
+document.querySelectorAll('.row-expandable').forEach(function(row) {
+  row.addEventListener('click', function() {
+    var detail = this.nextElementSibling;
+    if (detail && detail.classList.contains('detail-tr')) {
+      var isOpen = detail.classList.contains('show');
+      detail.classList.toggle('show');
+      this.classList.toggle('expanded');
+    }
+  });
+});
+
+// Detail toggles (for mermaid diagrams and highlight sections)
+document.querySelectorAll('.detail-toggle').forEach(function(toggle) {
+  toggle.addEventListener('click', function() {
+    var panel = this.nextElementSibling;
+    if (panel && panel.classList.contains('detail-panel')) {
+      var isOpen = panel.classList.contains('show');
+      panel.classList.toggle('show');
+      this.classList.toggle('expanded');
+      this.innerHTML = panel.classList.contains('show') ? '&#9660; 收起详解' : '&#9654; 展开详解';
+    }
+  });
+});
+</script>
+</body>
+</html>

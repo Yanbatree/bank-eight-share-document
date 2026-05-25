@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>操作系统八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #eab308; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #a16207; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>操作系统八股文</h1>
+
+<!-- ============ 一、进程与线程 ============ -->
+<h2 id="os-one">一、进程与线程</h2>
+
+<h3>1. 进程 vs 线程</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "进程 (Process)"
+        A["PID: 1234"]
+        B["文件描述符表"]
+        C["虚拟地址空间"]
+        subgraph "线程组"
+            T1["线程 1<br/>PC + 寄存器 + 栈"]
+            T2["线程 2<br/>PC + 寄存器 + 栈"]
+            T3["线程 3<br/>PC + 寄存器 + 栈"]
+        end
+        H["堆 Heap<br/>(共享)"]
+        D["代码段 / 数据段<br/>(共享)"]
+    end
+    T1 -.-> H
+    T2 -.-> H
+    T3 -.-> H
+    T1 -.-> D
+    T2 -.-> D
+    T3 -.-> D
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>进程与线程的本质区别——资源 vs 执行：</strong>
+<p>进程是<strong>资源分配</strong>的基本单位（拥有独立的地址空间、文件描述符、信号处理表等），线程是<strong>CPU 调度</strong>的基本单位（拥有独立的程序计数器、寄存器、栈）。一个进程可以包含多个线程，所有线程共享进程的堆、代码段、数据段和打开的文件，但每个线程有自己的调用栈和寄存器上下文。这就是为什么线程间通信（通过共享内存）比进程间通信（需要通过管道/消息队列等内核机制）快得多。</p>
+<strong>上下文切换代价的量化理解：</strong>
+<p>线程切换：保存/恢复 PC、寄存器组、栈指针 → 通常在纳秒级。进程切换：除了保存线程上下文，还需要切换页表基址寄存器（CR3 on x86）、刷新 TLB（Translation Lookaside Buffer）→ 可能导致后续内存访问大量 TLB miss，代价在微秒级。这就是为什么线程被称为"轻量级进程"（LWP, Lightweight Process）。</p>
+<strong>银行后台场景：</strong>
+<p>在高并发交易系统中（如银行核心账务），通常使用线程池而非频繁创建进程——因为每次 fork 一个进程需要复制整个父进程的页表（即使有 COW），而创建线程只需分配栈空间和初始化寄存器上下文。对于每秒处理数万笔交易的系统，这个开销差异是决定性的。</p>
+</div>
+
+<div class="card">
+<table>
+<tr><th>对比维度</th><th>进程 (Process)</th><th>线程 (Thread)</th></tr>
+<tr class="row-expandable"><td>资源单位</td><td>资源分配的基本单位</td><td>CPU 调度的基本单位</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程是 OS 进行资源分配（内存、IO 设备、文件句柄）的最小单元。线程是 CPU 时间片分配的最小单元——调度器不看进程，只看线程。在 Linux 内核中，进程和线程都是用 <code>task_struct</code> 表示的，只是共享的资源不同：<code>clone()</code> 系统调用通过不同的标志位（CLONE_VM, CLONE_FILES 等）决定父子是否共享地址空间和文件描述符，从而区分创建的是"进程"还是"线程"。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>地址空间</td><td>独立虚拟地址空间</td><td>共享进程地址空间</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>每个进程拥有独立的页表，虚拟地址到物理地址的映射完全隔离。线程没有自己的页表——所有线程共享同一个进程的页表，这意味着线程 A 可以直接通过指针访问线程 B 在堆上分配的内存（当然需要同步机制保护）。这种共享是线程通信快的基础，也是线程不安全的根源。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>上下文切换</td><td>重（保存页表、刷新 TLB）</td><td>轻（仅保存寄存器、PC、栈指针）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程切换时，除了通用寄存器、程序计数器、栈指针之外，还必须切换地址空间——即加载目标进程的页表基址到 MMU 的页表基址寄存器（x86 上的 CR3）。CR3 的写入会触发 TLB 全刷新（除非使用 PCID 优化），导致该 CPU 核心的 TLB 缓存全部作废。后续的内存访问都会经历一次完整的页表遍历（4 级页表 × 4 次内存访问），直到 TLB 重新预热。线程切换不涉及地址空间切换，TLB 中的条目仍然有效。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>通信方式</td><td>管道、消息队列、共享内存、Socket 等 IPC</td><td>直接读写共享内存（堆、全局变量）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程间通信必须经过内核（即使是最快的共享内存也需要通过系统调用 mmap 建立映射），涉及用户态-内核态的切换和数据拷贝。线程间通信可以直接通过读写同一个进程地址空间内的变量完成，不需要系统调用。这就是为什么高并发程序中倾向于使用多线程+共享数据结构而非多进程——但也带来了竞态条件的问题，需要锁、信号量等同步机制来保护。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>崩溃影响</td><td>一个进程崩溃不影响其他进程</td><td>一个线程崩溃通常导致整个进程崩溃</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>进程隔离是操作系统安全的基石——每个进程在独立的地址空间中运行，进程 A 的 SIGSEGV（段错误）不会波及进程 B。但线程没有这种隔离：一个线程的未捕获异常、空指针解引用或者栈溢出，会导致整个进程收到 SIGSEGV 信号并被终止。这就是为什么 Chrome 浏览器采用多进程架构——每个 Tab 一个进程，一个页面崩溃不会导致浏览器整体崩溃。Java 中线程的未捕获异常可以通过 <code>UncaughtExceptionHandler</code> 捕获，但如果异常导致 JVM 级错误（如 OOM），进程仍然会终止。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Java 映射</td><td>JVM 进程本身</td><td>Java Thread → OS 线程 1:1</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>HotSpot JVM 采用 1:1 线程模型——每个 <code>java.lang.Thread</code> 对象底层对应一个操作系统原生线程（Linux 上通过 <code>pthread_create</code> 创建）。这意味着 Java 线程的调度完全由操作系统内核的调度器决定，JVM 只负责管理 Thread 对象的生命周期和状态转换。早期 JVM 还有 N:1 绿色线程模型（所有 Java 线程映射到单个 OS 线程），但因为无法利用多核 CPU 而早已被淘汰。Project Loom 的虚拟线程则是 M:N 模型——大量虚拟线程被调度到少量 OS 线程上执行。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>2. 进程间通信 (IPC)</h3>
+
+<div class="card">
+<table>
+<tr><th>方式</th><th>特点</th><th>适用场景</th></tr>
+<tr class="row-expandable"><td>管道 (Pipe)</td><td>半双工，单向，仅父子进程</td><td>Shell 管道 <code>ls | grep</code></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>管道是最古老的 IPC 机制，由内核维护一个环形缓冲区（Linux 上默认 64KB）。数据在管道中按 FIFO 顺序流动，写入端和读取端各占一端，单向传输。管道必须由父进程创建（<code>pipe()</code> 系统调用返回两个 fd），然后 fork 子进程，子进程继承 fd，父子各自关闭不需要的一端。管道是<strong>字节流</strong>协议——没有消息边界，发送方写 100 字节，接收方可能分两次读出 60+40 字节。匿名管道的生命周期与进程绑定，进程退出后管道自动销毁。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>命名管道 (FIFO)</td><td>有文件名，任意进程可访问</td><td>无亲缘关系的进程间通信</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>命名管道通过 <code>mkfifo</code> 命令或 <code>mkfifo()</code> 系统调用在文件系统中创建一个特殊的文件节点（类型为 FIFO）。与匿名管道不同，命名管道有<strong>持久化的文件系统入口</strong>，任意两个知道路径的进程都可以打开它进行通信——不需要父子关系。但是数据仍然是内核内存中的缓冲区，不会真正写入磁盘。当所有读写端都关闭后，管道中的数据丢失。命名管道仍然是半双工的，如果需要双向通信，需要创建两个 FIFO。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>消息队列</td><td>消息有边界，异步，支持优先级</td><td>异步解耦，生产-消费者模式</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>与管道不同，消息队列以<strong>消息</strong>为单位（每条消息有长度和类型），保留了消息边界——发送方发 3 条消息，接收方一定收到 3 条消息，不会出现"粘包"。消息队列支持按类型选择性接收（而不是严格的 FIFO），可以给不同消息设置不同优先级。消息队列的生命周期跟随内核，除非显式删除或重启系统，否则消息一直存在。缺点是每条消息有长度限制（Linux 默认 8192 字节），且消息队列的总容量有限。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>共享内存</td><td>最快（零拷贝），需同步</td><td>高频大数据量交换</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>共享内存是<strong>最快</strong>的 IPC 方式，因为数据不需要在用户态和内核态之间拷贝。两个进程各自将同一块物理内存映射到自己的虚拟地址空间（通过 <code>shmget</code> + <code>shmat</code> 或 <code>mmap</code> + <code>MAP_SHARED</code>），之后就能像访问普通内存一样直接读写。但共享内存本身不提供任何同步机制——进程 A 正在写数据时进程 B 可能读到不完整的数据，这就是竞态条件。因此共享内存通常配合信号量使用。在银行系统中，高性能交易中间件（如 Tuxedo）常用共享内存作为进程间数据传输通道。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>信号量 (Semaphore)</td><td>同步原语，非数据传输</td><td>控制共享资源的并发访问</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>信号量本身不传输数据，它是一个<strong>计数器</strong>，用于控制多个进程/线程对共享资源的访问。P 操作（减 1，如果结果为负则阻塞）和 V 操作（加 1，唤醒等待者）都是原子操作（由内核保证）。信号量在"生产者-消费者"问题中非常经典：empty 信号量初始为 N（缓冲区空位数），full 信号量初始为 0（已填充数），mutex 信号量初始为 1（互斥访问缓冲区）。注意信号量和互斥锁的区别：信号量可以允许多个访问者（计数 > 1），互斥锁只允许一个。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Socket</td><td>跨主机，支持 TCP/UDP/Unix Domain</td><td>网络通信、同一主机高效通信</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Socket 是最通用的 IPC 方式——不仅能用于同一台主机上的进程通信（Unix Domain Socket），还能跨网络通信（TCP/UDP Socket）。Unix Domain Socket 在同一主机上的性能优于 TCP Socket（不需要经过网络协议栈，不走网卡驱动），但仍然不如共享内存。它常用于本地服务通信：Docker daemon 通过 <code>/var/run/docker.sock</code> 与客户端通信，MySQL 客户端通过 <code>/var/run/mysqld/mysqld.sock</code> 连接本地 MySQL 服务。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Signal</td><td>异步通知，信息量小</td><td>进程控制 (SIGKILL, SIGTERM)</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>信号是 Unix 系统中最古老的进程间异步通知机制。一个进程可以给另一个进程发送信号（如 <code>kill -9 PID</code> 发送 SIGKILL），信号的处理方式有三种：默认处理（大多终止进程）、忽略（SIGKILL 和 SIGSTOP 不能忽略）、自定义信号处理函数。信号携带的信息量极小——只能告诉目标进程"发生了某件事"（信号编号），几乎没有数据传输能力（除了 sigqueue 可以附带少量数据）。信号处理函数中<strong>不能调用非异步信号安全的函数</strong>（如 printf、malloc），否则可能导致死锁。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>3. 用户态 vs 内核态</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "用户态 (Ring 3)"
+        A["应用程序<br/>(Java / C / Python)"]
+    end
+    subgraph "内核态 (Ring 0)"
+        C["系统调用处理"]
+        D["中断处理程序"]
+        E["进程调度器"]
+        F["设备驱动程序"]
+        G["内存管理 (MMU)"]
+    end
+    A -- "系统调用 (int 0x80 / syscall)" --> C
+    A -- "中断 (时钟中断、IO 中断)" --> D
+    A -- "异常 (缺页、除以零)" --> E
+    C --> A
+    D --> A
+    E --> A
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要用户态/内核态的分离？</strong>
+<p>现代 CPU 至少提供两个特权级（x86 的 Ring 0/3，ARM 的 EL0/EL1）。内核态代码可以访问所有硬件资源（内存、磁盘、网络、中断控制器），执行特权指令（如修改页表基址寄存器 CR3、关中断 CLI/STI）。用户态代码被严格限制——不能直接访问硬件，不能修改自己的页表，所有涉及硬件或全局状态的操作必须通过<strong>系统调用</strong>委托内核完成。这种隔离保证了恶意或有缺陷的用户程序不会破坏整个系统。</p>
+<strong>三种进入内核态的方式：</strong>
+<p>1. <strong>系统调用（主动）</strong>：用户程序主动请求内核服务（read/write/open/fork），通过 <code>syscall</code> 指令（x86-64）触发，是同步的。2. <strong>中断（被动，硬件触发）</strong>：外部设备（键盘、网卡、定时器）向 CPU 发出中断信号，CPU 暂停当前执行的用户代码，转入中断处理程序。3. <strong>异常（被动，CPU 自身触发）</strong>：当前指令执行出错（缺页异常、除零错误、非法指令），CPU 自动转入异常处理程序。其中缺页异常是最常见的——虚拟内存机制的正常组成部分。</p>
+<strong>系统调用的开销构成：</strong>
+<p>一次系统调用至少包含：1) 触发 <code>syscall</code> 指令（保存用户态 RIP/RFLAGS 到 MSR 寄存器，加载内核态 RIP/RFLAGS），2) 保存通用寄存器到内核栈，3) 根据系统调用号（rax）跳转到对应的内核函数，4) 执行实际逻辑（可能涉及磁盘 IO、网络收发、内存分配），5) 恢复寄存器，6) <code>sysret</code> 返回用户态。其中第 2-6 步消耗几百个 CPU 周期。如果系统调用期间发生进程切换，TLB 刷新带来的间接开销可能远超系统调用本身。银行系统的零拷贝技术（Java NIO 的 DirectByteBuffer 底层用 mmap，Kafka 用 sendfile）就是为了减少这些用户态/内核态之间的数据拷贝。</p>
+</div>
+
+<h3>4. 零拷贝技术（银行场景重点）</h3>
+
+<div class="highlight">
+<strong>银行后台为什么关注零拷贝？</strong> 核心交易系统每秒处理数万笔交易，每笔交易数据都要在进程间、内存与磁盘/网络之间传输。传统的 <code>read() + write()</code> 模式需要 4 次上下文切换 + 4 次数据拷贝（2 次 DMA + 2 次 CPU 拷贝），严重浪费 CPU。零拷贝技术将这个开销降到最低。
+</div>
+
+<div class="card">
+<table>
+<tr><th>技术</th><th>拷贝次数</th><th>原理</th></tr>
+<tr class="row-expandable"><td>传统 read + write</td><td>4 次上下文切换 + 4 次拷贝</td><td>read: DMA→内核缓冲区→用户缓冲区; write: 用户缓冲区→内核 Socket 缓冲区→DMA</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>传统文件传输的完整流程：1) 用户调用 <code>read()</code>→ 切换到内核态；2) DMA 将磁盘数据拷贝到内核读缓冲区；3) CPU 将数据从内核读缓冲区拷贝到用户缓冲区；4) 切换到用户态，<code>read()</code> 返回。5) 用户调用 <code>write()</code>→ 切换到内核态；6) CPU 将数据从用户缓冲区拷贝到内核 Socket 缓冲区；7) DMA 将数据从 Socket 缓冲区拷贝到网卡；8) 切换到用户态，<code>write()</code> 返回。其中步骤 3 和 6 的 CPU 拷贝是完全多余的——数据本来就在内核中，只是为了经过用户态的"中转站"。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>mmap + write</td><td>4 次上下文切换 + 3 次拷贝</td><td>省去内核→用户缓冲区的 CPU 拷贝</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><code>mmap()</code> 将内核读缓冲区的物理页直接映射到用户进程的虚拟地址空间，用户进程就像读写自己的内存一样访问文件数据——实际上读的是同一块物理内存。所以 <code>read()</code> 那一步的 CPU 拷贝（内核→用户）被省掉了，数据直接从内核读缓冲区"复制"到 Socket 缓冲区。Java NIO 的 <code>MappedByteBuffer</code> 就是基于 mmap 实现的。Kafka 早期版本大量使用 mmap 来读写日志文件，利用 OS 的页缓存来管理消息数据。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>sendfile</td><td>2 次上下文切换 + 2 次拷贝</td><td>完全在内核态完成，不经过用户态</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><code>sendfile()</code> 系统调用是最彻底的零拷贝方案。用户只需一次调用，指定源文件描述符和目标 Socket 描述符，内核直接在内部完成：DMA 拷贝磁盘→内核缓冲区，然后 CPU 拷贝内核缓冲区→Socket 缓冲区（如果需要），最后 DMA 拷贝 Socket 缓冲区→网卡。整个过程只有 2 次上下文切换（进入和退出 sendfile），用户态代码完全不需要接触数据。如果网卡支持 scatter-gather DMA（SG-DMA），连"内核→Socket 缓冲区"那一步 CPU 拷贝也能省掉——只传递描述符，由 DMA 引擎直接从内核缓冲区组装网络包。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>splice</td><td>不拷贝数据，管道间传递页引用</td><td>两个 fd 间零拷贝传输</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><code>splice()</code> 是 Linux 2.6.17 引入的更通用的零拷贝方案。它不拷贝数据本身，而是在内核中传递<strong>内存页的引用</strong>（相当于指针传递）。两个文件描述符之间传输数据时，内核只是把"这个物理页现在归你了"的引用从一个 fd 转移到另一个 fd。这要求其中一个必须是管道——因为管道的环形缓冲区是用页结构管理的，方便做页引用转移。Nginx 在高版本中逐渐从 sendfile 转向 splice 配合使用以支持更灵活的代理场景。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ============ 二、死锁 ============ -->
+<h2 id="os-two">二、死锁</h2>
+
+<h3>5. 死锁四大必要条件与银行家算法</h3>
+
+<div class="mermaid">
+graph TD
+    A["进程 P1<br/>持有资源 R1<br/>等待资源 R2"] --> B["资源 R1"]
+    C["资源 R2"] --> A
+    D["进程 P2<br/>持有资源 R2<br/>等待资源 R1"] --> C
+    B --> D
+    A -. "形成环" .- D
+    style A fill:#f87171,stroke:#dc2626,color:#fff
+    style D fill:#f87171,stroke:#dc2626,color:#fff
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>死锁的四个必要条件（缺一不可）：</strong>
+<p>死锁发生的四个条件必须<strong>同时满足</strong>，破坏其中任意一个就能预防死锁。在实际系统设计中，最常被打破的是"循环等待"——通过<strong>资源有序分配</strong>（所有线程按固定顺序获取锁）来避免环的形成。</p>
+<strong>银行家算法（Dijkstra, 1965）：</strong>
+<p>银行家算法是一种<strong>死锁避免</strong>策略（而非死锁预防）。它的核心思想与银行贷款审批如出一辙：系统维护当前可用资源量、每个进程已分配的资源量和最大需求量。当一个进程请求资源时，系统先<strong>试探性</strong>地假设分配给它，然后检查是否存在一个"安全序列"——按照这个序列依次满足所有进程的需求，每个进程都能运行完毕并释放资源。如果存在安全序列，则分配是安全的；否则拒绝分配，进程必须等待。算法复杂度 O(n² × m)，在大型系统中实时运行代价较高，更多用于教学和理论分析。</p>
+<strong>银行系统的实际做法：</strong>
+<p>真正的银行核心系统通常不会在运行时动态检测死锁——代价太高。而是通过<strong>严格的锁获取顺序约定</strong>（如：先账户 ID 小的锁，再账户 ID 大的锁）、<strong>锁超时机制</strong>（获取锁超时则回滚事务并重试）和<strong>数据库死锁检测</strong>（Oracle/MySQL 后台有死锁检测线程，定期检查等待图，发现环则回滚代价最小的事务）来综合应对。</p>
+</div>
+
+<div class="card">
+<table>
+<tr><th>条件</th><th>含义</th><th>破解措施</th><th>可行性</th></tr>
+<tr class="row-expandable"><td>互斥</td><td>资源同一时刻只能被一个进程使用</td><td>资源设计为可共享</td><td><span class="badge badge--red">不可行</span></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>互斥是很多资源的固有属性——打印机不能同时打印两个文档、数据库的一行记录不能同时被两个事务修改、银行账户余额不能同时被两个线程更新。将资源设计为可共享虽然理论上能打破互斥条件，但大多数场景下做不到。例如 <strong>ReentrantReadWriteLock</strong> 允许读共享——多个读线程可以同时持有读锁，读操作之间不互斥，但读写之间仍然互斥。这算是部分打破了互斥条件。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>占有并等待</td><td>持有资源的同时等待其他资源</td><td>一次性申请所有资源</td><td><span class="badge badge--orange">困难</span></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>一次性申请所有资源的思路：进程在开始执行前声明并获取所有需要的资源，如果任一资源不可用则释放已获得的所有资源并等待重试。问题在于：1) 很多场景下无法预知需要哪些资源（如转账交易在运行时才知道要锁哪两个账户）；2) 资源利用率低（提前占用了暂时不需要的资源）。数据库中 <code>SELECT ... FOR UPDATE NOWAIT</code> 就是这种思想——如果锁不可得直接返回错误而非阻塞，避免占着 A 等 B 的局面。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>不可剥夺</td><td>资源只能由持有者主动释放</td><td>设计为可剥夺</td><td><span class="badge badge--orange">部分可行</span></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>CPU 是可剥夺的典型——调度器可以在任何时候把 CPU 从一个进程手中抢走分给另一个进程。但数据库锁、文件锁这类逻辑资源很难被剥夺——如果操作系统强行收回一个数据库事务的锁，该事务的所有修改都会处于不确定状态，可能导致数据不一致。实际上合理的做法是：如果一个线程占着 A 资源请求 B 资源失败，则<strong>主动释放</strong>已持有的 A 资源，等待一段时间后重新尝试获取 A 和 B——这绕过了"不可剥夺"的限制，但增加了"活锁"的风险。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>循环等待</td><td>存在 P1→P2→...→Pn→P1 的资源等待环</td><td>资源有序分配（锁排序）</td><td><span class="badge badge--green">最可行</span></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p><strong>资源有序分配（Lock Ordering）</strong>是工业界最常用的死锁预防手段。给所有资源分配一个偏序编号，要求每个线程<strong>按编号递增的顺序</strong>获取资源。例如转账场景：始终先锁 ID 小的账户再锁 ID 大的——线程 A 转账 100→200 和线程 B 转账 200→100，按这个规则都会先锁 100 再锁 200，从而避免了交叉等待形成的环。Java 中的 synchronized 或 ReentrantLock 配合 <code>Lock.tryLock(timeout, unit)</code> 是实现锁排序的标准方式。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>Java 死锁检测实战</h3>
+
+<div class="card">
+<strong>死锁示例代码：</strong>
+<pre><code>Object lockA = new Object();
+Object lockB = new Object();
+
+// 线程 1
+new Thread(() -> {
+    synchronized(lockA) {
+        Thread.sleep(100);
+        synchronized(lockB) { /* never reaches here */ }
+    }
+}).start();
+
+// 线程 2
+new Thread(() -> {
+    synchronized(lockB) {
+        Thread.sleep(100);
+        synchronized(lockA) { /* never reaches here */ }
+    }
+}).start();</code></pre>
+<strong>检测手段：</strong>
+<p>1. <code>jstack -l &lt;PID&gt;</code> 会扫描所有线程的锁等待关系，检测到死锁时输出 <code>Found one Java-level deadlock</code> 和详细的线程栈信息。2. <code>ThreadMXBean.findDeadlockedThreads()</code> 可在运行时编程式检测死锁。3. 数据库的死锁检测：MySQL InnoDB 有死锁检测线程，默认每 5 秒检查一次等待图，发现环后会回滚代价最小的事务（<code>innodb_deadlock_detect</code> 参数控制）。</p>
+</div>
+
+<!-- ============ 三、内存管理 ============ -->
+<h2 id="os-three">三、内存管理</h2>
+
+<h3>6. 虚拟内存</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "进程 A 虚拟地址空间"
+        VA1["0x0000...0000<br/>代码段"]
+        VA2["0x7fff...<br/>堆 → ← 栈"]
+    end
+    subgraph "MMU + 页表"
+        PT["页表<br/>(多级)"]
+        TLB["TLB<br/>(快表)"]
+    end
+    subgraph "物理内存"
+        PA1["物理页框 0"]
+        PA2["物理页框 1"]
+        PA3["物理页框 N"]
+    end
+    VA1 --> PT --> PA2
+    VA2 --> TLB --> PA3
+    PT -. "TLB 缓存" .-> TLB
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>虚拟内存的三大核心价值：</strong>
+<p>1. <strong>隔离</strong>：每个进程拥有独立的虚拟地址空间（32 位系统 4GB，64 位系统理论上 256TB），进程 A 无法通过指针访问进程 B 的内存（除非主动通过共享内存映射）。这是操作系统安全性的基石。2. <strong>超卖</strong>：所有进程的虚拟内存总和可以远超物理内存大小——操作系统利用磁盘上的 swap 区域将不活跃的内存页换出，物理内存只保留活跃的工作集（Working Set）。3. <strong>简化程序加载</strong>：可执行文件的代码段和数据段可以被映射到虚拟地址空间而不需要全部加载到内存（demand paging），遇到缺页时再从磁盘加载。</p>
+<strong>地址转换流程（x86-64 4 级页表）：</strong>
+<p>虚拟地址被分割为多个字段（每级页表的索引 + 页内偏移）：PML4 索引(9bit) → PDPT 索引(9bit) → PD 索引(9bit) → PT 索引(9bit) → 页内偏移(12bit)。每次地址转换，MMU 从 CR3 寄存器拿到 PML4 表的物理基址，逐级查找。每一级都涉及一次内存访问，所以一次完整的 4 级页表遍历需要 4 次内存访问——这就是为什么 TLB 如此重要。TLB（Translation Lookaside Buffer）是 CPU 内部的硬件缓存，存放最近用过的虚拟→物理地址映射。典型 TLB 命中率 > 99%，命中时地址转换只需要 1 个 CPU 周期；不命中时需要完整的页表遍历，耗时 100+ 周期。</p>
+<strong>与 JVM 的关系：</strong>
+<p>JVM 运行在虚拟内存之上，JVM 的堆、栈、方法区、直接内存都是对操作系统虚拟内存的二次抽象。JVM 通过 <code>-Xms</code> / <code>-Xmx</code> 限制堆大小，但 JVM 进程的实际虚拟内存占用还包括：线程栈（每线程默认 1MB）、Metaspace（使用 native memory）、Direct ByteBuffer 分配的堆外内存、JIT 编译后的代码缓存等。理解虚拟内存是理解 JVM 内存管理和 OOM 问题的前提。</p>
+</div>
+
+<h3>7. 分页 vs 分段</h3>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>分页 (Paging)</th><th>分段 (Segmentation)</th></tr>
+<tr class="row-expandable"><td>划分方式</td><td>固定大小（4KB），物理上划分</td><td>可变大小，逻辑上划分</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>分页是<strong>物理</strong>视角的划分：不管程序逻辑结构如何，内存被切分为固定大小的页框（Page Frame，通常 4KB）。分段是<strong>逻辑</strong>视角的划分：代码段、数据段、堆、栈各自形成一个逻辑段，段的大小根据实际需要动态增长。这是两种截然不同的设计哲学——分页追求管理的简单高效，分段追求让程序的内存布局与其逻辑结构一致。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>碎片类型</td><td>内部碎片（最后一页用不完）</td><td>外部碎片（空闲空间被割裂）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>分页的内部碎片：如果程序需要 10KB 内存而页大小是 4KB，则分配 3 个页面（12KB），最后一页只用了 2KB → 内部浪费 2KB。分段的内部碎片为 0（因为段大小等于实际需要），但会产生外部碎片：随着段的分配和释放，物理内存中散布着很多不连续的、太小的空闲区域，无法满足大段的分配请求。这就是"碎片化"——总空闲 100MB，但最大的连续空闲块只有 10MB。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>外部碎片</td><td>无</td><td>有（需要紧缩 compact）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>分页完全消除了外部碎片——因为所有页面等大，任何空闲页面都可以分配给任何进程，不存在"这块空闲太小用不了"的问题。分段的外部碎片需要内存紧缩（Memory Compaction）来解决：操作系统暂停所有进程，移动已分配的内存块使其连续，腾出大的空闲空间。这非常耗时，类似于 JVM 的 Full GC 中的 compaction 过程。现代操作系统实际上使用<strong>段页式</strong>——程序暴露段接口给编译器（代码段、数据段），但底层用分页实现（段的基址和限长被转换为页表项）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>地址空间</td><td>一维（所有地址连续）</td><td>二维（段号 + 段内偏移）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>分页下程序看到的地址是一维线性空间，任何合法地址都是一个数（0 到最大虚拟地址）。分段下地址是二维的 —— 程序员需要指定 "代码段的偏移 0x100" 而非简单的 "地址 0x40100"。这对编译器和程序员都不友好，是分段被淘汰的原因之一。x86 上遗留了分段的痕迹（CS/DS/SS/ES 段寄存器），但现代操作系统将所有段基址都设为 0（平坦模型），分段实际上被架空了。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>现代应用</td><td>所有现代 OS 的核心机制</td><td>主流 OS 中已被淘汰</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Linux、Windows、macOS 的虚拟内存管理全部基于分页实现。分段只在一些专用的嵌入式或实时操作系统中还有使用（如某些 RTOS）。Linux 的 <code>mmap</code> 允许将文件映射到一段虚拟地址——看起来像是"段"的概念，但底层仍然是分页管理（每个映射的文件页面按需加载）。可以说，分段的设计思想（逻辑上与程序结构对应的内存区域）仍然存在，但实现已经全部用分页替换。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>8. 页面置换算法</h3>
+
+<div class="mermaid">
+graph TD
+    A["缺页异常触发"] --> B{"内存有空闲页？"}
+    B -- 是 --> C["分配并加载页"]
+    B -- 否 --> D{"选择换出策略"}
+    D -- OPT --> E["OPT（最优，理论下界）<br/>置换未来最远使用的页"]
+    D -- LRU --> F["LRU（最近最少使用）<br/>置换最久未访问的页"]
+    D -- Clock --> G["Clock / 二次机会<br/>循环扫描，给第二次机会"]
+    D -- FIFO --> H["FIFO<br/>置换驻留最久的页"]
+    F --> I["问题：每次访问都要更新<br/>时间戳，硬件开销大"]
+    G --> J["Linux 默认策略<br/>活跃/非活跃链表"]
+    H --> K["Belady 异常：<br/>页框增多，缺页率反而上升"]
+    C --> L["恢复执行触发缺页的指令"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>LRU 的理论优势与实现困境：</strong>
+<p>LRU（Least Recently Used）利用程序的<strong>时间局部性</strong>——最近访问过的页面很可能在短期内再次被访问。理论上 LRU 接近最优（OPT），但实现代价高昂：每次内存访问都需要更新 LRU 排序信息。纯软件实现需要一个链表，每次页面访问都把它移到链表头部 → 链表操作本身就要几条指令的 CPU 时间，对每次内存访问都做这个操作完全不现实。硬件实现需要每个页面一个"访问时间戳"寄存器，并在每次访问时更新——面积和功耗代价都太大。</p>
+<strong>Linux 的 Clock 算法近似：</strong>
+<p>Linux 使用<strong>双链表 LRU 近似</strong>策略——维护 active_list（活跃页）和 inactive_list（非活跃页）。每个物理页有 PG_referenced 标志位（由 MMU 硬件在页被访问时自动置位）。内核定期扫描：如果 PG_referenced=1，清除标志并留在 active_list（给第二次机会）；如果 PG_referenced=0，将页从 active_list 移到 inactive_list。需要换出时，从 inactive_list 尾部取出页面。这就是 Clock（时钟）算法的变体——不是严格 LRU，但工程上非常高效（无每次访问的开销，只需定期扫描时读取标志位）。</p>
+<strong>Belady 异常：</strong>
+<p>FIFO 算法独有的反直觉现象——增加物理页框数量，缺页中断次数反而增加。根本原因是 FIFO 无视页面的访问频率——一个被频繁访问的页面可能仅仅因为"来得早"就被换出，即使它即将被再次访问。LRU 没有 Belady 异常，因为 LRU 满足栈特性（增加页框相当于在栈上做更浅的剪枝，不会影响已有剪枝的结果）。</p>
+</div>
+
+<!-- ============ 四、IO 与调度 ============ -->
+<h2 id="os-four">四、IO 模型与 CPU 调度</h2>
+
+<h3>9. IO 模型</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "阻塞 IO"
+        B1["应用调用 recvfrom()"] --> B2["内核准备数据<br/>(等待)"]
+        B2 --> B3["内核→用户拷贝<br/>(阻塞)"]
+        B3 --> B4["返回"]
+    end
+    subgraph "非阻塞 IO"
+        N1["应用调用 recvfrom()"] --> N2{"数据就绪？"}
+        N2 -- 否 --> N1
+        N2 -- 是 --> N3["内核→用户拷贝"]
+        N3 --> N4["返回"]
+    end
+    subgraph "IO 多路复用"
+        M1["select/poll/epoll<br/>阻塞等待多个 fd"] --> M2{"任一 fd 就绪？"}
+        M2 -- 否 --> M1
+        M2 -- 是 --> M3["recvfrom() 拷贝"]
+        M3 --> M4["返回"]
+    end
+    subgraph "异步 IO"
+        A1["aio_read()"] --> A2["立即返回"]
+        A2 --> A3["内核准备+拷贝<br/>(全程异步)"]
+        A3 --> A4["信号/回调通知"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>IO 模型的本质区别——在哪一步阻塞：</strong>
+<p>IO 操作分为两个阶段：阶段一，等待数据从网络/磁盘到达内核缓冲区（数据就绪）；阶段二，将数据从内核缓冲区复制到用户缓冲区（数据拷贝）。阻塞 IO 在两个阶段都阻塞；非阻塞 IO 在阶段一不阻塞（立即返回 EWOULDBLOCK，需要反复轮询），但阶段二仍然阻塞；IO 多路复用在阶段一阻塞（在 select/epoll 上等待），阶段二在 recvfrom 中阻塞；异步 IO 两个阶段都不阻塞——发起 aio_read 后立即返回，内核完成所有工作后通知用户。只有异步 IO 是真正的"非阻塞"——Java AIO（NIO2）实现了真正的异步 IO。</p>
+<strong>select vs poll vs epoll 的技术差异：</strong>
+<p><code>select</code> 将监控的 fd 集合从用户态拷贝到内核，内核遍历整个集合（O(n)），每次调用后需要 reinitialize 整个集合。fd_set 默认 1024 上限（可重新编译内核修改）。<code>poll</code> 将 fd 集合组织为链表，没有数量限制，但内核仍然 O(n) 遍历。<code>epoll</code> 通过 <code>epoll_ctl</code> 将 fd 注册到内核的红黑树 + 就绪链表中——每个 fd 只需要注册一次（不需要每次调用都传入整个集合），内核通过<strong>回调机制</strong>在 fd 就绪时将其加入就绪链表，<code>epoll_wait</code> 直接遍历就绪链表（O(1) 已就绪 fd 的数量而非 O(n) 总 fd 数）。这就是为什么 C10K 问题的解决依赖 epoll——一万个连接中只有几个活跃时，select 每次要扫描一万个 fd，epoll 只返回活跃的那几个。</p>
+</div>
+
+<div class="card">
+<table>
+<tr><th>IO 模型</th><th>阶段一（等待数据）</th><th>阶段二（拷贝数据）</th><th>代表</th></tr>
+<tr class="row-expandable"><td>阻塞 IO (BIO)</td><td>阻塞</td><td>阻塞</td><td>传统 Socket read/write，JDBC</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>阻塞 IO 是最简单直观的模型：线程调用 read() 后挂起，直到数据到达并被拷贝到用户缓冲区才返回。在这期间线程不能做任何事情——对于单线程服务器，这意味着它无法处理任何其他连接。所以传统的阻塞 IO 服务器必须使用一个线程处理一个连接的模型（Thread-per-Connection），线程数量 = 并发连接数。在连接数很大的场景下，大量线程处于阻塞等待状态，浪费内存（每个线程栈 1MB），线程切换开销巨大。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>非阻塞 IO (NIO)</td><td>不阻塞（轮询）</td><td>阻塞</td><td>SocketChannel + 轮询</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>非阻塞 IO 模式下，read() 调用立即返回——如果数据没准备好就返回错误码（Linux 上是 EAGAIN/EWOULDBLOCK），应用程序需要反复调用 read() "轮询"直到数据就绪。虽然线程不用在阶段一阻塞，但轮询消耗了大量 CPU 时间——大部分 read() 调用都返回"没数据"，白白浪费 CPU 周期。纯非阻塞 IO 很少直接使用，通常结合 IO 多路复用——让内核帮忙轮询，有数据时才通知用户。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>IO 多路复用</td><td>在 select/epoll 上阻塞</td><td>在 recvfrom 上阻塞</td><td>Netty, Nginx, Redis</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>IO 多路复用的核心思想：用一个线程同时监控多个文件描述符，任何一个就绪就通知应用程序——而不是为每个连接分配一个线程。这就是 Reactor 模式。Netty 的 EventLoop 就是这种实现——一个 EventLoop 线程监控成百上千个连接，哪个连接有数据到达就处理哪个。阻塞 IO 和 IO 多路复用的本质区别不是"是否阻塞"——IO 多路复用也是阻塞在 select/epoll 上的——而是<strong>一个线程能处理多个连接</strong> vs <strong>一个线程只能处理一个连接</strong>。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>信号驱动 IO</td><td>异步（SIGIO）</td><td>阻塞</td><td>较少使用</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>信号驱动 IO 预先通过 sigaction 注册 SIGIO 信号处理函数，然后立即返回。当数据在内核中就绪后，内核发送 SIGIO 信号给进程，在信号处理函数中调用 recvfrom 完成数据拷贝。问题是：信号处理函数中能做的事情非常有限（不能调用非异步信号安全的函数），且信号合并问题导致多个 IO 事件可能只触发一个信号。在 epoll 成为主流后，信号驱动 IO 基本退出历史舞台。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>异步 IO (AIO)</td><td>不阻塞</td><td>不阻塞（全异步）</td><td>Java NIO2 (AsynchronousSocketChannel)</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>异步 IO 是唯一从头到尾都不阻塞的 IO 模型。应用发起 aio_read() 后立即返回（连内核拷贝数据都不等），内核完成所有工作（等待数据就绪 + 拷贝到用户缓冲区）后通过回调或信号通知应用。Java 的 <code>AsynchronousSocketChannel</code> 就是 AIO 的实现。理论上 AIO 性能最优，但在 Linux 上 AIO 的实现存在一些限制：内核 AIO 对网络 IO 的支持要等到 io_uring（Linux 5.1+）才真正完善。这也是为什么 Netty 团队经过评估后仍然坚定使用 IO 多路复用而非 AIO——epoll 足够高效且更成熟可控。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>10. CPU 调度算法</h3>
+
+<div class="card">
+<table>
+<tr><th>算法</th><th>原理</th><th>优点</th><th>缺点</th><th>饥饿风险</th></tr>
+<tr class="row-expandable"><td>FCFS</td><td>先来先服务，非抢占</td><td>简单公平</td><td>短任务被长任务阻塞</td><td><span class="badge badge--green">无</span></td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>FCFS (First Come First Served) 是最简单的调度算法——按任务到达顺序依次执行，当前任务完成前绝不切换。问题出在<strong>护航效应</strong>（Convoy Effect）：一个长 CPU 密集型任务先到达并占用 CPU，后续大量的短 IO 密集型任务全部排队等待——而这些短任务本来可以很快完成并释放 IO 资源。在分时系统中 FCFS 几乎不被采用，但在批处理系统中仍然有意义（所有任务都是已知的，目标是最大化吞吐量而非响应时间）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>SJF</td><td>预计运行时间最短优先</td><td>最小化平均等待时间</td><td>需预知运行时间</td><td><span class="badge badge--red">有</span></td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>SJF (Shortest Job First) 在数学上能最小化平均等待时间——可以证明，将短任务排在长任务前面能让"等待队列的长度"最小化。但问题是：操作系统如何知道一个任务需要运行多长时间？<strong>指数平均法</strong>可以近似：记录每个任务的历史运行时间，预测下一次运行时间 = α × 上一次实际运行时间 + (1-α) × 上一次预测值。α 取 0.5 时相当于加权平均。长任务可能被源源不断的短任务插队而永远得不到执行——这是典型的<strong>饥饿</strong>。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>优先级</td><td>按优先级调度，高优先级先执行</td><td>灵活可控</td><td>低优先级可能饿死</td><td><span class="badge badge--red">有</span></td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>优先级调度在实时系统中非常关键——紧急任务（如核电站的紧急停机信号）必须立刻获得 CPU。但静态优先级的问题是低优先级任务可能永远得不到执行（被高优先级任务持续抢占）。<strong>老化</strong>（Aging）机制是经典解决方案：随着等待时间增加，动态提高任务的优先级。Linux 的 CFS 调度器通过 vruntime（虚拟运行时间）隐式实现了老化——vruntime 越小的任务优先级越高，等待的任务 vruntime 不变而运行中任务的 vruntime 增长，自然达到平衡。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Round Robin</td><td>时间片轮转，抢占式</td><td>公平，响应时间可控</td><td>时间片选择困难</td><td><span class="badge badge--green">无</span></td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>Round Robin (RR) 是分时系统的基础：每个任务分配一个固定的时间片（通常 10-100ms），用完后放到队列末尾，轮流执行。时间片选择是门学问——太小（如 1ms）会导致频繁的上下文切换（切换开销占比大，实际工作效率低），太大（如 500ms）则退化为 FCFS，交互式应用的响应变得迟缓。Linux 默认时间片在 10-20ms 左右（CFS 使用动态时间片）。Java 线程调度完全交给操作系统，<code>Thread.yield()</code> 只是建议调度器"可以考虑给别人机会"，但不保证。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>多级反馈队列 (MLFQ)</td><td>多队列 + 动态优先级调整</td><td>兼顾交互与吞吐</td><td>参数调优复杂</td><td><span class="badge badge--orange">低</span></td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>MLFQ (Multi-Level Feedback Queue) 是现代通用操作系统的真正实现思路。它维护多个优先级队列，高优先级队列分配短时间片（保证交互响应），低优先级队列分配长时间片（提高吞吐量）。任务首次进入最高优先级队列，用完时间片后降级到下一级；如果在低优队列中长时间等待后获得了 CPU（说明它被饿到了），则升级。IO 密集型任务往往用不完时间片（主动让出 CPU），所以停留在高优先级；CPU 密集型任务会逐渐降级。MLFQ 不需要预知任务的运行时间——它通过反馈机制自适应。Linux 的 CFS 可以看作 MLFQ 的连续版本。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Linux CFS</td><td>红黑树管理，vruntime 追踪</td><td>完全公平，O(log N)</td><td>—</td><td><span class="badge badge--green">无</span></td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<p>Linux CFS (Completely Fair Scheduler) 从 Linux 2.6.23 开始成为默认调度器。它的核心数据结构是一棵<strong>红黑树</strong>，按照每个任务的 vruntime（虚拟运行时间）排序。调度器总是选择红黑树最左边的节点（vruntime 最小的任务）。vruntime 的增长速度与任务的权重（nice 值）成反比——nice 值越低（优先级越高）的任务 vruntime 增长越慢，所以它"在树中往右移"的速度越慢，被调度的次数越多。CFS 不使用固定时间片，而是根据任务数量和权重动态计算目标延迟（targeted latency），在该延迟内所有可运行任务至少获得一次 CPU。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ============ 五、综合考点 ============ -->
+<h2 id="os-five">五、综合高频考点</h2>
+
+<h3>11. 缺页中断 (Page Fault)</h3>
+
+<div class="highlight">
+<strong>缺页中断是虚拟内存机制的正常组成部分，不是错误！</strong> 实际上，进程启动时几乎没有页面在物理内存中——所有代码、数据页面都是"映射了但未加载"状态。进程执行第一条指令就触发缺页中断，操作系统从磁盘加载代码页，然后重新执行该指令。这个过程对用户程序完全透明。
+</div>
+
+<div class="card">
+<p><strong>缺页中断的完整流程：</strong></p>
+<p>1. MMU 查找页表，发现该页的 Present 位为 0（不在物理内存中）→ 触发缺页异常（trap 到内核）。</p>
+<p>2. 内核检查该虚拟地址是否在进程的合法地址范围内（VMA 区域检查）——如果不是，则发送 SIGSEGV 信号给进程（这就是著名的"Segmentation Fault"）。</p>
+<p>3. 如果是合法但未映射或已换出的页：找一块空闲物理内存页框（如果物理内存已满则根据页面置换算法选一个页换出到磁盘）。</p>
+<p>4. 从磁盘（可执行文件或 swap 分区）读取目标页面数据到分配的物理页框中。</p>
+<p>5. 更新页表——将该虚拟页映射到刚分配的物理页框，设置 Present=1 并清除其他标志。</p>
+<p>6. 重新执行触发缺页的指令——这次 MMU 能成功翻译地址，程序继续执行，就像什么都没发生。</p>
+<p><strong>次缺页 (Minor Page Fault) vs 主缺页 (Major Page Fault)：</strong> 如果目标页面已经在物理内存的"页缓存"中（只是还没有映射到这个进程的页表中），则只需更新页表映射即可，不需要磁盘 IO——这叫 minor fault。如果需要从磁盘读取——这叫 major fault，性能昂贵。Java 应用中，频繁的 major page fault 可能意味着堆内存不足（GC 过于频繁地在堆和 swap 之间换页），需要通过 <code>-Xmx</code> 限制堆大小来避免。</p>
+</div>
+
+<h3>12. 线程同步与互斥（银行场景）</h3>
+
+<div class="highlight">
+<strong>银行转账的经典并发问题：</strong> A 向 B 转账 100 元，同时 B 向 A 转账 200 元。如果两个线程不加控制地并发执行：A=A-100, B=B+100, B=B-200, A=A+200——最后的余额取决于指令的交错顺序，而不是正确的业务逻辑。这就是竞态条件——两个线程的最终结果依赖于它们指令执行的相对时序。
+</div>
+
+<div class="mermaid">
+sequenceDiagram
+    participant T1 as 线程1: A→B 100
+    participant DB as 数据库/账户
+    participant T2 as 线程2: B→A 200
+
+    Note over T1,T2: 有锁保护（正确）
+    T1->>DB: LOCK A
+    T2->>DB: LOCK A (等待...)
+    Note over T2: 阻塞
+    T1->>DB: A=A-100, B=B+100
+    T1->>DB: UNLOCK A
+    T2->>DB: LOCK A (获得)
+    T2->>DB: A=A+200, B=B-200
+    Note over T1,T2: 最终结果正确
+
+    Note over T1,T2: 无锁保护（错误）
+    T1->>DB: 读 A=1000
+    T2->>DB: 读 A=1000
+    T1->>DB: 写 A=900
+    T2->>DB: 写 A=1200
+    Note over T1,T2: 丢失更新！A 应该是 1100
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>操作系统的同步原语——互斥锁 vs 条件变量 vs 信号量：</strong>
+<p>互斥锁（Mutex）解决<strong>互斥访问</strong>问题——同一时刻只有一个线程能访问临界区。条件变量（Condition Variable）解决<strong>等待条件成立</strong>的问题——线程 A 等待"账户余额 >= 取款金额"这个条件，线程 B 存款后通知 A。信号量（Semaphore）既是互斥也是同步——可以控制"N 个资源同时被使用"。这三个构成了并发编程的基础，Java 中的 synchronized/Lock、wait/notify、Semaphore 分别对应了它们。</p>
+<strong>乐观锁 vs 悲观锁——银行系统的选择：</strong>
+<p>悲观锁（Pessimistic Lock）假设冲突一定会发生，先锁再操作——适合<strong>写密集</strong>场景。乐观锁（Optimistic Lock）假设冲突不会发生，操作完在提交时检查（CAS 或版本号）——适合<strong>读多写少</strong>场景。银行核心账务系统倾向悲观锁（资金安全性高于吞吐量），而用户余额查询系统可以使用乐观锁（高并发读取，冲突概率低）。Java 中 <code>synchronized</code>/<code>ReentrantLock</code> 是悲观锁，<code>AtomicInteger.compareAndSet</code> 是乐观锁（CAS 由 CPU 指令实现，如 x86 的 LOCK CMPXCHG）。</p>
+</div>
+
+<div class="nav-bottom">
+  <a href="../14-SpringBoot/SpringBoot八股文.html">← 上一篇：Spring Boot</a>
+  <a href="../16-消息队列/消息队列八股文.html">下一篇：消息队列 →</a>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>
