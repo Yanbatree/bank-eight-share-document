@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>JAVA基础八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #f87171; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #e11d48; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>JAVA 基础八股文</h1>
+
+<!-- ==================== 一、面向对象 ==================== -->
+<h2 id="one-1">一、面向对象基础</h2>
+
+<h3 id="one-2">1. 封装、继承、多态</h3>
+
+<div class="mermaid">
+graph TD
+    OOP["面向对象三大特性"]
+    OOP --> A["封装<br/>Encapsulation"]
+    OOP --> B["继承<br/>Inheritance"]
+    OOP --> C["多态<br/>Polymorphism"]
+
+    A --> A1["隐藏内部实现<br/>暴露公开接口"]
+    A --> A2["private 修饰字段<br/>public getter/setter"]
+    A --> A3["提高安全性 & 可维护性"]
+
+    B --> B1["子类复用父类代码"]
+    B --> B2["单继承 (extends)<br/>多实现 (implements)"]
+    B --> B3["子类拥有父类所有<br/>非 private 成员"]
+
+    C --> C1["同一方法不同行为"]
+    C --> C2["编译时多态: 重载"]
+    C --> C3["运行时多态: 重写<br/>+ 动态绑定"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>多态的底层实现——动态绑定：</strong>
+<p>Java 的方法调用指令有 5 种：invokestatic（静态方法）、invokespecial（构造器/私有方法/父类方法）、invokevirtual（虚方法）、invokeinterface（接口方法）、invokedynamic（Lambda）。其中 invokevirtual 和 invokeinterface 都依赖运行时的动态绑定。</p>
+<p>每个类在方法区有一个虚方法表（vtable），记录了该类实际应该调用的方法地址。如果子类重写了父类方法，子类 vtable 中对应的条目会指向子类的实现。JVM 在执行 invokevirtual 时，先通过对象头找到实际类型，再查该类型的 vtable，找到对应偏移量的方法地址并调用。这就是"运行时多态"的本质——一条 invokevirtual 指令，根据 receiver 对象的实际类型，调用不同的方法实现。</p>
+<strong>封装的意义：</strong>
+<p>封装不仅仅是"加个 getter/setter"。封装的核心是隐藏变化——通过公开稳定的接口、隐藏可能变化的实现，使得内部修改不影响外部调用者。这是软件工程中最重要的设计原则之一（开闭原则的基础）。</p>
+</div>
+
+<h3 id="one-3">2. 重载 (Overload) vs 重写 (Override)</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>重载 Overload</th><th>重写 Override</th></tr>
+<tr class="row-expandable"><td>定义</td><td>同一类中方法名相同、参数列表不同</td><td>子类重新实现父类的方法</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>重载发生在<strong>编译时</strong>——编译器根据调用时传入的<strong>静态类型</strong>（声明类型）来决定调用哪个重载版本。这被称为"静态分派"。典型场景：<code>void foo(int x)</code> 和 <code>void foo(String x)</code> 共存，调用 <code>foo(1)</code> 编译时就能确定走 int 版本。</p>
+<p>重写发生在<strong>运行时</strong>——JVM 根据 receiver 对象的<strong>实际类型</strong>来决定调用哪个方法。这被称为"动态分派"。典型场景：<code>Animal a = new Dog(); a.speak();</code> 虽然 a 的静态类型是 Animal，但实际调用的是 Dog 的 speak 方法。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>参数</td><td>必须不同（个数/类型/顺序）</td><td>必须相同</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>重载的参数列表必须不同——这是编译器区分重载方法的唯一依据。注意<strong>返回值类型不同但参数相同不构成重载</strong>——编译器会报错。因为调用时 JVM 不知道该用哪个（返回值类型不参与方法签名）。</p>
+<p>重写的参数必须完全一致。JDK 5+ 允许<strong>协变返回类型</strong>——子类重写方法的返回值可以是父类方法返回值的子类型。例如父类 <code>Animal get()</code> 可以被重写为 <code>Dog get()</code>。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>返回值</td><td>可不同</td><td>相同或协变（子类型）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>重载的返回值类型可以完全不同，因为编译时根据参数就能确定调用哪个方法。</p>
+<p>重写的协变返回类型是 JDK 5 引入的特性。这解决了之前需要强制转型的尴尬——比如 <code>Object clone()</code> 被 ArrayList 重写后返回 ArrayList 类型，调用方无需手动转型。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>访问修饰符</td><td>无限制</td><td>不能比父类更严格</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>重写方法的访问级别不能比父类更严格（可以更宽松）。这是为了满足"里氏替换原则"——任何使用父类引用的地方，替换为子类实例后行为应保持一致。如果父类方法是 public，子类将其改为 private，那么通过父类引用调用该方法时就会失败。</p>
+<p>严格程度排序：private > default > protected > public（public 最宽松）。所以父类 protected 的方法，子类可以重写为 public，但不能重写为 private/default。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>异常</td><td>无限制</td><td>不能抛出比父类更宽泛的 checked 异常</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>重写方法不能抛出比父类声明更宽泛的 checked 异常——同样是为了符合里氏替换原则。如果父类声明 <code>throws IOException</code>，子类可以声明 throws FileNotFoundException（更具体），但不能声明 throws Exception（更宽泛）。</p>
+<p>重写方法可以不抛异常（缩小异常范围），也可以抛出新的 unchecked 异常（RuntimeException），因为 unchecked 异常不需要调用方显式处理。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>方法签名 = 方法名 + 参数列表（不包括返回值）</strong><br/>
+重载看<strong>静态类型</strong>（编译时决定），重写看<strong>实际类型</strong>（运行时动态绑定）。
+</div>
+
+<h3 id="one-4">3. 抽象类 vs 接口</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>抽象类</th><th>接口 (JDK 8+)</th></tr>
+<tr class="row-expandable"><td>关键字</td><td>abstract class</td><td>interface</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>抽象类用 <code>abstract</code> 修饰，不能被实例化。可以包含构造器（供子类调用），可以有成员变量和已实现的方法。接口在 JDK 8 之前只能有抽象方法和常量，JDK 8 引入了 default 方法和 static 方法，JDK 9 引入了 private 方法。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>继承/实现</td><td>单继承 (extends)</td><td>多实现 (implements)，可继承多个接口</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Java 不支持多继承类（C++ 的菱形继承问题——两个父类有同名方法时不知道该调用哪个）。但支持多实现接口——因为 JDK 8 之前接口没有方法体，不存在冲突。JDK 8 引入 default 方法后，如果一个类实现了两个接口且它们有同名的 default 方法，编译器强制要求该类重写该方法来解决冲突：<code>X.super.method()</code>。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>构造器</td><td>有</td><td>无</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>抽象类的构造器虽然不能直接 new，但会在子类实例化时通过 super() 被调用，用于初始化抽象类中的字段。接口没有构造器，因为接口不持有实例状态（只有常量，属于接口本身而非实例）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>方法</td><td>可有抽象方法 + 具体方法</td><td>抽象方法 + default 方法 + static 方法</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>抽象类中的具体方法可以被所有子类继承复用——这是抽象类相比接口的主要优势（代码复用）。接口的 default 方法提供了一种"在不破坏现有实现的前提下为接口添加新方法"的机制——比如 Java 8 中 Collection 接口新增了 stream() default 方法，所有已有的集合实现类自动获得了这个方法，无需修改。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>使用场景</td><td>"is-a" 关系，共享代码</td><td>"can-do" 能力契约</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>选择抽象类的信号：</strong>多个类之间有共同的字段（如 id, name）或共同的方法实现（如 getName()），希望代码复用。<strong>选择接口的信号：</strong>定义一种能力或契约，不关心实现细节。例如 Comparable 接口——只要"可比较"就行，不在乎怎么实现的。</div></td></tr>
+</table>
+</div>
+
+<h3 id="one-5">4. 内部类</h3>
+
+<div class="card">
+<table>
+<tr><th>类型</th><th>特点</th><th>使用场景</th></tr>
+<tr class="row-expandable"><td>成员内部类</td><td>定义在类内部、方法外部；可访问外部类所有成员</td><td>紧密关联的辅助类</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>成员内部类编译后生成 <code>Outer$Inner.class</code>。内部类持有外部类的隐式引用（Outer.this），所以能访问外部类的 private 成员。创建内部类实例需要先有外部类实例：<code>outer.new Inner()</code>。</p>
+<p>内部类（非 static）不能有 static 成员（除了 final 常量），因为内部类依赖于外部类实例。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>静态内部类</td><td>static 修饰；不持有外部类引用</td><td>Builder 模式、工具类</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>静态内部类不持有外部类实例的引用，可以独立存在。它是防止内存泄漏的关键——如果一个非静态内部类的实例被长生命周期对象持有（如被加入静态集合），它会阻止外部类实例被 GC，因为始终有一个活着的引用指向外部类。</p>
+<p>HashMap 的 Node 就是静态内部类——大量 Node 实例不需要持有 HashMap 的引用。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>局部内部类</td><td>定义在方法/代码块内；作用域仅限该方法</td><td>临时需要的类</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>局部内部类的作用域只在定义它的方法体内。它可以访问方法中的局部变量，但该变量必须是 effectively final（JDK 8+）或显式 final（JDK 7-）。原因是局部内部类的实例生命周期可能比方法长——方法结束后局部变量被销毁，但内部类实例可能还活着，JVM 通过"复制"机制将局部变量的值拷贝到内部类中，所以要求 final 来保证语义一致。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>匿名内部类</td><td>没有名字，直接 new 接口/抽象类</td><td>回调、事件监听（Lambda 替代）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>匿名内部类最常见的用途是作为回调或事件监听器。本质上是一个语法糖——编译后生成 <code>Outer$1.class</code> 这样的数字编号类。JDK 8 之后，大部分匿名内部类可以被 Lambda 表达式替代（前提是接口只有一个抽象方法——函数式接口）。Lambda 和匿名内部类的关键区别：Lambda 不生成单独的 .class 文件，而是通过 invokedynamic 在运行时动态生成。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ==================== 二、基础语法 ==================== -->
+<h2 id="two-1">二、基础语法与数据类型</h2>
+
+<h3 id="two-2">1. 基本类型 vs 包装类型</h3>
+
+<div class="card">
+<table>
+<tr><th>基本类型</th><th>包装类型</th><th>大小</th><th>默认值</th></tr>
+<tr><td>byte</td><td>Byte</td><td>1 字节</td><td>0</td></tr>
+<tr><td>short</td><td>Short</td><td>2 字节</td><td>0</td></tr>
+<tr><td>int</td><td>Integer</td><td>4 字节</td><td>0</td></tr>
+<tr><td>long</td><td>Long</td><td>8 字节</td><td>0L</td></tr>
+<tr><td>float</td><td>Float</td><td>4 字节</td><td>0.0f</td></tr>
+<tr><td>double</td><td>Double</td><td>8 字节</td><td>0.0d</td></tr>
+<tr><td>char</td><td>Character</td><td>2 字节 (Unicode)</td><td> </td></tr>
+<tr><td>boolean</td><td>Boolean</td><td>JVM 依赖 (通常 1 字节)</td><td>false</td></tr>
+</table>
+</div>
+
+<h3>自动装箱与拆箱</h3>
+
+<div class="mermaid">
+graph LR
+    A["int (基本类型)"] -->|"自动装箱 valueOf()"| B["Integer (包装类型)"]
+    B -->|"自动拆箱 intValue()"| A
+    C["-128 ~ 127 缓存池"] -.->|"IntegerCache"| B
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Integer 缓存池：</strong>
+<p>Integer 内部维护了一个 IntegerCache，默认缓存 -128 到 127 共 256 个 Integer 对象。当调用 <code>Integer.valueOf(i)</code>（自动装箱的底层调用）时，如果 i 在缓存范围内，直接返回缓存的实例——这意味着 <code>Integer a = 127; Integer b = 127; a == b</code> 是 true（同一对象），但 <code>Integer a = 128; Integer b = 128; a == b</code> 是 false（不同对象）。</p>
+<p>缓存上限可通过 JVM 参数调整：<code>-XX:AutoBoxCacheMax=2000</code>。</p>
+<strong>自动装箱的性能陷阱：</strong>
+<pre><code>Integer sum = 0;
+for (int i = 0; i < 100000; i++) {
+    sum += i;  // 每次循环：拆箱 → 加法 → 装箱 → 创建新 Integer 对象
+}</code></pre>
+<p>这段代码会创建约 10 万个临时 Integer 对象，触发频繁 GC。而 <code>int sum = 0;</code> 完成同样的逻辑完全没有对象分配。这就是为什么循环计数器、累加器等高频操作应始终使用基本类型。</p>
+</div>
+
+<div class="highlight">
+<strong>常见坑：</strong><br/>
+<code>Integer a = 127; Integer b = 127; a == b → true</code>（缓存池内）<br/>
+<code>Integer a = 128; Integer b = 128; a == b → false</code>（缓存池外）<br/>
+包装类型比较用 <code>equals()</code> 而非 <code>==</code>
+</div>
+
+<h3 id="two-3">2. == vs equals</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>==</th><th>equals()</th></tr>
+<tr class="row-expandable"><td>比较内容</td><td>栈中存储的值</td><td>对象的内容（取决于重写）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>对于基本类型，<code>==</code> 比较的是值。对于引用类型，<code>==</code> 比较的是引用地址（栈中存储的指针值）。Object 的 equals 默认实现也是用 <code>==</code>（比较引用），所以不重写 equals 的类，equals 和 == 行为完全一致。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>基本类型</td><td>比值</td><td>不适用（基本类型不能调方法）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>基本类型变量直接存储在栈帧的局部变量表中，没有对象头、没有引用。<code>int a = 3; int b = 3; a == b</code> 比较的是两个栈槽中的值。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>引用类型</td><td>比较引用地址（是否同一对象）</td><td>比较内容（String/Integer 等已重写）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>String 的 equals 被重写为逐个字符比较。Integer 的 equals 被重写为比较 intValue。所以日常开发中字符串比较必须用 equals。但要注意 null 安全——<code>"abc".equals(str)</code> 比 <code>str.equals("abc")</code> 更安全（后者 str 为 null 时抛 NPE）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>重写 equals 必须重写 hashCode</td><td colspan="2">契约：equals 相等的两个对象 hashCode 必须相等</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>为什么有这个契约？因为 HashMap/HashSet 等基于 hash 的集合先用 hashCode 定位桶，再用 equals 精确匹配。如果两个 equals 相等的对象 hashCode 不同，它们会被放入不同的桶——HashMap 中就会出现两个"逻辑上相同"的 key，违反了 Map 的语义。反过来，hashCode 相同但 equals 不同的对象可以合法地存在（hash 冲突），用链表/红黑树解决。</p>
+<p>Effective Java 推荐用 Objects.hash() 或 IDE 生成的 equals/hashCode。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="two-4">3. String / StringBuffer / StringBuilder</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>String</th><th>StringBuffer</th><th>StringBuilder</th></tr>
+<tr class="row-expandable"><td>可变性</td><td>不可变 (final class)</td><td>可变</td><td>可变</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>String 不可变意味着每次"修改"操作（concat、replace、substring 等）都返回新 String 对象，原对象不变。不可变的好处：1) 线程安全（天然不可变，无竞争）；2) 字符串常量池复用（相同字面量共享同一对象）；3) 可安全用作 HashMap 的 key（hashCode 不变）；4) 安全性（不会被意外修改，如数据库连接 URL、文件路径）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>线程安全</td><td>安全（不可变）</td><td>安全（synchronized）</td><td>不安全</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>StringBuffer 每个修改方法都加了 synchronized，适合多线程环境。StringBuilder 没有同步，性能更好，适合单线程环境。实际开发中 StringBuilder 使用频率远超 StringBuffer——大多数字符串拼接都在局部方法内完成，不存在线程竞争。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>性能</td><td>拼接慢（频繁创建对象）</td><td>中等</td><td>快</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>在循环中进行 String 拼接（str += "x"）是大忌——每次都要创建新 String、复制旧内容、追加新内容、丢弃旧对象。循环 1 万次会创建 1 万个临时 String 对象。而 StringBuilder 内部用可扩容的 char[]（JDK 9 后是 byte[]），append 只在扩容时才复制，扩容倍率也是约 1.5-2 倍。</p>
+<p>但简单的几字符串拼接（少于 4-5 个），编译器会自动优化为 StringBuilder——例如 <code>"a" + "b" + "c"</code> 编译后等价于 <code>new StringBuilder().append("a").append("b").append("c").toString()</code>。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>字符串常量池：</strong><br/>
+<code>String a = "hello";</code> → 从常量池取（没有则创建）<br/>
+<code>String b = new String("hello");</code> → 在堆上创建新对象（绕过了常量池）<br/>
+<code>String c = a.intern();</code> → 将堆上字符串加入常量池并返回池中引用
+</div>
+
+<h3 id="two-5">4. final / static 关键字</h3>
+
+<div class="card">
+<strong>final：</strong>
+• 修饰类 → 不能被继承（如 String、Integer）
+• 修饰方法 → 不能被重写（防止子类改变行为）
+• 修饰变量 → 基本类型值不可变 / 引用类型引用不可变（但对象内容可变）
+• 修饰参数 → 方法内不能修改该参数
+
+<strong>static：</strong>
+• 修饰变量 → 类变量，所有实例共享，类加载时初始化
+• 修饰方法 → 类方法，无需实例即可调用，只能访问 static 成员
+• 修饰代码块 → 类加载时执行一次（常用于初始化静态资源）
+• 修饰内部类 → 静态内部类，不持有外部类引用
+
+<strong>执行顺序：</strong>
+父类 static 块 → 子类 static 块 → 父类代码块/构造器 → 子类代码块/构造器
+</div>
+
+<h3 id="two-6">5. Java 只有值传递</h3>
+
+<div class="card">
+<strong>结论：Java 只有值传递，没有引用传递。</strong>
+
+<strong>基本类型：</strong>传递的是值的副本，方法内修改不影响外部变量。
+<strong>引用类型：</strong>传递的是<strong>引用的副本</strong>（即地址值的拷贝）。方法内通过这个副本可以修改对象的内容（指向同一对象），但修改引用本身（如重新指向新对象）不影响外部的原始引用。
+
+<div class="highlight">
+<strong>典型误区：</strong>
+<pre><code>public static void swap(Integer a, Integer b) {
+    Integer temp = a; a = b; b = temp;  // 无效！只是交换了局部变量
+}</code></pre>
+因为传入的是引用的副本，交换副本不影响原变量。这就是"值传递"的含义——传入的是引用的值（地址），不是变量本身。
+</div>
+</div>
+
+<!-- ==================== 三、异常处理 ==================== -->
+<h2 id="three-1">三、异常处理</h2>
+
+<h3 id="three-2">1. 异常体系</h3>
+
+<div class="mermaid">
+graph TD
+    Throwable["Throwable"]
+    Throwable --> Error["Error<br/>程序无法处理的严重错误"]
+    Throwable --> Exception["Exception<br/>程序可以处理的异常"]
+
+    Error --> OOM["OutOfMemoryError"]
+    Error --> SOF["StackOverflowError"]
+    Error --> NoClass["NoClassDefFoundError"]
+
+    Exception --> IOException["IOException<br/>(checked 异常示例)"]
+    Exception --> SQLException["SQLException<br/>(checked 异常示例)"]
+    Exception --> RuntimeException["RuntimeException<br/>(unchecked 异常)"]
+
+    RuntimeException --> NPE["NullPointerException"]
+    RuntimeException --> AIOOB["ArrayIndexOutOfBoundsException"]
+    RuntimeException --> CCE["ClassCastException"]
+    RuntimeException --> IAE["IllegalArgumentException"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Error 为什么不应该 try-catch：</strong>
+<p>Error 代表 JVM 层面的严重问题——如 OOM、SOF、LinkageError。这些错误通常是不可恢复的。比如 OOM 之后，即使你 catch 了，堆上还是没有可用内存，任何后续操作都可能再次失败。SOF 之后栈空间已耗尽。正确的做法是让程序崩溃并尽快重启，而不是吞咽错误继续运行。</p>
+<strong>checked vs unchecked 的设计哲学：</strong>
+<p>Checked 异常（Exception 的非 RuntimeException 子类）强制调用方处理（catch 或 throws）。设计意图是让"可预见的、调用方有能力处理的异常"在编译期就暴露出来——比如文件不存在（FileNotFoundException），调用方可以选择创建新文件或提示用户。但过度使用 checked 异常会导致代码中充斥 try-catch 样板代码，这是 Spring 等框架选择将 checked 异常包装为 unchecked 的原因。</p>
+</div>
+
+<h3 id="three-3">2. try-catch-finally 执行顺序</h3>
+
+<div class="card">
+<strong>核心规则：</strong>
+• finally <strong>一定会执行</strong>（除了 System.exit(0) 或 JVM 崩溃）
+• 如果 try 中有 return，finally 会在 return 之前执行
+• 如果 finally 中也有 return，会<strong>覆盖</strong> try 中的 return 值
+• catch 中抛出新异常且 finally 中也抛异常 → finally 的异常会<strong>覆盖</strong> catch 的异常
+
+<strong>经典面试题：</strong>
+<pre><code>public static int test() {
+    try {
+        return 1;
+    } finally {
+        return 2;  // 最终返回 2，覆盖了 1
+    }
+}</code></pre>
+
+<div class="highlight">
+<strong>try-with-resources (JDK 7+)：</strong>
+实现了 AutoCloseable 接口的资源可以自动关闭，无需手动 finally：
+<pre><code>try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+    return br.readLine();
+}  // br 自动 close()，即使发生异常也会关闭</code></pre>
+关闭顺序与打开顺序相反（后开先关），且 close 时的异常会被抑制（suppressed），不会覆盖主异常。
+</div>
+</div>
+
+<h3 id="three-4">3. throw vs throws</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>throw</th><th>throws</th></tr>
+<tr><td>位置</td><td>方法体内</td><td>方法签名上</td></tr>
+<tr><td>作用</td><td>抛出一个异常对象</td><td>声明该方法可能抛出的异常类型</td></tr>
+<tr><td>数量</td><td>一次抛一个</td><td>可以声明多个</td></tr>
+<tr><td>示例</td><td><code>throw new RuntimeException("err");</code></td><td><code>void foo() throws IOException, SQLException</code></td></tr>
+</table>
+</div>
+
+<!-- ==================== 四、反射 ==================== -->
+<h2 id="four-1">四、反射机制</h2>
+
+<h3 id="four-2">1. 获取 Class 对象的三种方式</h3>
+
+<div class="card">
+<table>
+<tr><th>方式</th><th>代码</th><th>特点</th></tr>
+<tr class="row-expandable"><td>类名.class</td><td><code>Class&lt;?&gt; c = String.class;</code></td><td>编译时已知类型，最安全</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><code>类名.class</code> 是最推荐的方式——编译时类型已知，有泛型检查，不会抛异常。它本质上是通过 ldc 字节码指令加载类的 Class 对象，不会触发类的静态初始化（区别于 Class.forName）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>对象.getClass()</td><td><code>Class&lt;?&gt; c = obj.getClass();</code></td><td>已有实例时使用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>getClass() 是 Object 的 native 方法，返回运行时实际类型（不是静态类型）。例如 <code>Animal a = new Dog(); a.getClass()</code> 返回 Dog.class，不是 Animal.class。这是实现 equals 方法时的常用技巧。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Class.forName()</td><td><code>Class&lt;?&gt; c = Class.forName("java.lang.String");</code></td><td>运行时动态加载，最灵活</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Class.forName 会触发类的静态初始化（执行 static 代码块）。这是 JDBC 驱动的经典加载方式——<code>Class.forName("com.mysql.cj.jdbc.Driver")</code> 触发 Driver 类的 static 块，Driver 在 static 块中向 DriverManager 注册自己。JDK 6+ 引入了 SPI 机制（META-INF/services），不再需要手动 forName。</p>
+<p><code>Class.forName(className, false, classLoader)</code> 的第二个参数设为 false 可以抑制静态初始化。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="four-3">2. 反射的核心能力与代价</h3>
+
+<div class="card">
+<strong>能做什么：</strong>
+• 运行时获取类的完整结构（字段、方法、构造器、注解）
+• 动态创建实例：<code>clazz.getDeclaredConstructor().newInstance()</code>
+• 动态调用方法：<code>method.invoke(obj, args...)</code>
+• 访问私有成员：<code>field.setAccessible(true)</code>
+
+<strong>代价与局限：</strong>
+• 性能开销：反射调用比直接调用慢数十倍（涉及安全检查、参数包装、自动拆装箱）
+• 丧失编译期类型检查（错误推迟到运行时）
+• 代码可读性和可维护性下降
+• JDK 9+ 模块系统对反射有额外限制（需 --add-opens）
+
+<strong>典型应用场景：</strong>
+• 框架基础设施：Spring IoC 容器、MyBatis ORM 映射
+• 序列化/反序列化：Jackson、Gson
+• 动态代理：JDK 动态代理基于反射
+• 注解处理器：运行时获取注解信息
+</div>
+
+<!-- ==================== 五、注解 ==================== -->
+<h2 id="five-1">五、注解 (Annotation)</h2>
+
+<h3>1. 元注解</h3>
+
+<div class="card">
+<table>
+<tr><th>元注解</th><th>作用</th></tr>
+<tr class="row-expandable"><td>@Target</td><td>指定注解可用在哪些元素上（TYPE/METHOD/FIELD/PARAMETER 等）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>常用取值：ElementType.TYPE（类/接口）、FIELD（字段）、METHOD（方法）、PARAMETER（参数）、CONSTRUCTOR（构造器）、ANNOTATION_TYPE（注解类型）、TYPE_PARAMETER（泛型参数，JDK 8）、TYPE_USE（任何类型使用处，JDK 8）。</p>
+<p>如果不指定 @Target，注解可以用于任何元素。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@Retention</td><td>指定注解保留到哪个阶段（SOURCE/CLASS/RUNTIME）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p><strong>SOURCE：</strong>只在源码中保留，编译时丢弃。典型如 @Override、@SuppressWarnings。<br/>
+<strong>CLASS：</strong>保留到 .class 文件中，但 JVM 加载时不保留。这是默认值。典型如 Lombok 的注解（编译时处理，运行时不需要）。<br/>
+<strong>RUNTIME：</strong>在运行时可通过反射读取。Spring 的 @Autowired、@Transactional 等都需要 RUNTIME 级别。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@Documented</td><td>注解会被 javadoc 工具记录到文档中</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>加上 @Documented 的注解在生成 javadoc 时会包含在 API 文档中。不加则不包含。例如 @Deprecated 加了 @Documented，所以在 javadoc 中可以看到哪些 API 被标记为废弃。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@Inherited</td><td>子类会继承父类的该注解（仅类级别，方法/字段不继承）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>@Inherited 只对类继承有效——如果父类上有 @Inherited 修饰的注解，子类会自动拥有该注解。对于接口实现和方法重写不生效。这个注解很少使用，因为它只对 TYPE 生效且不支持接口。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>@Repeatable (JDK 8)</td><td>允许同一元素上多次使用同一注解</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<p>JDK 8 之前，一个元素上不能重复使用同一注解。@Repeatable 解决了这个问题——例如 Spring 的 @PropertySource 就可以用多个来加载多个配置文件。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="five-2">2. 注解 vs 配置文件</h3>
+
+<div class="card">
+<strong>注解的优势：</strong>代码即配置，类型安全，IDE 支持好，重构友好（改名自动同步）
+<strong>注解的劣势：</strong>修改需要重新编译，无法动态调整（除非支持运行时覆盖）
+<strong>实践：</strong>不变的核心配置用注解（如 @Service、@Transactional），需要运维调整的用配置文件（如数据库连接、超时时间）
+</div>
+
+<!-- ==================== 六、泛型 ==================== -->
+<h2 id="six-1">六、泛型</h2>
+
+<h3 id="six-2">1. 类型擦除</h3>
+
+<div class="mermaid">
+graph LR
+    A["源码: List&lt;String&gt;"] -->|"编译期擦除"| B["字节码: List"]
+    C["源码: List&lt;Integer&gt;"] -->|"编译期擦除"| B
+    B --> D["运行时无法区分<br/>List&lt;String&gt; 和 List&lt;Integer&gt;<br/>getClass() 返回同一个 Class"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Java 泛型为什么用类型擦除而不是真泛型：</strong>
+<p>这是为了兼容 JDK 1.5 之前的字节码。Java 在 1.5 才引入泛型，之前大量代码用 <code>List list = new ArrayList(); list.add("hello"); String s = (String) list.get(0);</code>。如果采用 C# 那样的真泛型（运行时保留类型信息），所有已有的 .class 都会不兼容。类型擦除让老代码无需修改就能在新 JVM 上运行——List&lt;String&gt; 编译后就是 List，JVM 层面完全兼容。</p>
+<p>代价是：1) 运行时泛型信息丢失（无法 new T()、无法 instanceof T）；2) 基本类型不能作为泛型参数（List&lt;int&gt; 不合法，因为擦除后 Object 不能放 int）；3) 需要额外的 bridge method 来维持多态。</p>
+<strong>桥方法 (Bridge Method)：</strong>
+<pre><code>class Parent { public Number get() { return 0; } }
+class Child extends Parent {
+    @Override public Integer get() { return 1; }  // 协变返回
+}
+// 编译器生成桥方法：
+// public Number get() { return this.get(); }  // 调用 Integer get()
+</code></pre>
+<p>JVM 按方法签名（方法名 + 参数 + 返回值）区分方法，所以 Child 同时有 <code>Integer get()</code> 和编译器插入的 <code>Number get()</code>，后者作为桥接保证字节码层面的 override 关系。</p>
+</div>
+
+<h3 id="six-3">2. extends vs super (PECS 原则)</h3>
+
+<div class="card">
+<strong>PECS: Producer Extends, Consumer Super</strong>
+
+<table>
+<tr><th></th><th>&lt;? extends T&gt;</th><th>&lt;? super T&gt;</th></tr>
+<tr class="row-expandable"><td>含义</td><td>上限通配符，接受 T 或其子类</td><td>下限通配符，接受 T 或其父类</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><code>List&lt;? extends Number&gt;</code> 可以接收 List&lt;Integer&gt;、List&lt;Double&gt; 等——但只能从中<strong>读取</strong>（作为 Producer 生产 Number），不能写入（你不知道具体是哪个子类型）。</p>
+<p><code>List&lt;? super Integer&gt;</code> 可以接收 List&lt;Integer&gt;、List&lt;Number&gt;、List&lt;Object&gt;——可以<strong>写入</strong> Integer（作为 Consumer 消费 Integer），但读取只能拿到 Object（因为最宽泛的类型就是 Object）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>读 (get)</td><td>可读，返回 T 类型</td><td>可读，但只能返回 Object</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>extends 下，你知道容器里"最多是 T"，所以 get 出来安全地向上转型为 T。super 下，容器可能是 Object 级别的，get 只能拿到 Object——因为 T 的父类链上可能有任意多个层级。</p>
+<p>经典应用：Collections.copy(dest, src) 中 dest 是 <code>? super T</code>（只写），src 是 <code>? extends T</code>（只读）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>写 (add)</td><td>不可写（除 null）</td><td>可写 T 及其子类</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>extends 下不能 add 是因为编译器不知道具体类型——<code>List&lt;? extends Number&gt;</code> 可能是 List&lt;Integer&gt;，你 add 一个 Double 进去就破坏了类型安全。编译器为了保护你，拒绝所有 add 操作（null 除外）。</p>
+<p>super 下，你知道容器"至少能放下 T"，所以 add(new T()) 和 add(new SubT()) 都是安全的——不管容器实际是 List&lt;T&gt; 还是 List&lt;Object&gt;，都能接受 T 或其子类。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>记忆技巧：</strong><br/>
+<code>&lt;? extends T&gt;</code> → 只能从中<strong>"取"</strong> (Producer → Extends)<br/>
+<code>&lt;? super T&gt;</code> → 只能向其中<strong>"存"</strong> (Consumer → Super)<br/>
+典型：<code>Collections.copy(List&lt;? super T&gt; dest, List&lt;? extends T&gt; src)</code>
+</div>
+
+<!-- ==================== 七、IO ==================== -->
+<h2 id="seven-1">七、IO 流</h2>
+
+<h3 id="seven-2">1. BIO / NIO / AIO 对比</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>BIO (Blocking IO)</th><th>NIO (New IO)</th><th>AIO (Async IO)</th></tr>
+<tr class="row-expandable"><td>模型</td><td>一请求一线程，阻塞式</td><td>多路复用，非阻塞</td><td>异步回调，操作系统通知</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>BIO（JDK 1.0）：每个客户端连接分配一个线程。read() 调用会阻塞直到有数据可读。线程数和连接数 1:1，高并发下线程资源耗尽（线程栈内存 + 上下文切换开销）。</p>
+<p>NIO（JDK 1.4）：一个 Selector 线程管理多个 Channel，通过 select() 监听就绪事件（OP_READ/OP_WRITE/OP_CONNECT/OP_ACCEPT），只对就绪的 Channel 执行操作。线程数和连接数不再是 1:1。</p>
+<p>AIO（JDK 1.7）：操作系统完成 IO 后通过回调或 Future 通知应用。真正意义上的异步 IO。但 Linux 上 AIO 底层仍用 epoll 模拟（真正的异步 IO 需要 io_uring，在 Java 中支持有限），所以生产中使用较少。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>核心类</td><td>InputStream / OutputStream<br/>Reader / Writer</td><td>Channel / Buffer / Selector</td><td>AsynchronousFileChannel<br/>AsynchronousSocketChannel</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>BIO 面向流——单向、顺序读写，流本身不缓冲。NIO 面向块——Channel（双向，可以同时读写）+ Buffer（一块内存区域，读写都通过 Buffer）+ Selector（多路复用器）。AIO 面向回调——发起 IO 操作后直接返回 Future 或传入 CompletionHandler，IO 完成后被通知。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>适用场景</td><td>连接数少、数据量大</td><td>连接数多、数据量小</td><td>连接数多、数据量大</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<p>BIO 适合连接数固定且数据量大的场景（如文件传输、传统企业应用）。NIO 适合高并发短连接（如 IM、在线游戏、API 网关）。AIO 适合高并发大数据量（如图片处理服务），但社区普及度不如 NIO。</p>
+<p>Netty（基于 NIO）是目前 Java 网络编程的事实标准，封装了 NIO 的复杂性，提供了统一的异步事件驱动 API。Spring WebFlux、Dubbo、RocketMQ、Elasticsearch 都基于 Netty。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="seven-3">2. 字节流 vs 字符流</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>字节流</th><th>字符流</th></tr>
+<tr><td>基类</td><td>InputStream / OutputStream</td><td>Reader / Writer</td></tr>
+<tr><td>数据单位</td><td>1 字节 (byte)</td><td>2 字节 (char, Unicode)</td></tr>
+<tr><td>用途</td><td>二进制数据（图片、视频、音频）</td><td>文本数据（配置文件、JSON、HTML）</td></tr>
+<tr><td>编码</td><td>无编码概念，原始字节</td><td>按字符编码（UTF-8、GBK 等）转换</td></tr>
+<tr><td>缓冲</td><td>BufferedInputStream / BufferedOutputStream</td><td>BufferedReader / BufferedWriter</td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>桥梁：InputStreamReader / OutputStreamWriter</strong><br/>
+将字节流按指定编码转换为字符流：<br/>
+<code>new BufferedReader(new InputStreamReader(new FileInputStream("file.txt"), StandardCharsets.UTF_8))</code>
+</div>
+
+<h3 id="seven-4">3. 序列化</h3>
+
+<div class="card">
+<strong>Serializable 接口：</strong>
+• 标记接口，无方法。对象实现该接口即可被 ObjectOutputStream 序列化。
+• <strong>serialVersionUID</strong>：反序列化时 JVM 校验版本号，不匹配则抛 InvalidClassException。显式声明可避免类结构微小变化导致的兼容问题。
+• <strong>transient</strong>：修饰的字段不参与序列化（如密码、连接池、缓存数据）。
+• <strong>static 字段</strong>：不参与序列化（属于类，不属于对象）。
+
+<strong>替代方案：</strong>
+• JSON (Jackson/Gson)：跨语言、可读性好，但性能一般
+• Protobuf (Google)：二进制、体积小、速度快，但需要 .proto 定义
+• Kryo：Java 专用高性能序列化框架（Spark、Flink 内部使用）
+</div>
+
+<!-- ==================== 八、Java 8+ 新特性 ==================== -->
+<h2 id="eight-1">八、Java 8+ 新特性</h2>
+
+<h3 id="eight-2">1. Lambda 表达式</h3>
+
+<div class="card">
+<strong>本质：</strong>函数式接口（只有一个抽象方法的接口）的匿名实现语法糖。
+
+<strong>常见函数式接口：</strong>
+<table>
+<tr><th>接口</th><th>方法签名</th><th>用途</th></tr>
+<tr><td>Predicate&lt;T&gt;</td><td>boolean test(T t)</td><td>判断/过滤</td></tr>
+<tr><td>Function&lt;T, R&gt;</td><td>R apply(T t)</td><td>转换/映射</td></tr>
+<tr><td>Consumer&lt;T&gt;</td><td>void accept(T t)</td><td>消费（无返回值）</td></tr>
+<tr><td>Supplier&lt;T&gt;</td><td>T get()</td><td>提供/创建</td></tr>
+<tr><td>Comparator&lt;T&gt;</td><td>int compare(T o1, T o2)</td><td>比较排序</td></tr>
+</table>
+
+<strong>方法引用 (::)：</strong>
+• 静态方法引用：<code>Integer::parseInt</code> 等价于 <code>s -> Integer.parseInt(s)</code>
+• 实例方法引用：<code>String::length</code> 等价于 <code>s -> s.length()</code>
+• 构造器引用：<code>ArrayList::new</code> 等价于 <code>() -> new ArrayList<>()</code>
+</div>
+
+<h3 id="eight-3">2. Stream API</h3>
+
+<div class="mermaid">
+graph LR
+    Source["数据源<br/>List/Set/数组"] --> Stream["Stream<br/>（不存储数据）"]
+    Stream --> Op1["中间操作<br/>filter/map/sorted/distinct/limit<br/>（惰性求值）"]
+    Op1 --> Op2["中间操作<br/>flatMap/peek/skip"]
+    Op2 --> Terminal["终止操作<br/>collect/forEach/reduce/count<br/>（触发计算）"]
+    Terminal --> Result["结果<br/>集合/值"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>惰性求值 (Lazy Evaluation)：</strong>
+<p>Stream 的中间操作不会立即执行——它们只是构建了一个操作流水线。只有当终止操作被调用时，整个流水线才被触发执行。这意味着可以高效地处理无限流（如 Stream.iterate），也意味着中间操作的顺序很重要——先 filter 再 map 比先 map 再 filter 少做很多无用功。</p>
+<strong>并行流 (parallelStream)：</strong>
+<p>使用 ForkJoinPool 将数据分成多段并行处理。适合 CPU 密集型、数据量大的场景。但要小心：1) 并行流使用同一个 ForkJoinPool（commonPool），可能被阻塞操作拖累；2) 数据量小时并行开销超过收益；3) 有状态的操作（如 distinct、sorted）在并行流中开销更大。</p>
+<strong>Collectors 常用方法：</strong>
+<p>toList()（JDK 16+ 可直接 stream.toList()）、toMap()（注意 key 重复问题，需要 mergeFunction）、groupingBy()（分组，返回 Map）、partitioningBy()（按 boolean 分两组）、joining()（字符串拼接）、reducing()（自定义归约）。</p>
+</div>
+
+<h3 id="eight-4">3. Optional</h3>
+
+<div class="card">
+<strong>目的：</strong>消除 null 检查，明确表达"值可能不存在"的语义。
+
+<strong>创建：</strong>
+• <code>Optional.of(x)</code> —— x 必须非 null，否则 NPE
+• <code>Optional.ofNullable(x)</code> —— x 可以为 null
+• <code>Optional.empty()</code> —— 空的 Optional
+
+<strong>使用：</strong>
+• <code>orElse(T other)</code> —— 为 null 时返回默认值（即使 Optional 不为 null 也会执行参数求值）
+• <code>orElseGet(Supplier)</code> —— 惰性求值，推荐
+• <code>orElseThrow()</code> —— 为空时抛异常（JDK 10+）
+• <code>ifPresent(Consumer)</code> —— 有值时执行操作
+• <code>map/flatMap/filter</code> —— 链式操作
+
+<div class="highlight">
+<strong>最佳实践：</strong><br/>
+• 不要用 Optional 作为字段类型（Optional 本身不是 Serializable）<br/>
+• 不要用 Optional 作为方法参数<br/>
+• 不要 <code>optional.get()</code> 而不先检查（等同于 NPE）<br/>
+• 正确的用法是作为<strong>方法返回值</strong>表达"可能为 null"
+</div>
+</div>
+
+<h3 id="eight-5">4. 其他重要特性</h3>
+
+<div class="card">
+<table>
+<tr><th>版本</th><th>特性</th><th>说明</th></tr>
+<tr class="row-expandable"><td>JDK 9</td><td>模块系统 (JPMS)</td><td>require/exports/opens，限制内部 API 访问</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>模块系统让 Java 可以构建更小的运行时镜像（jlink）。之前 JDK 自身就是一个巨大的 rt.jar（60+ MB），模块化后可以只包含需要的模块。模块间通过 module-info.java 声明依赖和导出关系。对开发者的主要影响是：访问 JDK 内部 API（如 sun.misc.Unsafe）需要 --add-opens 参数。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>JDK 9</td><td>集合工厂方法</td><td>List.of() / Set.of() / Map.of() 创建不可变集合</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>JDK 9 之前创建小集合很繁琐：<code>new ArrayList<>(Arrays.asList("a", "b", "c"))</code>。现在直接 <code>List.of("a", "b", "c")</code>，返回不可变集合（ImmutableCollections），不能 add/remove/set，不能包含 null。Set.of() 传重复元素会抛 IllegalArgumentException。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>JDK 10</td><td>var 局部变量类型推断</td><td><code>var list = new ArrayList&lt;String&gt;();</code></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>var 只能用于局部变量（方法内），必须有初始化表达式（否则无法推断），不能用于方法参数、返回值、字段。编译后类型是确定的（非动态类型），IDE 仍然能做代码补全。注意：var 不等于 JavaScript 的 var——Java 仍然保持静态类型。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>JDK 14</td><td>Record</td><td>不可变数据载体，自动生成构造器/getter/equals/hashCode/toString</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Record 是一个 final class，字段都是 private final。编译后自动生成：全参构造器、字段访问器（方法名=字段名，无 get 前缀）、equals/hashCode/toString。适合 DTO、VO、配置载体等场景。不能继承，但可以实现接口。可以定义额外的构造器（必须通过 this() 委托到标准构造器）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>JDK 14/17</td><td>Switch 表达式 / 模式匹配</td><td>箭头语法 + yield；instanceof 自动转型</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>Switch 表达式（JDK 14）：用 <code>-></code> 箭头语法避免 fall-through，用 <code>yield</code> 返回值。<code>int result = switch (day) { case MON, FRI -> 1; case TUE -> 2; default -> 0; };</code></p>
+<p>模式匹配 instanceof（JDK 16 正式）：<code>if (obj instanceof String s && s.length() > 5) { use(s); }</code>——省去手动转型和临时变量。JDK 17+ 支持 switch 的模式匹配（preview → JDK 21 正式）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>JDK 21</td><td>虚拟线程 (Virtual Thread)</td><td>轻量级线程，一个请求一个虚拟线程成为可能</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>虚拟线程是 JDK 21 最重要的特性（Project Loom）。与传统 OS 线程（1MB 栈空间，数量受限于 OS）不同，虚拟线程由 JVM 管理，栈空间动态分配且可按需增长，可以同时创建百万级虚拟线程。当虚拟线程执行阻塞操作（IO、sleep）时，JVM 自动将其"卸载"（unmount）释放底层平台线程，阻塞结束后再"挂载"回来——这一过程对开发者完全透明。</p>
+<p>这意味着"线程-per-request"模型在高并发下不再需要 NIO 的复杂异步回调——用虚拟线程以同步风格写代码，性能逼近异步模型。注意：synchronized 块内阻塞会导致虚拟线程固定（pinning），应改用 ReentrantLock。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="nav-bottom">
+  <a href="../11-银行智能化/银行智能化八股文.html">← 上一篇：银行智能化</a>
+  <a href="../index.html">返回首页 →</a>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

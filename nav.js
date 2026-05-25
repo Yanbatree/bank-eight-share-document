@@ -18,6 +18,7 @@
     { href: '09-Agent技术/Agent技术八股文.html',      label: 'Agent & MCP',  accent: '#22d3ee' },
     { href: '10-银行业务/银行业务八股文.html',        label: '银行业务',     accent: '#f97316' },
     { href: '11-银行智能化/银行智能化八股文.html',    label: '银行智能化',   accent: '#818cf8' },
+    { href: '12-JAVA基础/JAVA基础八股文.html',        label: 'JAVA 基础',    accent: '#f87171' },
   ];
 
   // Normalize Windows backslashes in pathname
