@@ -27,7 +27,7 @@
 <div class="main">
 
 <h1>🤖 AI Agent & MCP 技术八股文</h1>
-<p style="color:var(--text-secondary)">2025 面试新热点 — 手写 Agent + Harness 运行时 + MCP 协议 + RAG 问答</p>
+<p style="color:var(--text-secondary)">2025 面试新热点 — 手写 Agent + Harness 运行时 + MCP 协议 + Skill 体系 + RAG 问答</p>
 
 <!-- ==================== 一、AI Agent ==================== -->
 <h2 id="one-1">一、AI Agent 基础</h2>
@@ -555,8 +555,394 @@ sequenceDiagram
 <strong>面试加分点：</strong>能说出 MCP 是 LLM ↔ 外部世界的标准协议，类比 LSP，先说 Protocol 层（Resources/Tools/Prompts），再说 Transport 层（stdio/SSE），面试官会觉得你真正理解了这个东西。
 </div>
 
-<!-- ==================== 三、关键配套技术 ==================== -->
-<h2 id="three-1">三、关键配套技术</h2>
+<!-- ==================== 三、Agent Skill 体系详解 ==================== -->
+<h2 id="three-skill">三、Agent Skill 体系详解</h2>
+
+<h3>1. 先给结论：Skill 不是更长的 Prompt</h3>
+
+<div class="highlight">
+<strong>核心结论：</strong>Skill 不是更长的 Prompt，而是把可复用经验、操作流程、工具使用方法和质量标准沉淀成 Agent 可调用的<strong>能力模块</strong>。
+<p>Prompt 解决<strong>单次任务表达</strong>，Skill 解决<strong>跨任务复用</strong>。</p>
+<p>Prompt 更像你临场告诉模型"这次请按 A、B、C 做"，Skill 更像你提前沉淀好一套 SOP——"以后遇到这类任务，都按这个方法做"。</p>
+</div>
+
+<h3>2. Skill 到底解决了什么问题？</h3>
+
+<div class="card">
+<strong>给 Agent 一堆工具（MCP）还不够，它还需要知道：</strong>
+<p>• 遇到代码审查，该用什么标准？</p>
+<p>• 写 SQL 查询时，DBA 的最佳实践是什么？</p>
+<p>• 回复客户时，品牌的语气要求是什么？</p>
+<p>• 工具失败了怎么办？信息不足时该追问还是硬编？</p>
+<p>这些 <strong>领域专家经验</strong> 就是 Skill 要编码的东西。</p>
+</div>
+
+<div class="detail-toggle">▶ 展开详解：一个真正有用的 Skill 应该能回答什么？</div>
+<div class="detail-panel">
+<strong>Skill 回答了 Agent 在执行任务时的 9 个核心问题：</strong>
+<p>1. <strong>什么时候该用它？</strong>——适用场景要写清楚，防止误召回</p>
+<p>2. <strong>什么时候不要用它？</strong>——不适用场景同等重要，边界不清会导致 Agent 乱套</p>
+<p>3. <strong>需要哪些输入？</strong>——信息不足时先追问，不要硬编</p>
+<p>4. <strong>操作步骤是什么？</strong>——不是"你要专业"这种空话，而是明确的流程</p>
+<p>5. <strong>优先用哪些工具？</strong>——指导 Agent 选对工具，减少试错</p>
+<p>6. <strong>输出格式是什么？</strong>——表格？代码？引用来源？结构要明确</p>
+<p>7. <strong>什么叫"做好了"？</strong>——没有质量标准，Agent 只会生成"看起来像完成了"的结果</p>
+<p>8. <strong>失败怎么处理？</strong>——工具失败/信息不足/权限不足时的兜底策略</p>
+<p>9. <strong>安全边界在哪？</strong>——不能编造、不能绕过权限、不能执行高风险动作</p>
+</div>
+
+<h3>3. Skill 的核心运行机制：渐进式披露（Progressive Disclosure）</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "Skill 三层加载机制"
+        L1["Level 1: Metadata<br/>仅加载 name + description<br/>≈ 100 tokens / Skill<br/>始终在 System Prompt 中"]
+        L2["Level 2: Instructions<br/>SKILL.md 完整正文<br/>≈ 1000-5000 tokens<br/>仅在匹配触发时加载"]
+        L3["Level 3: Resources<br/>Scripts / References / Assets<br/>不限量<br/>仅按需访问时才加载"]
+    end
+    L1 -->|"Agent 判断匹配"| L2
+    L2 -->|"任务需要时"| L3
+</div>
+
+<div class="detail-toggle">▶ 展开详解：为什么渐进式披露是 Skill 最大的技术优势</div>
+<div class="detail-panel">
+<strong>Level 1 — Metadata（始终加载）：</strong>
+<p>每个 Skill 的 SKILL.md 文件以 YAML Frontmatter 开头，包含 name 和 description。Agent 启动时只扫描并加载这部分，每个 Skill 仅消耗约 100 个 token。即使安装 50 个 Skill，初始消耗也只有约 5,000 个 token。</p>
+<p>这与 MCP 形成鲜明对比：典型 MCP 实现在连接时通过 tools/list 获取所有工具的完整 JSON Schema，可能立即消耗数万个 token。</p>
+<strong>Level 2 — Instructions（被触发时加载）：</strong>
+<p>当 Agent 通过分析用户请求判断某个 Skill 与当前任务高度相关时，才会读取完整的 SKILL.md 正文（指令、注意事项、示例等）加载到上下文。</p>
+<strong>Level 3 — Resources（按需动态加载）：</strong>
+<p>包括子技能文档、代码脚本、参考文档等。脚本代码本身不进 Context Window，只有执行后的输出才进。这意味着一个 Skill 可以"携带"远超上下文限制的知识——比如附带 1GB 数据文件，通过脚本来按需查询。</p>
+<strong>实测效果：</strong>
+<p>传统 MCP 方式：直接连接暴露大量工具的 MCP Server，初始加载消耗约 16,000 个 token。Skills 包装后：创建 Skill 作为"网关"，初始消耗仅约 500 个 token——降低约 97%。</p>
+</div>
+
+<h3>4. SKILL.md 文件结构规范</h3>
+
+<div class="card">
+<strong>一个完整的 Skill 文件目录结构：</strong>
+<pre><code>skills/my-skill/
+├── SKILL.md              # 核心：元数据 + 指令（必须存在）
+├── helper_script.py      # 可执行脚本（可选）
+├── advanced.md           # 高级用法参考（可选，按需加载）
+├── forms.md              # 子技能文档（可选，按需加载）
+└── templates/            # 资源文件（模板、图片等）</code></pre>
+
+<strong>SKILL.md 标准格式：</strong>
+<pre><code>---
+# === 必需字段 ===
+name: skill-name                  # kebab-case 唯一标识
+description: >
+  精确描述这个技能做什么、什么时候触发、核心价值是什么
+  （这是 Agent 自动匹配的唯一依据，必须写清楚！）
+
+# === 可选字段 ===
+version: 1.0.0
+allowed_tools: [execute_sql, read_file]
+required_context: [project_structure]
+tags: [database, analysis]
+---
+
+# 技能概述
+
+## 适用场景
+（什么时候应该用这个 Skill）
+
+## 不适用场景
+（什么时候不要用——防止误召回很重要！）
+
+## 输入要求
+（需要哪些信息，不足时先追问不要硬编）
+
+## 操作步骤
+1. 第一步：...
+2. 第二步：...
+3. ...
+
+## 工具使用原则
+- 优先用什么工具
+- 工具失败时如何降级
+- 工具结果如何验证
+
+## 输出格式
+（要求什么结构、什么格式）
+
+## 质量标准
+（什么叫"做好了"——可验证的标准）
+
+## 失败处理
+- 信息不足 → 先追问用户
+- 工具失败 → 重试/降级/告知用户
+- 权限不足 → 拒绝并说明
+
+## 安全边界
+- 不要编造事实
+- 不要绕过权限
+- 不要把不确定内容说成确定事实</code></pre>
+</div>
+
+<h3>5. Skill vs 六大概念的边界辨析</h3>
+
+<div class="card">
+<table>
+<tr><th>对比维度</th><th>Skill</th><th>对方是什么</th></tr>
+<tr class="row-expandable"><td><strong>Skill vs Prompt</strong></td><td>可复用能力模块（跨任务复用）</td><td>单次任务指令（用完即弃）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>关键区分：</strong>Prompt 是"这次请按这个方法做"，Skill 是"以后遇到这类任务都按这个方法做"。Few-shot 教的是<strong>格式</strong>，Skill 教的是<strong>方法论</strong>。Few-shot 给 LLM 几个输入输出示例让它模仿，Skill 给 Agent 完整的工作流程、规范和标准。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Skill vs Tool</strong></td><td>教"怎么用"工具的方法论</td><td>执行动作的能力（"能不能做"）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>关键区分：</strong>search_docs 是工具，负责检索文档。但"什么时候检索、检索几轮、如何判断检索结果够不够、没证据时怎么拒答"——这些不是 Tool 本身解决的，是 Skill 沉淀的流程。Tool 解决"能不能做"，Skill 解决"怎么做得更稳"。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Skill vs MCP</strong></td><td>任务方法论/操作手册</td><td>工具接入协议/USB接口</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>关键区分：</strong>MCP 是连接性（Connectivity），解决 Agent ↔ 工具的标准化通信；Skill 是能力（Capability），告诉 Agent 在特定场景下如何组合使用这些工具。MCP 让 Agent"能够连接"外部世界，Skill 让 Agent"知道如何正确使用"连接到的能力。两者互补而非竞争。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Skill vs Memory</strong></td><td>可执行的任务方法（操作手册）</td><td>经验和事实的存储（材料库）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>关键区分：</strong>Memory 里存着"用户喜欢简洁回答"、"某个项目曾因缓存击穿出过事故"。Skill 里写着"做项目点评时，先看业务场景，再看技术贡献，再看难点，再看收获"。Memory 更像材料库，Skill 更像操作手册。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Skill vs Harness</strong></td><td>局部任务能力（让局部做得更稳）</td><td>全局运行时治理（让整个系统跑得更稳）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>关键区分：</strong>Harness 负责编排、工具权限、状态管理、成本预算、安全边界——是全局执行框架。Skill 是局部能力模块——"写文档 Skill"、"分析日志 Skill"、"做 RAG 评估 Skill"。Skill 不能替代 Harness 的权限控制——安全约束必须工程硬拦截。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Skill vs Function Call</strong></td><td>教导 Agent 何时、如何、按什么标准使用能力</td><td>LLM 输出结构化工具调用指令的 API 协议</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>关键区分：</strong>Function Call 是 LLM 输出"我想调用 get_weather(city='北京')"的机制——底层协议。Skill 是"当用户问天气时，先确认城市名称，再调用天气工具，如果工具返回无法识别则建议用户检查拼写"——上层方法论。Function Call 决定"怎么调"，Skill 决定"为什么调、调之前检查什么、调之后怎么处理"。
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>一句话总结三者协作：</strong>Skills 决定 <strong>"怎么想"</strong> → MCP 决定 <strong>"用什么"</strong> → Function Call 决定 <strong>"怎么调"</strong>
+</div>
+
+<h3>6. Skill + MCP 混合架构：最佳实践</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "企业级 Agent 架构分层"
+        App["应用层<br/>Skills / Workflows / Plan Mode"]
+        Agent["Agent 层<br/>ReAct 循环 / 任务规划 / 记忆管理"]
+        Harness["Harness 层<br/>工具执行 / 权限 / Hook / 沙箱 / 会话"]
+        Proto["协议层<br/>MCP / Function Calling / A2A"]
+        Infra["基础设施层<br/>LLM API / 向量库 / 数据库 / 文件系统"]
+    end
+    App --> Agent
+    Agent --> Harness
+    Harness --> Proto
+    Proto --> Infra
+
+    subgraph "Skill 在此架构中的位置"
+        S1["SKILL.md 注入 Agent 层<br/>指导推理和决策"]
+        S2["Scripts 通过 Harness 层执行<br/>不进 Context Window"]
+        S3["MCP Tools 通过协议层接入<br/>Skill 指导工具使用方式"]
+    end
+</div>
+
+<div class="detail-toggle">▶ 展开详解：Skill 和 MCP 如何协同工作</div>
+<div class="detail-panel">
+<strong>典型工作流——以"分析公司话语权"为例：</strong>
+<p>1. 用户问："分析公司内部谁的话语权最高？"</p>
+<p>2. <strong>Skills 层</strong> 识别这是数据分析任务，加载 mysql-analysis Skill</p>
+<p>3. <strong>Skills 层</strong> 根据技能指令将任务分解为子步骤：查询管理关系 → 薪资对比 → 任职时长</p>
+<p>4. <strong>MCP 层</strong> 执行具体的 SQL 查询，返回结果</p>
+<p>5. <strong>Skills 层</strong> 根据领域知识解读数据并生成综合分析和业务洞察</p>
+<p>6. 返回结构化答案给用户</p>
+<br/>
+<strong>这种架构的优势：</strong>
+<p>• <strong>关注点分离：</strong>MCP 专注"能力"，Skill 专注"智慧"</p>
+<p>• <strong>成本优化：</strong>渐进式加载大幅降低 token 消耗（实测降低 90%+）</p>
+<p>• <strong>可维护性：</strong>业务逻辑（Skills）与基础设施（MCP）解耦</p>
+<p>• <strong>复用性：</strong>同一个 MCP Server 可以被多个 Skills 共用</p>
+<p>• <strong>安全性：</strong>Skill 是软约束（方法论），Harness + Tool Registry 是硬约束（权限管控），双重保险</p>
+</div>
+
+<h3>7. 高质量 Skill 的九要素</h3>
+
+<div class="card">
+<table>
+<tr><th>#</th><th>要素</th><th>说明</th></tr>
+<tr class="row-expandable"><td>1</td><td><strong>适用场景</strong></td><td>什么时候该用这个 Skill？场景越清楚，Agent 越不容易误用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">好的描述："当用户要求分析简历项目、优化项目经历、点评个人工作时使用"。不好的描述："帮助处理任务"——太模糊，Agent 无法准确匹配。</div></td></tr>
+<tr class="row-expandable"><td>2</td><td><strong>不适用场景</strong></td><td>什么时候不要用？很多 Skill 只写能做什么不写不能做什么，结果误召回</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">例如简历点评 Skill 不应用于：生成虚假实习经历、伪造项目成果、编造公司背景。Skill 要写<strong>边界</strong>，不只是写<strong>能力</strong>。</div></td></tr>
+<tr class="row-expandable"><td>3</td><td><strong>输入要求</strong></td><td>需要哪些数据？信息不足时先追问，不要硬编</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">清晰列出必需输入和可选输入。如"原始简历内容（必需）、目标岗位（必需）、技术栈（可选）、用户想优化哪一部分（可选）"。</div></td></tr>
+<tr class="row-expandable"><td>4</td><td><strong>操作步骤</strong></td><td>明确的流程，但不写死到无法适配。步骤要具体但不能僵化</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">好的步骤：① 先识别任务类型 → ② 检查信息完整性 → ③ 按框架分析 → ④ 输出优化建议 → ⑤ 给出可直接使用的版本。步骤要按顺序但允许 Agent 根据实际情况调整。</div></td></tr>
+<tr class="row-expandable"><td>5</td><td><strong>工具使用原则</strong></td><td>优先用哪个工具、什么情况不用工具、工具失败后怎么办</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">Skill 不能绕过 Tool Registry 做权限控制——只能指导工具使用方式。具体 schema 应以 Tool Registry 为准，不要在 Skill 里把工具参数写死（工具一升级就坏）。</div></td></tr>
+<tr class="row-expandable"><td>6</td><td><strong>输出格式</strong></td><td>分几部分？需要表格/代码/引用来源/风险提示？</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">Agent 最容易不稳定的地方就是输出格式。Skill 里应该写清楚最终输出的结构、是否需要表格、是否需要代码块、是否需要标注信息来源。</div></td></tr>
+<tr class="row-expandable"><td>7</td><td><strong>质量标准</strong></td><td>什么叫"做好了"？可验证的标准而非主观感受</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">例如：是否覆盖了用户的真实需求？是否有事实依据（而非编造）？是否结构清晰可执行？是否避免了无关展开？没有质量标准，Agent 只会生成"看起来像完成了"的结果。</div></td></tr>
+<tr class="row-expandable"><td>8</td><td><strong>失败处理</strong></td><td>信息不足/工具失败/权限不足时的兜底策略</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">真实任务里经常失败。Skill 要写清楚：信息不足 → 先追问用户而非硬编；工具失败 → 降级处理或换方案，不要盲目重试；权限不足 → 明确拒绝并说明原因；证据不足 → 不要编造，诚实说明。</div></td></tr>
+<tr class="row-expandable"><td>9</td><td><strong>安全边界</strong></td><td>不能编造事实、不能绕过权限、不能输出敏感信息</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"><strong>关键：安全边界不能只写在 Skill 里。</strong>Skill 是软约束（提醒），Harness 和 Tool Registry 才是硬约束（强制执行）。高风险动作必须在工程层拦截，而不是靠模型的"自觉"。</div></td></tr>
+</table>
+</div>
+
+<h3>8. Skill 的选择与调用机制</h3>
+
+<div class="mermaid">
+flowchart TD
+    User["用户输入"] --> Match{"Skill 选择方式"}
+    Match -->|"方式1"| Explicit["显式指定<br/>'用简历点评 Skill'<br/>最稳定"]
+    Match -->|"方式2"| Semantic["任务描述匹配<br/>根据用户输入和 Skill description<br/>语义匹配"]
+    Match -->|"方式3"| Metadata["Metadata 检索<br/>按 domain/task_type/tools/risk_level<br/>等字段路由"]
+    Match -->|"方式4"| Harness["Harness 控制注入<br/>根据任务类型/权限/预算/风险<br/>决定注入哪些 Skill"]
+
+    Explicit --> Load{命中置信度检查}
+    Semantic --> Load
+    Metadata --> Load
+    Harness --> Load
+
+    Load -->|"高置信度"| Inject["注入 Skill 到上下文"]
+    Load -->|"低置信度"| Ask["追问用户确认"]
+    Load -->|"冲突"| Resolve["优先级裁决<br/>系统安全 > 项目级 > 任务级 > 用户偏好"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解：Skill 选择失败的应对策略</div>
+<div class="detail-panel">
+<strong>Skill 召回错了会怎样？</strong>
+<p>比如用户只是问"怎么写简历"，系统却加载了"简历造假美化 Skill"——这会严重误导 Agent，甚至引发安全事故。</p>
+<strong>必须有的防护机制：</strong>
+<p>• <strong>命中置信度：</strong>低于阈值时追问用户而非硬匹配</p>
+<p>• <strong>冲突检测：</strong>多个 Skill 规则冲突时，按优先级体系裁决（系统安全规则 > 项目级规则 > 任务级 Skill > 用户偏好）</p>
+<p>• <strong>高风险 Skill 需显式确认：</strong>涉及数据删除、资金操作等 Skill，不能自动加载</p>
+<p>• <strong>使用 Trace：</strong>每次 Skill 加载和调用都记录到审计日志</p>
+<p><strong>Harness 控制注入是生产级的正确做法：</strong>Agent 可以建议用 Skill，但 Harness 应该根据上下文预算、风险等级、用户权限来决定最终注入哪些。不要让 Agent 自己随便加载所有 Skill。</p>
+</div>
+
+<h3>9. Skill 的上下文治理</h3>
+
+<div class="card">
+<strong>Skill 多了以后最大的问题：本是能力资产，管理不好会变成上下文噪声。</strong>
+<p>很多团队一开始很兴奋，写了几十个 Skill。然后每次任务都塞一堆进去，结果模型看了一大堆不相关规则，反而更容易跑偏。</p>
+
+<strong>治理策略：</strong>
+<table>
+<tr><th>策略</th><th>做法</th></tr>
+<tr class="row-expandable"><td><strong>按需加载</strong></td><td>不要把所有 Skill 都放进上下文。只加载当前任务需要的最小集合</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">Skill 应该像工具一样按需调用，而不是像背景音乐一样一直播放。Harness 根据任务类型动态选择 1-3 个最相关的 Skill 注入。</div></td></tr>
+<tr class="row-expandable"><td><strong>分层摘要</strong></td><td>metadata（检索路由）→ summary（快速判断）→ full instruction（执行时加载）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">不直接把完整 Skill 塞入上下文。先用 metadata 匹配，匹配到后用 summary 确认，确认后才加载完整指令。</div></td></tr>
+<tr class="row-expandable"><td><strong>优先级体系</strong></td><td>系统安全规则 > 项目级规则 > 任务级 Skill > 用户偏好</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">当多个 Skill 冲突时（如一个要求"回答尽量简洁"另一个要求"详细解释每一步"），按优先级裁决。冲突严重时 Harness 应要求用户确认。</div></td></tr>
+<tr class="row-expandable"><td><strong>版本管理</strong></td><td>每次修改记录版本号、修改原因、影响场景、评测结果、回滚方式</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">线上 Skill 要支持灰度发布、A/B 对比和快速回滚。Skill 不是写完就放在那里——业务、工具、模型能力都在变化。</div></td></tr>
+<tr class="row-expandable"><td><strong>过期淘汰</strong></td><td>定期检查 Skill 是否还被命中、是否提升指标、是否产生误导</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content"><strong>Skill 不是越多越好，是越准越好。</strong>无效 Skill 必须下线，否则会持续污染上下文、误导 Agent。</div></td></tr>
+</table>
+</div>
+
+<h3>10. Skill 效果评估</h3>
+
+<div class="card">
+<table>
+<tr><th>指标</th><th>衡量什么</th><th>怎么算有效</th></tr>
+<tr class="row-expandable"><td><strong>任务成功率</strong></td><td>加载 Skill 后任务是否更容易完成</td><td>如简历点评是否覆盖四要素、代码修改是否通过测试</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">设置明确的任务完成标准（如"RAG 回答必须有引用来源"），对比有无 Skill 的完成率。</div></td></tr>
+<tr class="row-expandable"><td><strong>工具调用准确率</strong></td><td>Skill 是否减少了错误工具调用</td><td>工具选错率、参数非法率、无意义重复调用频率下降</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">统计工具调用中参数格式错误、选择了不合适工具、反复调同一个工具无进展的次数。</div></td></tr>
+<tr class="row-expandable"><td><strong>输出稳定性</strong></td><td>格式是否更统一、更可控</td><td>格式错误率、字段缺失率、引用缺失率、不按流程输出的比例</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">特别是面向内容生成和代码修改的任务。格式不稳定是 Agent 最常见的质量问题。</div></td></tr>
+<tr class="row-expandable"><td><strong>人工修正率</strong></td><td>人需要返工的频率</td><td>如果 Skill 有效，人工修正应该明显减少</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">人工返工率比"看起来不错"更有说服力。这是最直接的价值指标。</div></td></tr>
+<tr class="row-expandable"><td><strong>Token 成本</strong></td><td>Skill 本身的上下文开销</td><td>Skill Token 占比、总 Token 是否上升、单任务成本是否下降</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">如果 Skill 很长但收益很小，那就不划算。好的 Skill 应该让重试次数下降从而总成本下降。</div></td></tr>
+<tr class="row-expandable"><td><strong>命中准确率 / 误召回率</strong></td><td>该用时有没有用、不该用时有没有乱用</td><td>误召回很危险——错误 Skill 会给 Agent 错误方向</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">这是 Skill 系统特有的指标。误召回率的危害往往大于漏召回率——加载了错误的 Skill 比没加载任何 Skill 更糟糕。</div></td></tr>
+</table>
+<strong>必须做 A/B 测试：</strong>不加载 Skill vs 加载 Skill、旧 Skill vs 新 Skill、全量 Skill vs 最小必要 Skill。没有对比，就无法证明 Skill 是真的有效还是心理安慰。
+</div>
+
+<h3>11. Skill 常见误区</h3>
+
+<div class="card">
+<table>
+<tr><th>误区</th><th>正确做法</th></tr>
+<tr class="row-expandable"><td><strong>1. 把 Skill 写成超长 Prompt</strong></td><td>结构清楚、边界明确、只包含必要信息。太长挤占上下文还会让模型抓不住重点</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">Skill 不是越长越好。核心指令 1000-3000 tokens 最佳。复杂内容拆到 Level 3 的 references 中按需加载。</div></td></tr>
+<tr class="row-expandable"><td><strong>2. 只写步骤不写边界</strong></td><td>必须写不适用场景和风险边界——只写"怎么做"不写"什么时候不要做"很容易误用</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">比如"这个 Skill 不适用于实时交易场景"、"不要对超过 1 万条的数据集使用全量扫描"。</div></td></tr>
+<tr class="row-expandable"><td><strong>3. 多个 Skill 互相冲突</strong></td><td>要有优先级、作用域和冲突检测机制</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">不要让一个局部 Skill 影响全局任务。每个 Skill 要声明作用域（project / session / task）。</div></td></tr>
+<tr class="row-expandable"><td><strong>4. 工具细节写得太死</strong></td><td>Skill 应描述工具使用原则，具体 schema 以 Tool Registry 为准</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">如果把某个工具的参数写死在 Skill 里，工具一升级就坏。应写"使用 search_docs 工具检索相关文档，如果返回为空，尝试换关键词"而非"调用 search_docs(query=x, top_k=5)"。</div></td></tr>
+<tr class="row-expandable"><td><strong>5. Skill 长期不更新</strong></td><td>业务变了、工具变了、模型能力变了，Skill 也要跟着迭代</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">过期 Skill 会误导 Agent。建立定期审查机制——每月检查 Skill 的命中率、成功率、Token 效率。</div></td></tr>
+<tr class="row-expandable"><td><strong>6. 所有任务都强制加载 Skill</strong></td><td>这会造成上下文污染。Skill 应该按需加载，不是越多越专业</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">简单任务不需要 Skill。让 Agent 自己判断是否需要——这也是渐进式披露机制的设计初衷。</div></td></tr>
+<tr class="row-expandable"><td><strong>7. 没有 Eval 只靠感觉迭代</strong></td><td>没有指标就不知道 Skill 有没有价值，最后变成一堆没人敢删的历史规则</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">每个 Skill 都应该有对应的回归测试集。每次修改后跑 Eval 确认没有退化再上线。</div></td></tr>
+<tr class="row-expandable"><td><strong>8. 安全约束只写在 Skill 里</strong></td><td>Skill 是软约束。Harness + Tool Registry 才是硬约束。高风险动作必须在工程层拦截</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">这是最危险的误区。Skill 说"删除文件前先确认"有帮助，但真正的删除权限、确认流程、审计日志必须在 Harness 层强制执行。只靠模型自觉是不可靠的。</div></td></tr>
+</table>
+</div>
+
+<h3>12. 高频面试题汇总</h3>
+
+<div class="card">
+<strong>以下 15 个问题覆盖了 Skill 方向的主流面试考点：</strong>
+
+<p><strong>1. Skill 是什么？</strong>——不是更长的 Prompt，是可复用能力模块。沉淀了任务边界、操作流程、工具使用方法、输出格式、质量标准和失败处理。</p>
+
+<p><strong>2. Skill 和 Prompt 有什么区别？</strong>——Prompt 是单次任务指令，Skill 是跨任务复用。Prompt 解决"这次怎么做"，Skill 解决"这类任务以后都怎么做"。</p>
+
+<p><strong>3. Skill 和 Tool 有什么区别？</strong>——Tool 是执行动作的能力，Skill 是使用能力的方法。Tool 解决能不能做，Skill 解决怎么做得更稳。</p>
+
+<p><strong>4. Skill 和 MCP 有什么关系？</strong>——MCP 是工具接入协议，让工具标准化暴露。Skill 描述某类任务中如何使用这些工具。MCP 提供工具生态，Skill 提供任务方法论。两者互补。</p>
+
+<p><strong>5. Skill 和 Memory 有什么区别？</strong>——Memory 存经验和事实（材料库），Skill 存可执行的方法和流程（操作手册）。</p>
+
+<p><strong>6. Skill 和 Harness 有什么区别？</strong>——Skill 是局部任务能力（让局部做得更稳），Harness 是全局运行时治理（让整个系统跑得更稳）。</p>
+
+<p><strong>7. 什么任务适合沉淀成 Skill？</strong>——高频、重复、流程稳定、质量标准明确、容易出错但可以通过流程约束改善的任务。</p>
+
+<p><strong>8. 如何设计一个高质量 Skill？</strong>——九要素：适用场景、不适用场景、输入要求、操作步骤、工具使用、输出格式、质量标准、失败处理、安全边界。</p>
+
+<p><strong>9. Skill 太多以后怎么选择？</strong>——四种方式：显式指定、任务描述匹配、metadata 检索、Harness 路由。生产里不能把所有 Skill 全塞进上下文。</p>
+
+<p><strong>10. Skill 会不会污染上下文？</strong>——会。如果召回错误、注入过多、内容过长、规则冲突就会。解决方式是按需加载 + 分层摘要 + 优先级 + 作用域 + 版本治理。</p>
+
+<p><strong>11. Skill 冲突怎么办？</strong>——设计优先级和作用域：系统安全 > 项目级 > 任务级 Skill > 用户偏好。严重冲突由 Harness 裁决。</p>
+
+<p><strong>12. Skill 如何版本管理？</strong>——记录版本号、修改原因、影响场景、评测结果、回滚方式。线上支持灰度和 A/B 对比。</p>
+
+<p><strong>13. Skill 如何评估效果？</strong>——六大指标：任务成功率、工具调用准确率、输出稳定性、人工修正率、Token 成本、命中准确率/误召回率。必须做 A/B 测试。</p>
+
+<p><strong>14. Skill 能不能替代工具治理？</strong>——不能！Skill 是软约束，Tool Registry 和 Harness 是硬约束。高风险动作必须在工程层拦截。</p>
+
+<p><strong>15. 如何从失败案例迭代 Skill？</strong>——先做事故归因 → 流程遗漏就补步骤、工具误用就补规则、边界不清就补不适用场景、输出不稳定就补格式标准。然后跑回归评测。</p>
+</div>
+
+<h3>13. 面试回答模板</h3>
+
+<div class="highlight">
+<strong>如果面试官问："你怎么理解 Agent Skill？如何写一个高质量 Skill？"</strong>
+<br/><br/>
+可以这样答：
+<br/><br/>
+"我不会把 Skill 理解成一段更长的 Prompt。Prompt 更偏单次任务指令，而 Skill 的价值是把一类高频任务中的流程、边界、工具使用经验、输出标准和失败处理沉淀成<strong>可复用能力模块</strong>。
+<br/><br/>
+一个高质量 Skill，首先要写清适用场景和不适用场景，避免误召回。其次要写输入要求、操作步骤、工具使用原则、输出格式和质量标准。最后还要写失败处理和安全边界，比如信息不足时先追问，工具失败时降级处理，证据不足时不要编造，高风险动作不能只靠模型自觉。
+<br/><br/>
+我认为 Skill 不能孤立看。它和 Prompt、Tool、Memory、MCP、Harness 都有清晰边界——Prompt 是单次指令，Tool 是执行能力，MCP 是工具协议，Memory 是经验存储，Harness 是全局治理，而 Skill 是<strong>局部可复用任务能力</strong>。
+<br/><br/>
+Skill 可以指导 Agent 怎么做，但不能替代 Tool Registry 的权限控制和 Harness 的运行时约束。安全边界不能只写在 Skill 里，工程层也要有拦截。
+<br/><br/>
+在生产系统里，Skill 还要做选择和治理——不能把所有 Skill 都塞进上下文，应该通过任务类型、metadata 和 Harness 路由按需加载。Skill 太多会造成上下文污染和规则冲突，所以要有优先级、作用域、版本管理和过期淘汰。
+<br/><br/>
+最后，Skill 是否有效不能靠感觉，要看指标。做 A/B 测试对比加载前后的任务成功率、工具调用准确率、格式错误率、人工修正率和 Token 成本。"
+<br/><br/>
+<strong>这个回答的重点不是"我会写 Skill 文件"，而是告诉面试官：你知道怎么把重复经验沉淀成能力，也知道怎么治理这些能力。这才是 Skill 面试真正想考的东西。</strong>
+</div>
+
+<!-- ==================== 四、关键配套技术 ==================== -->
+<h2 id="four-1">四、关键配套技术</h2>
 
 <h3>1. RAG（检索增强生成）</h3>
 
@@ -640,8 +1026,8 @@ flowchart TD
 </table>
 </div>
 
-<!-- ==================== 四、银行场景 ==================== -->
-<h2 id="four-1">四、银行 + Agent = ？</h2>
+<!-- ==================== 五、银行场景 ==================== -->
+<h2 id="five-1">五、银行 + Agent = ？</h2>
 
 <h3>1. 银行中 Agent 的应用场景</h3>
 
