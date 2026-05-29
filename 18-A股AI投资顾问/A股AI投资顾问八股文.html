@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>A股AI投资顾问 项目八股文 - 银行科技岗面试</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #f59e0b; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #92400e; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>A股AI投资顾问 项目八股文</h1>
+<p style="color:var(--text-secondary)">基于 DeepSeek ReAct Agent 的实时A股智能分析系统 — 从幻觉问题到架构设计的完整实践</p>
+
+<!-- ==================== 一、项目概述 ==================== -->
+<h2 id="overview">一、项目概述</h2>
+
+<div class="card">
+<strong>一句话：</strong>基于大语言模型（DeepSeek）的实时A股智能分析系统。用户输入股票代码/名称或自然语言问题，系统自动从5个数据源获取实时行情、K线、估值、公告、新闻和全网舆情，由4个并行ReAct Agent进行多维度分析并生成投资建议报告。
+
+<strong>核心能力：</strong>AI诊股 / 智能选股 / 行情一览 / 自然语言交互
+</div>
+
+<h3>1.1 项目亮点速览</h3>
+
+<table>
+<thead><tr><th>维度</th><th>方案</th><th>亮点</th></tr></thead>
+<tbody>
+<tr class="row-expandable">
+  <td>核心架构</td><td>ReAct Agent（LangChain + LangGraph）</td><td>LLM主动调工具获取数据，而非被动读取</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">传统方案是"代码拉数据→拼Prompt→LLM读"，问题是LLM不信任被动接收的数据。ReAct让LLM自己调工具获取数据，从认知层面解决了数据信任问题。</td></tr>
+<tr class="row-expandable">
+  <td>AI 幻觉</td><td>5层防御体系</td><td>从Prompt→工具→代码注入，逐层拦截</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">Layer1时间注入→Layer2时间工具→Layer3 Prompt覆盖→Layer4 报告锚点→Layer5 代码注入Header（终极防线）。任何一层失效都有下一层兜底。</td></tr>
+<tr class="row-expandable">
+  <td>查询理解</td><td>两层匹配策略</td><td>正则快匹(&lt;1ms) + LLM改写(~1s)，覆盖口语化查询</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">"BYD怎么样"、"宁王什么价"、"大哥们茅台还能上吗"等非标准查询都能正确解析。第1层正则处理65%的标准化查询，第2层LLM+NER处理别名/缩写/昵称。</td></tr>
+<tr class="row-expandable">
+  <td>数据获取</td><td>5源互为备份</td><td>新浪+东方财富+巨潮+财联社+博查，容错降级</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">新浪(行情+K线)、东方财富(PE/PB/ROE等估值)、巨潮(官方公告)、财联社(盘中快讯)、博查(全网舆情搜索)。任一数据源失败不影响整体分析。</td></tr>
+<tr class="row-expandable">
+  <td>并发执行</td><td>4 Agent asyncio.gather 并行</td><td>总耗时≈最慢Agent，非4个之和</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">基本面/技术面/估值/新闻情绪4个Agent通过asyncio.gather真正并行（不是线程池模拟），每个Agent独立调工具写分析。Summary Agent只在4个全部完成后运行。</td></tr>
+<tr class="row-expandable">
+  <td>网络容错</td><td>自建Session绕过代理 + 2次重试</td><td>解决Clash代理阻断东方财富API的问题</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">设置trust_env=False + proxies={"http":None,"https":None}绕过系统代理。新浪API(.cn域名)天然不受影响。</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== 二、核心理念：ReAct Agent 模式 ==================== -->
+<h2 id="core-insight">二、核心理念：为什么用 ReAct Agent 而不是传统 Prompt 注入？</h2>
+
+<div class="mermaid">
+graph TD
+    subgraph "传统 Prompt 注入模式 (失败)"
+        A1["代码拉取数据"] --> A2["拼接成 Prompt"]
+        A2 --> A3["LLM 被动读取"]
+        A3 --> A4["❌ LLM 用训练记忆覆盖真实数据<br/>输出 180-240元(训练数据) 而非 93.51元(真实)"]
+    end
+
+    subgraph "ReAct Agent 模式 (成功)"
+        B1["LLM 主动思考: 我需要什么数据?"]
+        B1 --> B2["LLM 调用工具: get_realtime_quote('002594')"]
+        B2 --> B3["工具返回: 最新价 93.51元"]
+        B3 --> B4["✅ LLM 信任自己获取的数据<br/>输出 93.51元(真实数据)"]
+    end
+
+    style A4 fill:#7f1d1d,stroke:#fca5a5
+    style B4 fill:#14532d,stroke:#86efac
+</div>
+
+<div class="highlight">
+<strong>核心技术洞察：</strong>当LLM被动接收数据时（"请分析以下数据：最新价93.51元"），它倾向于用训练记忆覆盖。但当LLM主动调用工具拿到返回结果时，它将结果视为"自己获取的事实"而信任使用。数据获取的"主动性"决定了LLM对数据的信任程度。这是本项目经过4轮迭代才发现的深刻洞察。
+</div>
+
+<h3>2.1 4轮迭代过程</h3>
+
+<table>
+<thead><tr><th>轮次</th><th>方案</th><th>原理</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Prompt 中强调"使用给定数据"</td><td>寄希望于 LLM 听指令</td><td>❌ LLM 不信任被动接收的数据</td></tr>
+<tr><td>2</td><td>System Prompt 铁律 + Temperature 0.3</td><td>约束输出行为 + 降低创造力</td><td>❌ 仍然用训练记忆覆盖</td></tr>
+<tr><td>3</td><td>两阶段: Stage1 提取事实 → Stage2 分析</td><td>让 LLM 先"读"一遍数据</td><td>⚠️ Stage2 仍然会覆盖</td></tr>
+<tr><td>4</td><td><strong>ReAct Agent + 代码注入 Header</strong></td><td>LLM 主动调工具取数据</td><td>✅ 彻底解决</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== 三、技术架构 ==================== -->
+<h2 id="architecture">三、技术架构总览</h2>
+
+<div class="mermaid">
+flowchart TB
+    User["用户输入 '比亚迪怎么样'"]
+    User --> QO["查询优化层 query_optimizer.py<br/>Layer1: 正则快匹(&lt;1ms) → Layer2: LLM改写+NLP(~1s)"]
+    QO -->|"(code,name)=('002594','比亚迪')"| WF
+
+    subgraph WF["ReAct Agent 工作流 ai/workflow.py"]
+        direction TB
+        F["基本面 Agent<br/>ReAct"]
+        T["技术面 Agent<br/>ReAct"]
+        V["估值 Agent<br/>ReAct"]
+        N["新闻情绪 Agent<br/>ReAct"]
+        F & T & V & N -->|"asyncio.gather 并行"| S["Summary Agent<br/>文本合成"]
+    end
+
+    subgraph Tools["MCP 工具层 ai/tools.py — 11个LangChain工具"]
+        T1["get_realtime_quote"]
+        T2["get_kline_data"]
+        T3["get_moving_averages"]
+        T4["get_support_resistance"]
+        T5["get_stock_news"]
+        T6["get_stock_announcements"]
+        T7["get_cls_flash_news"]
+        T8["search_web_bocha"]
+        T9["get_market_indices"]
+        T10["search_stock"]
+        T11["get_current_datetime"]
+    end
+
+    subgraph Data["数据源层 — 5源互为备份"]
+        D1["新浪财经<br/>hq.sinajs.cn"]
+        D2["东方财富<br/>push2.eastmoney.com"]
+        D3["巨潮资讯网<br/>AKShare→cninfo"]
+        D4["财联社<br/>AKShare→cls"]
+        D5["博查搜索<br/>api.bochaai.com"]
+    end
+
+    WF --> Tools
+    Tools --> Data
+    S -->|"代码注入Header"| UI["Streamlit UI<br/>AI诊股/智能选股/行情一览"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么用4个Agent并行而不是1个大Agent？</strong>
+<p>关注点分离：每个Agent的Prompt更短、更精确，LLM不容易"走神"。容错：一个Agent失败不影响其他三个。交叉验证：Summary Agent可以发现一致点和分歧点（基本面看好但技术面看空本身就是有价值的信号）。并行加速：总耗时≈最慢的那个Agent，而不是4个串行之和。</p>
+<strong>为什么用 asyncio.gather 而不是 LangGraph StateGraph？</strong>
+<p>我们的场景是纯并行无依赖（4个Agent之间没有数据传递），asyncio.gather比StateGraph的fan-out/fan-in更简洁直接。StateGraph适合有复杂依赖关系的DAG，这里用更轻量的方案就够。</p>
+</div>
+
+<!-- ==================== 四、反幻觉机制 ==================== -->
+<h2 id="anti-hallucination">四、反幻觉机制 — 5层防御体系</h2>
+
+<div class="mermaid">
+graph TD
+    L1["Layer 1: 时间注入(代码层)<br/>datetime.now()注入每个Agent System Prompt"]
+    L1 --> L2["Layer 2: 时间工具(工具层)<br/>get_current_datetime() — LLM必须主动调用"]
+    L2 --> L3["Layer 3: Prompt覆盖(Prompt层)<br/>'你的训练数据截止2024年，现在是2026年，以工具数据为准'"]
+    L3 --> L4["Layer 4: 报告锚点(报告层)<br/>Summary Agent明确标注'分析基准日期: 2026-05-21'"]
+    L4 --> L5["Layer 5: 代码注入Header(UI层-终极防线)<br/>Python直接生成日期+价格，正则剥除AI输出头部后替换"]
+
+    style L1 fill:#1e3a5f,stroke:#60a5fa
+    style L2 fill:#1e3a5f,stroke:#60a5fa
+    style L3 fill:#1e3a5f,stroke:#60a5fa
+    style L4 fill:#1e3a5f,stroke:#60a5fa
+    style L5 fill:#7c2d12,stroke:#f97316
+</div>
+
+<h3>4.1 各层详解</h3>
+
+<table>
+<thead><tr><th>层级</th><th>位置</th><th>机制</th><th>为什么必要</th></tr></thead>
+<tbody>
+<tr class="row-expandable"><td>Layer 1</td><td>代码层</td><td>datetime.now() 注入每个Agent Prompt头部</td><td>先发制人——在LLM开始思考前就告诉它正确的时间</td></tr>
+<tr class="detail-tr"><td colspan="3"><pre><code>now = datetime.now()
+today_str = now.strftime("%Y-%m-%d")
+# 注入到每一个 Agent 的 System Prompt 中
+system_msg = f"当前真实时间: {today_str}"</code></pre></td></tr>
+
+<tr class="row-expandable"><td>Layer 2</td><td>工具层</td><td>get_current_datetime() MCP工具</td><td>LLM必须"主动获取"时间——主动获取的数据它才会信任</td></tr>
+<tr class="detail-tr"><td colspan="3"><pre><code>@tool
+def get_current_datetime() -> str:
+    """Call this FIRST to know today's real date."""
+    now = datetime.now()
+    return f"{now.strftime('%Y-%m-%d %H:%M:%S')} ({weekdays[now.weekday()]})"</code></pre></td></tr>
+
+<tr class="row-expandable"><td>Layer 3</td><td>Prompt层</td><td>System Prompt时间覆盖警告</td><td>建立明确的优先级：工具数据 > 训练记忆</td></tr>
+<tr class="detail-tr"><td colspan="3"><pre><code>你的训练数据截止于2024年，但现在是{year}年。
+你训练记忆中的所有价格、PE、市值全部作废。
+以工具返回的实时数据为准。</code></pre></td></tr>
+
+<tr class="row-expandable"><td>Layer 4</td><td>报告层</td><td>Summary Agent明确标注分析基准时间</td><td>给用户和LLM的最后一次时间校准</td></tr>
+<tr class="detail-tr"><td colspan="3"><pre><code>**分析基准日期: 2026-05-21** — 此日期由系统时钟生成，是绝对真实的日期。</code></pre></td></tr>
+
+<tr class="row-expandable"><td>Layer 5</td><td>UI层</td><td>Python代码直接生成Header，正则剥离AI输出头部</td><td>终极防线——即使前4层全失效，AI输出的日期和价格会被物理剥离替换</td></tr>
+<tr class="detail-tr"><td colspan="3"><pre><code># chat.py: 由 Python 代码直接生成，AI 永远触碰不到
+header = f"**基准日期: {today_str} | {code} {name} | 最新价: {price}元 | ...**"
+# AI 输出会被正则清洗掉头部后，再拼接上这个代码生成的 header
+cleaned = re.sub(r'^\*\*.*?\*\*\s*\n?', '', final_report.strip())
+response = header + "\n\n" + cleaned.strip()</code></pre></td></tr>
+</tbody>
+</table>
+
+<!-- ==================== 五、工具层 ==================== -->
+<h2 id="tools">五、工具层 — 11个LangChain工具</h2>
+
+<h3>5.1 设计原则</h3>
+
+<div class="card">
+<strong>三个原则：</strong>
+<ol>
+<li><strong>单一职责</strong>：一个工具只做一件事（获取行情/获取K线/搜索新闻），LLM自由组合调用顺序</li>
+<li><strong>返回结构化字符串</strong>：工具返回人类可读的格式化文本，LLM直接从中提取数值</li>
+<li><strong>带描述性docstring</strong>：docstring就是给LLM看的"使用手册"，LLM根据描述决定何时调用</li>
+</ol>
+</div>
+
+<h3>5.2 工具清单</h3>
+
+<table>
+<thead><tr><th>#</th><th>工具名</th><th>输入</th><th>数据来源</th><th>返回内容</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>get_current_datetime</code></td><td>无</td><td>datetime.now()</td><td>当前日期时间+星期</td></tr>
+<tr class="row-expandable"><td>2</td><td><code>get_realtime_quote</code></td><td>6位代码</td><td>新浪直连 + 东方财富</td><td>最新价、涨跌额/幅、今开昨收最高最低、成交量/额、PE、PB、市值、ROE、换手率等</td></tr>
+<tr class="detail-tr"><td colspan="5">最核心的工具。新浪API提供价格和成交量，东方财富API提供PE/PB/ROE/市值等估值数据，两者合并为完整的数据结构，共20+个字段。如果东方财富不可用，估值字段显示"--"而不是编造。</td></tr>
+<tr class="row-expandable"><td>3</td><td><code>get_kline_data</code></td><td>6位代码 + 天数</td><td>新浪K线API</td><td>N日OHLCV数据（日期/开/收/高/低/量）</td></tr>
+<tr class="detail-tr"><td colspan="5">新浪K线API返回日K线数据。默认30天，缓存1小时（K线一天才变一次）。</td></tr>
+<tr class="row-expandable"><td>4</td><td><code>get_moving_averages</code></td><td>6位代码 + 天数</td><td>计算（基于K线）</td><td>MA5/MA10/MA20 + 股价相对位置 + 偏离百分比</td></tr>
+<tr class="detail-tr"><td colspan="5">不是从外部API获取，而是基于K线数据在代码中纯数学计算。数学计算是确定性的，不会出错。LLM拿到的是已经算好的精确数值（如"MA5: 94.74元 (股价下方, 偏离-1.3%)"），不需要自己做任何计算。</td></tr>
+<tr class="row-expandable"><td>5</td><td><code>get_support_resistance</code></td><td>6位代码 + 天数</td><td>计算（基于K线）</td><td>近N日最低点(支撑) + 最高点(压力)</td></tr>
+<tr class="detail-tr"><td colspan="5">同样基于K线纯计算：support = min(近N日最低价), resistance = max(近N日最高价)。</td></tr>
+<tr><td>6</td><td><code>get_stock_news</code></td><td>6位代码</td><td>东方财富(AKShare)</td><td>个股最新5条新闻标题</td></tr>
+<tr><td>7</td><td><code>get_stock_announcements</code></td><td>6位代码</td><td>巨潮资讯网(AKShare)</td><td>官方公告：日期+标题+链接</td></tr>
+<tr><td>8</td><td><code>get_cls_flash_news</code></td><td>无</td><td>财联社(AKShare)</td><td>盘中突发快讯，最新10条</td></tr>
+<tr><td>9</td><td><code>search_web_bocha</code></td><td>搜索关键词</td><td>博查API</td><td>全网舆情：标题+AI摘要</td></tr>
+<tr><td>10</td><td><code>get_market_indices</code></td><td>无</td><td>新浪直连</td><td>上证/深证/创业板指数</td></tr>
+<tr><td>11</td><td><code>search_stock</code></td><td>名称/代码</td><td>本地缓存(AKShare股票列表)</td><td>匹配的股票代码+名称</td></tr>
+</tbody>
+</table>
+
+<h3>5.3 工具实现示例</h3>
+
+<pre><code>@tool
+def get_realtime_quote(code: str) -> str:
+    """Get real-time stock quote. Input: 6-digit stock code like '600519' or '002594'.
+    Returns: name, latest price, change amount, change%, open, prev close, high, low,
+    volume, amount, PE, PB, market cap, turnover rate, ROE, amplitude.
+    All numbers are from exchange API — use them directly, do NOT substitute with training data.
+    """
+    q = _get_quote(code)
+    if not q:
+        return f"未找到股票 {code} 的实时行情数据"
+    lines = [
+        f"股票代码: {q.get('代码', code)}",
+        f"股票名称: {q.get('名称', '')}",
+        f"最新价: {q.get('最新价', '--')} 元",
+        f"涨跌额: {q.get('涨跌额', '--')} 元",
+        f"涨跌幅: {q.get('涨跌幅', '--')}%",
+        # ... 20+ 字段
+    ]
+    return "\n".join(lines)</code></pre>
+
+<div class="highlight">
+<strong>关键设计点：</strong>
+<ul>
+<li><code>code: str</code> — LLM通过type hints知道需要传6位代码字符串</li>
+<li><code>-> str</code> — LLM知道返回的是文本，可以直接阅读</li>
+<li>docstring中的 <code>"do NOT substitute with training data"</code> — 反幻觉的关键指令</li>
+<li><code>@tool</code> 装饰器自动将函数转为LangChain工具，读取type hints生成参数schema，读取docstring生成工具描述</li>
+</ul>
+</div>
+
+<!-- ==================== 六、Agent 设计 ==================== -->
+<h2 id="agents">六、四个专项Agent + Summary Agent</h2>
+
+<h3>6.1 ReAct模式原理</h3>
+
+<div class="mermaid">
+graph LR
+    T["Thought<br/>思考需要什么信息"] --> A["Action<br/>决定调用哪个工具"]
+    A --> O["Observation<br/>接收工具返回结果"]
+    O --> T2["Thought<br/>信息够了吗？"]
+    T2 -->|"不够"| A
+    T2 -->|"够了"| FA["Final Answer<br/>输出分析结果"]
+</div>
+
+<div class="highlight">
+<strong>ReAct = Reasoning + Acting。</strong>LLM在每一步思考需要什么信息→决定调用哪个工具传什么参数→接收工具返回结果→继续思考→信息足够时输出最终答案。<code>langgraph.prebuilt.create_react_agent(llm, tools)</code>封装了整个ReAct循环逻辑。
+</div>
+
+<h3>6.2 Agent分工与工具调用链</h3>
+
+<table>
+<thead><tr><th>Agent</th><th>核心工具调用链</th><th>分析维度</th></tr></thead>
+<tbody>
+<tr class="row-expandable">
+  <td><strong>基本面 Agent</strong></td>
+  <td>get_realtime_quote → get_stock_announcements → search_web_bocha</td>
+  <td>盈利能力 / 成长性 / 估值水平 / 资产质量 / 公告影响</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">获取PE/PB/ROE/市值/营收同比/净利同比，搜索最新财报和业绩信息，分析公司经营状况。</td></tr>
+<tr class="row-expandable">
+  <td><strong>技术面 Agent</strong></td>
+  <td>get_realtime_quote → get_kline_data(30) → get_moving_averages(30) → get_support_resistance(30) → get_market_indices</td>
+  <td>均线排列 / 股价位置 / 量价关系 / 支撑压力 / 短期走势</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">先获取当前价格，然后拉30天K线计算MA5/10/20和支撑压力位，最后获取大盘环境判断系统性风险。</td></tr>
+<tr class="row-expandable">
+  <td><strong>估值 Agent</strong></td>
+  <td>get_realtime_quote → search_web_bocha</td>
+  <td>PE/PB分位数 / ROE水平 / 机构目标价 / 行业对比</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">专注于PE/PB/ROE/市值/每股收益/每股净资产等估值指标，搜索机构研报和行业对比数据。</td></tr>
+<tr class="row-expandable">
+  <td><strong>新闻情绪 Agent</strong></td>
+  <td>get_stock_news → get_stock_announcements → get_cls_flash_news → search_web_bocha</td>
+  <td>情绪偏向 / 重大公告 / 行业政策 / 风险事件</td>
+</tr>
+<tr class="detail-tr"><td colspan="3">从个股新闻、官方公告、盘中快讯、全网舆情4个维度综合判断市场情绪，每个工具提供不同类型的信号。</td></tr>
+</tbody>
+</table>
+
+<h3>6.3 System Prompt设计</h3>
+
+<pre><code>_BASE_SYSTEM = """你是专业A股金融分析师。你的训练数据截止于2024年，但现在是{year}年。
+
+⚠️ 核心规则：
+1. 必须调用 get_current_datetime() 确认当前真实日期
+2. 必须调用数据工具获取实时行情、K线、财务数据
+3. 所有数字必须来自工具返回结果，严禁使用训练记忆中的数值
+4. 如果工具返回的数据与你记忆不符，以工具数据为准
+
+当前真实时间: {time_info}"""
+
+# 每个Agent有自己的专项Prompt，继承_BASE_SYSTEM
+_FUNDAMENTAL_PROMPT = _BASE_SYSTEM + """
+你是基本面分析师。请使用工具获取以下数据并进行分析：
+1. get_realtime_quote("{code}") — 获取估值数据
+2. get_stock_announcements("{code}") — 获取公司公告
+3. search_web_bocha("{name} 基本面 财报 业绩") — 搜索最新业绩信息
+输出格式：直接以"## 基本面分析"开头，所有数字注明数据来源。"""</code></pre>
+
+<div class="highlight">
+<strong>关键设计点：</strong>
+<ul>
+<li><strong>必须第一步调用 get_current_datetime()</strong>：强制LLM打破训练数据的时间认知</li>
+<li><strong>"以工具数据为准"</strong>：建立工具数据 > 训练记忆的优先级</li>
+<li><strong>{year} 和 {time_info} 由代码注入</strong>：不可被LLM篡改</li>
+<li><strong>每个Agent专注一个领域</strong>：Prompt更短更精准，LLM不容易"走神"</li>
+</ul>
+</div>
+
+<h3>6.4 并行执行与容错</h3>
+
+<pre><code># ai/workflow.py
+fundamental, technical, value, news = await asyncio.gather(
+    run_analysis_agent("fundamental", code, name, today_str, time_info),
+    run_analysis_agent("technical", code, name, today_str, time_info),
+    run_analysis_agent("value", code, name, today_str, time_info),
+    run_analysis_agent("news", code, name, today_str, time_info),
+)
+
+# 单个 Agent 容错
+try:
+    result = await agent.ainvoke(...)
+    return ai_msgs[-1].content
+except Exception as e:
+    return f"[{agent_type} 分析出错: {e}]"  # 不阻塞其他Agent</code></pre>
+
+<!-- ==================== 七、数据源层 ==================== -->
+<h2 id="data">七、数据源层 — 5源互为备份</h2>
+
+<table>
+<thead><tr><th>数据源</th><th>获取方式</th><th>数据内容</th><th>可靠性</th><th>缓存</th></tr></thead>
+<tbody>
+<tr class="row-expandable"><td><strong>新浪财经</strong></td><td>hq.sinajs.cn 直连API</td><td>实时行情、K线、大盘指数</td><td>⭐⭐⭐⭐⭐ 极稳定</td><td>行情60s / K线1h</td></tr>
+<tr class="detail-tr"><td colspan="5">直接HTTP GET返回纯文本CSV，不需要解析JSON。域名.cn天然不受Clash代理影响。覆盖全市场5000+只股票。约3秒延迟。局限：不返回PE/PB/ROE等估值数据。</td></tr>
+<tr class="row-expandable"><td><strong>东方财富</strong></td><td>push2.eastmoney.com 自建Session</td><td>PE、PB、市值、ROE、换手率、每股收益、营收/净利同比</td><td>⭐⭐⭐ 代理下偶有波动</td><td>按查询</td></tr>
+<tr class="detail-tr"><td colspan="5">提供30+个数据字段。由于该API被系统代理阻断，用自建Session绕过：trust_env=False + proxies={"http":None,"https":None}。反向工程了字段映射（f92=PE, f164=PB, f104=总市值等）。</td></tr>
+<tr class="row-expandable"><td><strong>巨潮资讯网</strong></td><td>AKShare → cninfo API</td><td>上市公司官方公告（日期+标题+链接）</td><td>⭐⭐⭐⭐ 证监会指定</td><td>30min</td></tr>
+<tr class="detail-tr"><td colspan="5">证监会指定的上市公司信息披露平台，公告具有法律效力，是所有数据源中最权威的。</td></tr>
+<tr class="row-expandable"><td><strong>财联社</strong></td><td>AKShare → cls API</td><td>盘中突发快讯（最新20条）</td><td>⭐⭐⭐⭐ 更新快</td><td>2min</td></tr>
+<tr class="detail-tr"><td colspan="5">A股最快的突发新闻源，通常比传统财经媒体快5-10分钟。</td></tr>
+<tr class="row-expandable"><td><strong>博查搜索</strong></td><td>api.bochaai.com REST API</td><td>全网舆情、行业政策、机构观点</td><td>⭐⭐⭐⭐ 免费100次/天</td><td>按查询</td></tr>
+<tr class="detail-tr"><td colspan="5">提供带AI摘要的全网搜索结果，补充传统财经数据源没有覆盖的行业分析、政策解读、社交媒体讨论。失败时降级到DuckDuckGo，两者都失败返回空列表。</td></tr>
+</tbody>
+</table>
+
+<h3>7.1 代理绕过方案</h3>
+
+<pre><code>def _get_em_session() -> requests.Session:
+    """东方财富直连Session — 绕过系统代理"""
+    session = requests.Session()
+    session.trust_env = False                    # 不信任系统代理设置
+    session.proxies = {"http": None, "https": None}  # 显式禁用代理
+    session.headers["Referer"] = "https://quote.eastmoney.com/"
+    return session
+
+# 新浪API天然不需要绕过(.cn域名)
+def _get_sina_session() -> requests.Session:
+    session = requests.Session()
+    session.trust_env = False
+    session.headers["Referer"] = "https://finance.sina.com.cn"
+    return session</code></pre>
+
+<!-- ==================== 八、查询优化 ==================== -->
+<h2 id="query">八、查询优化 — 两层匹配策略</h2>
+
+<div class="mermaid">
+flowchart LR
+    Q["用户输入"] --> L1{"Layer1: 正则匹配<br/>6位代码/中文名"}
+    L1 -->|"命中 65%"| R1["直接返回 code+name"]
+    L1 -->|"未命中 35%"| L2["Layer2: LLM改写+NLP<br/>识别别名/缩写/昵称"]
+    L2 --> R2["返回结构化JSON<br/>{code, name, intent, rewritten}"]
+</div>
+
+<h3>8.1 第1层：正则快速路径</h3>
+<pre><code># 过滤噪音词后提取中文词
+clean = re.sub(r'(股票|走势|行情|分析|怎么样|如何|怎么|还能|值得|吗|呢|吧|的|了)', ' ', q)
+words = re.findall(r'[一-鿿]{2,4}', clean)
+
+# 嵌入在中文中的代码提取
+_ANY_6DIGIT_RE = re.compile(r"(\d{6})")  # 能从"帮我看看000001"中提取</code></pre>
+
+<p>特点：纯规则匹配，零LLM调用，&lt;1ms延迟，覆盖率65%。</p>
+
+<h3>8.2 第2层：LLM改写 + NER</h3>
+<pre><code>resp = client.chat.completions.create(
+    model=DEEPSEEK_MODEL, temperature=0, max_tokens=200,
+    messages=[
+        {"role": "system", "content": QUERY_OPTIMIZER_SYSTEM_PROMPT},
+        {"role": "user", "content": user_input},
+    ],
+)
+# 输出: {"code": "300750", "name": "宁德时代", "intent": "analyze",
+#         "rewritten": "分析宁德时代(300750)当前投资价值"}</code></pre>
+
+<p>System Prompt中包含常见别名映射（BYD→比亚迪、宁王→宁德时代、茅台→贵州茅台），LLM举一反三。温度0确保输出稳定，耗时~1s，补充至85%。</p>
+
+<!-- ==================== 九、缓存架构 ==================== -->
+<h2 id="cache">九、缓存架构</h2>
+
+<table>
+<thead><tr><th>数据类型</th><th>TTL</th><th>原因</th></tr></thead>
+<tbody>
+<tr><td>实时行情</td><td>60s</td><td>新浪API约3s更新，60s缓存避免频繁请求</td></tr>
+<tr><td>K线数据</td><td>3600s</td><td>K线一天才变一次</td></tr>
+<tr><td>公告</td><td>1800s</td><td>公告不频繁更新</td></tr>
+<tr><td>财联社快讯</td><td>120s</td><td>快讯需要较新但不能太快</td></tr>
+<tr><td>股票列表</td><td>86400s</td><td>全市场代码一天不变</td></tr>
+</tbody>
+</table>
+
+<div class="highlight">
+<strong>防缓存击穿：</strong>每个key有独立的threading.Lock。当缓存过期时，第一个请求拿到锁并更新缓存，其他请求在锁外等待缓存就绪。这避免了高并发下所有请求同时打到外部API。
+
+<strong>存储：</strong>SQLite持久化缓存。简单可靠，零外部依赖。
+</div>
+
+<!-- ==================== 十、错误处理 ==================== -->
+<h2 id="error">十、错误处理与降级策略</h2>
+
+<div class="mermaid">
+flowchart TD
+    EM["东方财富估值"] -->|"失败"| EM2["显示'--'"]
+    SINA["新浪行情"] -->|"失败"| SINA2["返回None→提示用户"]
+    CNINFO["巨潮公告"] -->|"失败"| CNINFO2["返回空列表→跳过公告分析"]
+    BOCHA["博查搜索"] -->|"失败"| DDG["DuckDuckGo降级"]
+    DDG -->|"失败"| EMPTY["返回空列表"]
+    AGENT["单个Agent"] -->|"失败"| REPORT["返回错误信息<br/>不阻塞其他Agent"]
+</div>
+
+<h3>10.1 数据源降级链</h3>
+<pre><code>
+东方财富估值 → 失败 → 显示"--"（不编造）
+新浪行情 → 失败 → 返回 None → 提示用户
+巨潮公告 → 失败 → 返回空列表 → 分析中跳过公告部分
+博查搜索 → 失败 → DuckDuckGo 降级 → 两者都失败 → 返回空列表
+</code></pre>
+
+<h3>10.2 Agent容错</h3>
+<pre><code># 单个Agent失败不阻塞其他
+try:
+    result = await agent.ainvoke({"messages": [HumanMessage(content=input_msg)]})
+    ai_msgs = [m for m in result["messages"] if isinstance(m, AIMessage)]
+    return ai_msgs[-1].content
+except Exception as e:
+    _log.exception("%s agent failed", agent_type)
+    return f"[{agent_type} 分析出错: {e}]"</code></pre>
+
+<!-- ==================== 十一、前端页面 ==================== -->
+<h2 id="frontend">十一、前端页面设计</h2>
+
+<table>
+<thead><tr><th>页面</th><th>文件</th><th>功能</th></tr></thead>
+<tbody>
+<tr class="row-expandable"><td><strong>AI诊股</strong></td><td>pages/chat.py</td><td>核心页面 — 聊天式交互，支持自然语言查询股票</td></tr>
+<tr class="detail-tr"><td colspan="3">用户输入→查询优化→ReAct Agent分析→代码注入Header→展示最终报告。包含历史对话上下文(最近10条)、多股票匹配选择、LLM查询改写展示。</td></tr>
+<tr class="row-expandable"><td><strong>行情一览</strong></td><td>pages/market.py</td><td>三大指数实时面板 + 个股快速查询</td></tr>
+<tr class="detail-tr"><td colspan="3">展示上证/深证/创业板指数的实时价格和涨跌幅。提供搜索框快速查询个股行情。</td></tr>
+<tr class="row-expandable"><td><strong>App入口</strong></td><td>app.py</td><td>Streamlit页面路由 + 侧边栏导航</td></tr>
+<tr class="detail-tr"><td colspan="3">两个导航按钮(Equity Analysis / Market Overview)，内置实时时钟显示。主题为深色金融风格，黑金配色。</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== 十二、技术栈 ==================== -->
+<h2 id="stack">十二、技术栈总结</h2>
+
+<table>
+<thead><tr><th>层级</th><th>技术</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td>前端</td><td>Streamlit 1.45</td><td>Web UI — 聊天界面 + 行情面板</td></tr>
+<tr><td>Agent框架</td><td>LangChain + LangGraph</td><td>ReAct Agent创建 + 工作流编排</td></tr>
+<tr><td>LLM</td><td>DeepSeek V4 (deepseek-chat)</td><td>分析推理 — 4个Agent共享同一模型</td></tr>
+<tr><td>数据获取</td><td>requests + AKShare</td><td>5源数据管道 — 新浪/东方财富/巨潮/财联社/博查</td></tr>
+<tr><td>数据存储</td><td>SQLite</td><td>缓存持久化 — TTL + 防击穿</td></tr>
+<tr><td>异步</td><td>asyncio</td><td>4 Agent并行 — asyncio.gather</td></tr>
+<tr><td>测试</td><td>pytest</td><td>37个单元测试</td></tr>
+<tr><td>部署</td><td>Docker / Streamlit Cloud</td><td>容器化部署 / 免费托管</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== 十三、面试总结 ==================== -->
+<h2 id="summary">十三、面试个人总结</h2>
+
+<h3>我做对了什么</h3>
+
+<div class="card">
+<ol>
+<li><strong>遇到AI编造数据时，没有停留在"改Prompt"的表面方案</strong>，而是深入理解了LLM幻觉的根因（数据获取的"主动性"决定LLM对数据的信任程度），最终用ReAct Agent架构从根本上解决</li>
+<li><strong>发现东方财富API被代理阻断后，没有放弃估值数据</strong>，而是反向工程了API字段映射（30+字段），自建Session绕过代理</li>
+<li><strong>从参考项目学习了ReAct模式，但没有照搬</strong>——结合自己的5源数据层和Streamlit UI做了融合创新</li>
+</ol>
+</div>
+
+<h3>如果再做一个类似项目，我会</h3>
+
+<div class="card">
+<ol>
+<li><strong>一开始就用ReAct Agent架构</strong>，而不是先做预注入再改造。架构选型决定了AI数据准确度的上限</li>
+<li><strong>先做好查询理解层（改写+NER+意图），再往下做分析</strong>。入口质量决定全链路质量</li>
+<li><strong>给每个数据源加健康检查</strong>，实现自动降级和切换，而不是等问题暴露才发现</li>
+</ol>
+</div>
+
+<h3>面试常见追问准备</h3>
+
+<div class="detail-toggle">▶ 展开追问与回答</div>
+<div class="detail-panel">
+
+<strong>Q: ReAct Agent 和 RAG 有什么区别？</strong>
+<p>RAG是"先检索，再生成"——代码预检索相关内容注入Prompt，LLM被动阅读。ReAct Agent是"边想，边做"——LLM自主决定什么时候需要什么数据，主动调用工具获取。RAG适用于知识问答场景（文档检索），ReAct适用于需要多轮交互和工具调用的场景。</p>
+
+<strong>Q: 为什么用4个Agent而不是1个？</strong>
+<p>三个原因：(1)关注点分离——每个Agent的Prompt更短更精准，不容易"走神"；(2)容错——一个Agent失败不影响其他三个；(3)交叉验证——Summary Agent可以发现一致点和分歧点，分歧本身就是有价值的信号。</p>
+
+<strong>Q: DeepSeek 和 GPT 在你这个项目里有什么区别？</strong>
+<p>项目用的是DeepSeek V4。选择原因：(1)成本极低——1M token输入约1元；(2)中文理解能力强；(3)支持Function Calling（工具调用）。缺点是对长上下文的指令跟随略弱于GPT-4，需要通过严格的System Prompt和多层防御来弥补。</p>
+
+<strong>Q: 如果数据源全部不可用怎么办？</strong>
+<p>目前的核心降级策略是：估值失败显示"--"（不编造）、公告失败跳过公告分析、搜索失败降级到DuckDuckGo、行情失败返回None给用户提示。理想情况下应该加入"最后交易日收盘数据"作为第三级降级——但这需要持久化每日收盘快照。</p>
+
+<strong>Q: asyncio.gather 和 LangGraph StateGraph 怎么选？</strong>
+<p>纯并行无依赖的场景用asyncio.gather（更轻量），有复杂依赖关系和条件路由的场景用StateGraph。本项目4个Agent完全独立并行，所以用gather就够了。如果以后需要条件分支（比如技术面看空时跳过估值分析），就应该用StateGraph。</p>
+
+<strong>Q: 缓存为什么用SQLite而不是Redis？</strong>
+<p>这是个人项目，SQLite零配置、零外部依赖、一个文件搞定。如果做成生产级服务，应该用Redis——支持分布式、连接池、更精细的过期策略。</p>
+
+<strong>Q: Temperature 为什么选0.3？</strong>
+<p>金融分析需要准确性和一致性，不需要创造性。0.3是一个平衡点——既保证了分析多样性（不同Agent可能得出不同结论），又不会因为过度创造而编造数据。实际测试中0.3产生最稳定的输出质量。</p>
+
+</div>
+
+</div>
+
+</body>
+</html>

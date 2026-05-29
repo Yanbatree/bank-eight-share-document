@@ -24,6 +24,7 @@
     { href: '15-操作系统/操作系统八股文.html',          label: '操作系统',     accent: '#eab308' },
     { href: '16-消息队列/消息队列八股文.html',          label: '消息队列',     accent: '#d946ef' },
     { href: '17-Linux常用命令/Linux常用命令八股文.html', label: 'Linux 命令',   accent: '#0ea5e9' },
+    { href: '18-A股AI投资顾问/A股AI投资顾问八股文.html', label: 'A股AI投资顾问', accent: '#f59e0b' },
   ];
 
   // Normalize Windows backslashes in pathname
