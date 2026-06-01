@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>上海银行面试必背一页纸 · 精简速记版</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #06b6d4; }
+  body { padding-top: 0; }
+  .main { max-width: 1300px; margin: 0 auto; padding: 20px 28px 40px; }
+
+  /* Top bar */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 14px; padding-bottom: 14px;
+    border-bottom: 1px solid color-mix(in srgb, var(--page-accent) 25%, transparent);
+  }
+  .topbar h1 {
+    font-size: 1.4rem; font-weight: 700; color: var(--page-accent);
+    border: none; margin: 0;
+  }
+  .topbar h1::after { display: none; }
+  .topbar a {
+    color: var(--text-secondary); font-size: var(--text-sm); text-decoration: none;
+    padding: 6px 14px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border-default); transition: all var(--duration-fast);
+  }
+  .topbar a:hover { border-color: var(--page-accent); color: var(--page-accent); }
+
+  /* Two-column grid */
+  .cheatsheet {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 860px) { .cheatsheet { grid-template-columns: 1fr; } }
+
+  /* Section card */
+  .sec {
+    background: var(--surface-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    break-inside: avoid;
+  }
+  .sec.full { grid-column: 1 / -1; }
+  .sec h2 {
+    font-size: 0.9rem; font-weight: 700; color: var(--page-accent);
+    margin: 0 0 10px 0; padding: 0; border: none; background: none;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .sec h2 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 4px;
+    background: color-mix(in srgb, var(--page-accent) 20%, transparent);
+    color: var(--page-accent); font-size: 0.7rem; font-weight: 700; flex-shrink: 0;
+  }
+
+  /* Item */
+  .item { margin-bottom: 8px; }
+  .item:last-child { margin-bottom: 0; }
+  .item .tag {
+    display: inline-block; font-size: 0.72rem; font-weight: 700; color: var(--page-accent);
+    min-width: 70px; margin-right: 4px;
+  }
+  .item .txt { color: var(--text-secondary); font-size: 0.78rem; line-height: 1.55; }
+
+  /* highlight words */
+  .kw { color: #fbbf24; font-weight: 600; }
+  .kw2 { color: #f472b6; font-weight: 600; }
+  .kw3 { color: #34d399; font-weight: 600; }
+  .kw4 { color: #fb923c; font-weight: 600; }
+  .kw5 { color: #a78bfa; font-weight: 600; }
+
+  /* Divider */
+  .divider {
+    border: none; border-top: 1px solid var(--border-subtle);
+    margin: 6px 0;
+  }
+
+  /* Comparison mini-table */
+  .mini-table {
+    width: 100%; border-collapse: collapse; font-size: 0.74rem; margin-top: 4px;
+  }
+  .mini-table th {
+    background: color-mix(in srgb, var(--page-accent) 15%, transparent);
+    color: var(--text-primary); padding: 4px 8px; text-align: left; font-weight: 600;
+  }
+  .mini-table td {
+    padding: 3px 8px; color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* Flow row */
+  .flow { font-size: 0.76rem; color: var(--text-secondary); margin-top: 4px; }
+  .flow .arrow { color: var(--page-accent); margin: 0 2px; }
+
+  /* Detail link */
+  .dl {
+    font-size: 0.68rem; font-weight: 600; color: var(--page-accent);
+    text-decoration: none; margin-left: auto; flex-shrink: 0; white-space: nowrap;
+    padding: 2px 8px; border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--page-accent) 25%, transparent);
+    transition: all var(--duration-fast);
+  }
+  .dl:hover { background: color-mix(in srgb, var(--page-accent) 15%, transparent); border-color: var(--page-accent); }
+
+  /* Badge */
+  .badge {
+    display: inline-block; font-size: 0.65rem; padding: 1px 6px; border-radius: 3px;
+    font-weight: 700; margin-right: 4px;
+  }
+  .badge-r { background: var(--red-soft); color: var(--red); }
+  .badge-g { background: var(--green-soft); color: var(--green); }
+  .badge-o { background: var(--orange-soft); color: var(--orange); }
+
+  /* Print */
+  @media print {
+    .sidebar, .topbar a, .hamburger, .dl { display: none !important; }
+    body { background: #fff; color: #000; }
+    .main { max-width: 100%; padding: 0; }
+    .sec { background: #fff; border: 1px solid #ddd; break-inside: avoid; }
+    .cheatsheet { gap: 8px; }
+  }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<div class="topbar">
+  <h1>上海银行科技岗 · 面试必背一页纸（精简速记版）</h1>
+  <a href="../19-上海银行面试/上海银行面试八股文.html">返回完整版</a>
+</div>
+
+<div class="cheatsheet">
+
+<!-- ==================== 1. Java 集合 ==================== -->
+<div class="sec">
+<h2><span class="num">1</span>Java 集合<a class="dl" href="../03-集合/集合八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">HashMap</span>
+  <span class="txt"><span class="kw">1.7</span> 数组+链表 → <span class="kw">1.8</span> 数组+链表+<span class="kw2">红黑树</span>；容量<span class="kw">16</span>，因子<span class="kw">0.75</span>；链表≥8 & 数组≥64 转树，≤6 退链表</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="badge badge-r">线程不安全</span>put 覆盖、resize 环形链表死循环（1.7头插）</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">Concurrent<br>HashMap</span>
+  <span class="txt"><span class="kw">1.7</span> Segment分段锁(ReentrantLock)；<span class="kw">1.8</span> CAS+synchronized锁单节点，并发更高</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="txt"><span class="kw">ArrayList</span> 数组查O(1)增删O(n) &nbsp;|&nbsp; <span class="kw">LinkedList</span> 双向链表查O(n)头尾增删O(1)</span>
+</div>
+</div>
+
+<!-- ==================== 2. Java 锁 & 并发 ==================== -->
+<div class="sec">
+<h2><span class="num">2</span>Java 锁 &amp; 并发<a class="dl" href="../04-多线程/多线程八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">synchronized</span>
+  <span class="txt">JVM Monitor → <span class="kw">monitorenter/exit</span>；对象头Mark Word存锁</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">锁升级(不可逆)</span>：<span class="flow">无锁<span class="arrow">→</span>偏向锁<span class="arrow">→</span>轻量级(CAS自旋)<span class="arrow">→</span>重量级(内核阻塞)</span></span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">vs Lock</span>
+  <span class="txt">synchronized <span class="kw">JVM层</span>自动加解锁 | ReentrantLock <span class="kw">AQS代码层</span>手动lock/unlock，支持<span class="kw2">公平锁/超时/中断/多Condition</span></span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">线程池</span>
+  <span class="txt"><span class="kw">7参数</span>：核心数、最大数、空闲超时、时间单位、队列、工厂、拒绝策略</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">执行流程</span>：<span class="flow">核心线程<span class="arrow">→</span>队列<span class="arrow">→</span>非核心线程<span class="arrow">→</span>拒绝策略</span></span>
+</div>
+<div class="item">
+  <span class="txt">4拒策：<span class="kw">Abort</span>抛异常 <span class="kw">CallerRuns</span>回调用者 <span class="kw">Discard</span>丢弃 <span class="kw">DiscardOldest</span>丢队首</span>
+</div>
+<div class="item">
+  <span class="txt">配置：<span class="kw">CPU密集型</span>=CPU核+1 &nbsp; <span class="kw">IO密集型</span>=2×CPU核 &nbsp; 优先有界队列防OOM</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="txt"><span class="kw">volatile</span>：可见性+禁重排，不保证原子性 &nbsp;|&nbsp; <span class="kw">AQS</span>：state+CLH队列，独占/共享锁</span>
+</div>
+</div>
+
+<!-- ==================== 3. Java 基础补充 ==================== -->
+<div class="sec">
+<h2><span class="num">3</span>Java 基础补充<a class="dl" href="../12-JAVA基础/JAVA基础八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="txt"><span class="kw">final</span>：类不可继承、方法不可重写、变量值/引用不可变</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">String</span>不可变：底层<span class="kw">final char[]</span>，无修改方法 → 线程安全、常量池复用</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">传递</span>：Java只有值传递，引用类型传的是地址副本</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">equals & hashCode</span>：重写equals必须重写hashCode；相等对象hashCode必等</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">线程6状态</span>：NEW → RUNNABLE → BLOCKED → WAITING → TIMED_WAITING → TERMINATED</span>
+</div>
+</div>
+
+<!-- ==================== 4. JVM ==================== -->
+<div class="sec">
+<h2><span class="num">4</span>JVM<a class="dl" href="../05-JVM/JVM八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">运行时数据区</span>
+  <span class="txt"><span class="kw">程序计数器</span>：唯一无OOM | <span class="kw">虚拟机栈</span>：StackOverflow | <span class="kw">堆</span>：对象，最易OOM | <span class="kw">元空间(方法区)</span>：类信息、常量</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">GC</span>
+  <span class="txt">存活判断：<span class="kw">可达性分析(GC Roots)</span> | 算法：<span class="kw">标记清除/复制/标记整理</span></span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">G1</span>：分Region，兼顾吞吐与停顿 | <span class="kw">ZGC</span>：超低延迟(<10ms)</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">类加载</span>
+  <span class="txt">流程：<span class="flow">加载<span class="arrow">→</span>验证<span class="arrow">→</span>准备<span class="arrow">→</span>解析<span class="arrow">→</span>初始化</span></span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">双亲委派</span>：自下而上加载，保证类安全与唯一性</span>
+</div>
+</div>
+
+<!-- ==================== 5. Spring / SpringBoot ==================== -->
+<div class="sec">
+<h2><span class="num">5</span>Spring / SpringBoot<a class="dl" href="../14-SpringBoot/SpringBoot八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">核心区别</span>
+  <span class="txt"><span class="kw">Spring</span> 手动配置；<span class="kw">Boot</span> 自动配置、约定大于配置、内嵌容器</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">IOC & AOP</span>
+  <span class="txt"><span class="kw">IOC</span>：控制反转，容器管理对象+DI注入（构造器/setter/字段）</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">AOP</span>：无侵入增强；有接口→<span class="kw2">JDK动态代理</span>，无接口→<span class="kw2">CGLIB</span>；日志/事务/权限</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">高频考点</span>
+  <span class="txt"><span class="kw">Bean生命周期</span>：实例化→属性填充→初始化→运行→销毁</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">循环依赖</span>：单例靠<span class="kw3">三级缓存</span>解决，多例不支持</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="badge badge-r">事务失效</span>非public、同类自调用、异常被捕获、引擎不支持</span>
+</div>
+</div>
+
+<!-- ==================== 6. MySQL ==================== -->
+<div class="sec">
+<h2><span class="num">6</span>MySQL<a class="dl" href="../01-MySQL/MySQL八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">B+树索引</span>
+  <span class="txt">非叶子存索引+指针；叶子存数据，<span class="kw">双向链表</span>串联→区间查询快</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">聚簇索引</span>(主键，存整行) vs <span class="kw">二级索引</span>(存主键，需<span class="kw2">回表</span>)</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="badge badge-r">索引失效</span>：左模糊、列运算/函数、隐式类型转换、or单侧无索引</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">隔离级别</span>
+</div>
+<table class="mini-table">
+<tr><th>级别</th><th>脏读</th><th>不可重复读</th><th>幻读</th></tr>
+<tr><td>读未提交</td><td><span class="badge badge-r">✗</span></td><td><span class="badge badge-r">✗</span></td><td><span class="badge badge-r">✗</span></td></tr>
+<tr><td>读已提交</td><td><span class="badge badge-g">✓</span></td><td><span class="badge badge-r">✗</span></td><td><span class="badge badge-r">✗</span></td></tr>
+<tr><td><span class="kw">可重复读(RR)</span></td><td><span class="badge badge-g">✓</span></td><td><span class="badge badge-g">✓</span></td><td>间隙锁缓解</td></tr>
+<tr><td>串行化</td><td><span class="badge badge-g">✓</span></td><td><span class="badge badge-g">✓</span></td><td><span class="badge badge-g">✓</span></td></tr>
+</table>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">锁 & MVCC</span>
+  <span class="txt">表锁粒度大并发低；<span class="kw">行锁</span>粒度小并发高，不走索引→<span class="badge badge-r">降级表锁</span></span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">MVCC</span>：版本链+undo log+ReadView，快照读（RR下第一次SELECT生成ReadView）</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">死锁4条件</span>：互斥、请求保持、不可剥夺、循环等待</span>
+</div>
+</div>
+
+<!-- ==================== 7. Redis ==================== -->
+<div class="sec">
+<h2><span class="num">7</span>Redis<a class="dl" href="../02-Redis/Redis八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">5数据类型</span>
+  <span class="txt">String、List、Hash、Set、<span class="kw">ZSet</span></span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">缓存三大问题</span>
+  <span class="txt"><span class="kw">穿透</span>(不存在数据) → 布隆过滤器/空值缓存/参数校验</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">击穿</span>(热点key过期) → 分布式锁/永不过期/逻辑过期</span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">雪崩</span>(批量过期/宕机) → 过期+随机值/集群高可用/限流熔断</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">持久化</span>
+  <span class="txt"><span class="kw">RDB</span>：全量快照，恢复快，可能丢数据 | <span class="kw">AOF</span>：追加写命令，更安全，文件大 | <span class="kw3">生产混合使用</span></span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="txt"><span class="kw">过期策略</span>：惰性删除+定期删除 | <span class="kw">内存淘汰</span>：LRU、LFU、随机等</span>
+</div>
+</div>
+
+<!-- ==================== 8. 网络 ==================== -->
+<div class="sec">
+<h2><span class="num">8</span>计算机网络<a class="dl" href="../06-计算机网络/计算机网络八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">TCP三次握手</span>
+  <span class="txt">SYN → SYN+ACK → ACK，确认双方收发能力正常</span>
+</div>
+<div class="item">
+  <span class="tag">TCP四次挥手</span>
+  <span class="txt">FIN → ACK → FIN → ACK；主动方等<span class="kw">2MSL</span>保证报文送达</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">HTTPS</span>
+  <span class="txt">HTTP + SSL/TLS：<span class="flow">校验证书<span class="arrow">→</span>公钥加密传会话密钥<span class="arrow">→</span>对称密钥传业务数据</span></span>
+</div>
+<div class="item">
+  <span class="txt"><span class="kw">非对称加密</span>交换密钥，<span class="kw">对称加密</span>传输数据</span>
+</div>
+</div>
+
+<!-- ==================== 9. Linux + Git ==================== -->
+<div class="sec">
+<h2><span class="num">9</span>Linux 命令 &amp; Git<a class="dl" href="../17-Linux常用命令/Linux常用命令八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">日志</span>
+  <span class="txt"><span class="kw">tail -f</span> 实时 | <span class="kw">less</span> 分页 | <span class="kw">grep</span> 过滤 | <span class="kw">cat</span> 全量</span>
+</div>
+<div class="item">
+  <span class="tag">进程</span>
+  <span class="txt"><span class="kw">ps -ef</span> 快照 | <span class="kw">top</span> 动态 | <span class="kw">kill</span> 终止</span>
+</div>
+<div class="item">
+  <span class="tag">端口</span>
+  <span class="txt"><span class="kw">netstat</span> / <span class="kw">lsof</span> 查看端口占用</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">GitFlow</span>
+  <span class="txt">master(线上) ← release ← develop ← feature；hotfix从master拉</span>
+</div>
+<div class="item">
+  <span class="tag">merge vs rebase</span>
+  <span class="txt"><span class="kw">merge</span> 保留完整历史，适合公共分支 | <span class="kw">rebase</span> 线性历史，本地整理，<span class="badge badge-r">禁用于公共分支</span></span>
+</div>
+</div>
+
+<!-- ==================== 10. 设计模式 ==================== -->
+<div class="sec">
+<h2><span class="num">10</span>设计模式<a class="dl" href="../13-设计模式/设计模式八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">单例</span>
+  <span class="txt"><span class="kw">饿汉式</span>：类加载初始化，线程安全 | <span class="kw">DCL懒汉</span>：加volatile防重排 | <span class="kw">静态内部类</span>：简洁延迟 | <span class="kw3">枚举最优</span>：防反射/序列化</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">工厂</span>
+  <span class="txt"><span class="kw">简单工厂</span>统一创建→违反开闭 | <span class="kw">工厂方法</span>一产品一工厂→符合开闭 | <span class="kw">抽象工厂</span>整套产品族</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">观察者</span>
+  <span class="txt">一对多监听，状态变更自动通知；推模式/拉模式</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="txt"><span class="kw">补充</span>：装饰器、适配器、策略、原型模式</span>
+</div>
+</div>
+
+<!-- ==================== 11. 分布式高频 ==================== -->
+<div class="sec">
+<h2><span class="num">11</span>分布式高频<a class="dl" href="../08-场景题/场景题八股文.html">→ 详解</a></h2>
+
+<div class="item">
+  <span class="tag">分布式锁</span>
+  <span class="txt"><span class="kw">Redis</span>(setnx+超时释放) / <span class="kw">Zookeeper</span>(临时顺序节点+watch)</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">CAP</span>
+  <span class="txt"><span class="kw">C</span>一致性 <span class="kw">A</span>可用性 <span class="kw">P</span>分区容错 → 三者不可兼得，P必选，CA二选一</span>
+</div>
+
+<hr class="divider">
+
+<div class="item">
+  <span class="tag">分布式事务</span>
+  <span class="txt"><span class="kw">TCC</span>(Try-Confirm-Cancel) | <span class="kw">SAGA</span>(补偿事务) | <span class="kw">可靠消息最终一致性</span></span>
+</div>
+</div>
+
+<!-- ==================== 12. 综合问答 (HR面) ==================== -->
+<div class="sec full">
+<h2><span class="num">12</span>HR/综合面试 · 话术要点<a class="dl" href="../19-上海银行面试/上海银行面试八股文.html#four-1">→ 详解</a></h2>
+
+<table class="mini-table">
+<tr><th style="width:18%">问题</th><th style="width:82%">应答要点</th></tr>
+<tr>
+  <td><span class="kw">自我介绍</span></td>
+  <td>学历(学校+专业) → 技术栈(Java/Spring/MySQL/Redis) → 项目经历(1-2个) → 岗位匹配度 → 时间控制在<span class="kw2">1-2分钟</span></td>
+</tr>
+<tr>
+  <td><span class="kw">为什么选银行</span></td>
+  <td>追求<span class="kw3">稳定</span>、认可<span class="kw3">金融科技</span>发展趋势、银行数字化转型阶段技术挑战大、希望长期深耕</td>
+</tr>
+<tr>
+  <td><span class="kw">职业规划</span></td>
+  <td>前1-2年夯实技术基础+熟悉银行业务 → 3-5年成为技术骨干 → 长期在<span class="kw3">金融科技领域</span>深度发展</td>
+</tr>
+<tr>
+  <td><span class="kw">加班/出差</span></td>
+  <td>可以<span class="kw">配合团队安排</span>，项目关键期加班合理，理解金融系统上线多在周末/夜间</td>
+</tr>
+<tr>
+  <td><span class="kw">优缺点</span></td>
+  <td>优点：<span class="kw3">踏实好学</span>、<span class="kw3">沟通协作</span>好；缺点：应届经验不足，但持续学习补充</td>
+</tr>
+<tr>
+  <td><span class="kw">反问面试官</span></td>
+  <td>团队技术栈和主要项目方向？新人培养机制？技术挑战和近期目标？（<span class="badge badge-r">避免问薪资加班</span>）</td>
+</tr>
+</table>
+</div>
+
+<!-- ==================== 13. 面试流程速览 ==================== -->
+<div class="sec full">
+<h2><span class="num">13</span>面试流程速览 &amp; 薪资参考<a class="dl" href="../19-上海银行面试/上海银行面试八股文.html#one-1">→ 详解</a></h2>
+
+<table class="mini-table">
+<tr><th>环节</th><th>内容</th><th>时间</th><th>要点</th></tr>
+<tr>
+  <td><span class="kw">网申</span></td>
+  <td>官网投递(bosc.zhiye.com)</td>
+  <td>9月</td>
+  <td>总行分行分开投，可多志愿；简历写全信息</td>
+</tr>
+<tr>
+  <td><span class="kw">笔试</span></td>
+  <td>行测60题(60min) + 专业47题(90min)</td>
+  <td>10月</td>
+  <td>行测练逻辑推理/资料分析；专业重SQL+八股基础</td>
+</tr>
+<tr>
+  <td><span class="kw">一面</span></td>
+  <td>技术面 20-30min，5-8道技术题</td>
+  <td>笔试后1-3天</td>
+  <td><span class="kw2">重点：Java→MySQL→Redis→Linux</span>；不考网络和OS</td>
+</tr>
+<tr>
+  <td><span class="kw">二面</span></td>
+  <td>半结构化+HR面</td>
+  <td>一面后1-2周</td>
+  <td>综合素质、沟通表达、职业规划、银行相关</td>
+</tr>
+<tr>
+  <td><span class="kw">OC/Offer</span></td>
+  <td>—</td>
+  <td>~2个月</td>
+  <td>本科18-22W，硕士20-25W（第二年重定级）</td>
+</tr>
+</table>
+</div>
+
+</div><!-- /cheatsheet -->
+
+<p style="text-align:center; color:var(--text-tertiary); font-size:0.75rem; margin-top:24px;">
+  打印快捷键 <kbd style="background:var(--surface-hover);padding:2px 8px;border-radius:3px;">Ctrl + P</kbd> ·
+  面试前快速过一遍，重点记忆 <span style="color:#fbbf24;">黄色高亮</span> 关键词
+</p>
+
+</div><!-- /main -->
+
+</body>
+</html>

@@ -27,7 +27,7 @@
 <div class="main">
 
 <h1>上海银行科技岗 · 面试宝典</h1>
-<p style="color:var(--text-secondary)">上海银行校招真实面经 + 银行科技岗通用面试指南 + 各大银行薪资对比</p>
+<p style="color:var(--text-secondary)">上海银行校招真实面经 + 银行科技岗通用面试指南 + 各大银行薪资对比 &nbsp;|&nbsp; <a href="../21-上海银行面试速记/上海银行面试速记版.html" style="color:var(--page-accent);font-weight:600;">面试前速记版 →</a></p>
 
 <!-- ==================== 一、招聘概述 ==================== -->
 <h2 id="one-1">一、上海银行招聘概述</h2>
@@ -124,7 +124,7 @@ flowchart LR
 来源：小林coding 真实面经整理 | 考察重点：Java → MySQL → Redis → Linux，<strong>不考计算机网络和操作系统</strong>
 </div>
 
-<h3>Q1: MySQL 中 MVCC 原理是什么？用了什么数据结构？</h3>
+<h3 id="qa-mysql">Q1: MySQL 中 MVCC 原理是什么？用了什么数据结构？</h3>
 
 <div class="mermaid">
 flowchart TB
@@ -159,7 +159,7 @@ flowchart TB
 <p>MVCC 只在 <strong>读提交</strong> 和 <strong>可重复读</strong> 隔离级别下有效。读未提交直接读最新版本（不需要 MVCC），串行化通过加锁实现（不需要 MVCC）。</p>
 </div>
 
-<h3>Q2: synchronized 实现原理是什么？用了什么数据结构？</h3>
+<h3 id="qa-sync">Q2: synchronized 实现原理是什么？用了什么数据结构？</h3>
 
 <div class="mermaid">
 flowchart LR
@@ -186,7 +186,7 @@ flowchart LR
 <p>synchronized 是排他锁，线程阻塞/唤醒涉及用户态到内核态的切换，这是性能消耗的主要来源。这也是为什么 JDK 引入了锁升级机制——尽量避免进入重量级锁。</p>
 </div>
 
-<h3>Q3: 两个线程交替打印 1-10 如何实现？</h3>
+<h3 id="qa-threads">Q3: 两个线程交替打印 1-10 如何实现？</h3>
 
 <div class="card">
 <strong>核心思路：</strong>synchronized + wait()/notify() 实现线程间通信。
@@ -240,7 +240,7 @@ flowchart LR
 <strong>面试加分点：</strong>如果面试官追问"多个线程交替打印"，可以提到用 Semaphore 的 acquire/release 链实现 N 个线程的循环打印（如 3 线程交替打印 ABC）。</p>
 </div>
 
-<h3>Q4: 你项目中 Redis 数据一致性问题怎么解决的？</h3>
+<h3 id="qa-redis">Q4: 你项目中 Redis 数据一致性问题怎么解决的？</h3>
 
 <div class="mermaid">
 flowchart TD
@@ -265,7 +265,7 @@ flowchart TD
 <strong>一定要记住的面试关键句：</strong>"缓存是通过牺牲强一致性来换取性能的，属于 CAP 中的 AP。可以保证最终一致性，但做不到强一致性。缓存一定要设置过期时间作为兜底。"</p>
 </div>
 
-<h3>Q5: Linux 如何查看一个 Java 进程？</h3>
+<h3 id="qa-linux">Q5: Linux 如何查看一个 Java 进程？</h3>
 
 <div class="card">
 <strong>方法1 — ps 命令（最常用）：</strong>
@@ -288,7 +288,7 @@ top -c                       # 显示完整命令行</code></pre>
 <p>"找到进程后怎么排查问题？" → <code>jstack PID</code>（线程堆栈，排查死锁/CPU 高）、<code>jmap -heap PID</code>（堆内存概况）、<code>jstat -gc PID 1000</code>（GC 实时监控）、<code>jinfo PID</code>（JVM 参数）。这几个命令在银行运维场景中非常实用，建议记住。</p>
 </div>
 
-<h3>Q6: 项目最难的技术是什么？你是怎么解决的？</h3>
+<h3 id="qa-project">Q6: 项目最难的技术是什么？你是怎么解决的？</h3>
 
 <div class="card">
 <strong>答题框架 — STAR 法则：</strong>
@@ -437,7 +437,7 @@ graph TD
 </table>
 </div>
 
-<h3>4. 银行科技岗必会八股文清单</h3>
+<h3 id="bagu-list">4. 银行科技岗必会八股文清单</h3>
 
 <div class="card">
 <strong>按优先级排序（P0 = 必问，P1 = 高频，P2 = 偶有涉及）：</strong>
