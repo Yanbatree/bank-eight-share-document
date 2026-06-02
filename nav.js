@@ -28,6 +28,7 @@
     { href: '19-上海银行面试/上海银行面试八股文.html', label: '上海银行面试', accent: '#06b6d4' },
     { href: '21-上海银行面试速记/上海银行面试速记版.html', label: '上海银行速记版', accent: '#fbbf24' },
     { href: '20-简历八股文/简历八股文.html',          label: '简历八股文',   accent: '#14b8a6' },
+    { href: '22-数据结构/数据结构八股文.html',          label: '数据结构',     accent: '#f97316' },
   ];
 
   // Normalize Windows backslashes in pathname

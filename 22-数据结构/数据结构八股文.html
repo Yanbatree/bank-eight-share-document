@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>数据结构八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #f97316; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #ea580c; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>数据结构八股文</h1>
+
+<h2 id="overview">一、数据结构总览</h2>
+
+<div class="mermaid">
+graph TD
+    DS["数据结构"]
+    DS --> Linear["线性结构"]
+    DS --> Tree["树形结构"]
+    DS --> Hash["散列结构"]
+    DS --> Graph["图形结构"]
+
+    Linear --> Array["数组<br/>连续内存, O(1)随机访问"]
+    Linear --> LinkedList["链表<br/>离散内存, O(1)插入删除"]
+    Linear --> Stack["栈<br/>LIFO, 递归/括号匹配"]
+    Linear --> Queue["队列<br/>FIFO, BFS/消息队列"]
+
+    Tree --> BinaryTree["二叉树"]
+    BinaryTree --> BST["二叉搜索树<br/>左小右大, 可能退化为链表"]
+    BinaryTree --> AVL["AVL 树<br/>严格平衡, 插入删除旋转多"]
+    BinaryTree --> RBT["红黑树<br/>弱平衡, HashMap/TreeMap"]
+    Tree --> Heap["堆<br/>完全二叉树, 优先队列"]
+    Tree --> BT["B 树 / B+ 树<br/>多路搜索树, MySQL 索引"]
+    Tree --> SkipList["跳表<br/>多层索引, Redis ZSet"]
+
+    Hash --> HashMap_["哈希表<br/>数组+链表+红黑树"]
+    Graph --> Graph_["图<br/>DFS/BFS/Dijkstra"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么数据结构是面试必问：</strong>
+<p>数据结构决定了数据的组织方式和访问效率。同一道算法题，选对数据结构能让你从 O(n²) 降到 O(n)。银行面试虽然不考 LeetCode 手撕，但会通过 Java 集合类（HashMap、ConcurrentHashMap）和数据库索引（B+ 树）间接考察你对底层数据结构的理解。</p>
+<strong>学习路径：</strong>
+<ul>
+  <li><strong>P0 必会</strong>：数组/链表区别、HashMap 原理、栈与队列、二叉树遍历、常用排序算法</li>
+  <li><strong>P1 高频</strong>：红黑树特性、堆与优先队列、哈希冲突解决、B+ 树结构</li>
+  <li><strong>P2 加分</strong>：图算法、跳表、AVL 旋转细节、字符串匹配（KMP）</li>
+</ul>
+</div>
+
+<h2 id="array-linkedlist">二、数组 vs 链表</h2>
+
+<h3 id="array-vs-linked">1. 对比总表</h3>
+
+<div class="card">
+<table>
+<tr><th>特性</th><th>数组 (Array)</th><th>链表 (Linked List)</th></tr>
+<tr><td>内存分布</td><td>连续内存</td><td>离散内存，通过指针连接</td></tr>
+<tr><td>随机访问</td><td>O(1) — 下标直接计算地址</td><td>O(n) — 需要从头遍历</td></tr>
+<tr><td>头部插入/删除</td><td>O(n) — 所有元素后移</td><td>O(1) — 改指针即可</td></tr>
+<tr><td>尾部插入/删除</td><td>O(1) 均摊（扩容时 O(n)）</td><td>O(n) 无尾指针 / O(1) 有尾指针</td></tr>
+<tr><td>中间插入/删除</td><td>O(n)</td><td>O(n) 查找 + O(1) 修改指针</td></tr>
+<tr><td>内存开销</td><td>仅存数据，可能有预留空间</td><td>每个节点额外存指针（单向1个，双向2个）</td></tr>
+<tr><td>缓存友好</td><td>高 — 连续内存预读</td><td>低 — 指针跳转导致 cache miss</td></tr>
+<tr><td>扩容</td><td>需要复制到新数组</td><td>天然动态，无需扩容</td></tr>
+</table>
+</div>
+
+<h3 id="arraylist-source">2. ArrayList 源码要点</h3>
+
+<div class="highlight">
+<p><strong>默认容量</strong>：10（JDK 8+ 懒初始化，首次 add 时才分配）</p>
+<p><strong>扩容机制</strong>：<code>newCapacity = oldCapacity + (oldCapacity >> 1)</code>，即 1.5 倍。使用 Arrays.copyOf() 复制到新数组。</p>
+<p><strong>为什么用 1.5 倍而不是 2 倍</strong>：1.5 倍更节省内存，且能更好地利用之前释放的内存空间（减少 GC 压力）。HashMap 用 2 倍扩容是为了保证哈希槽位的均匀分布。</p>
+<p><strong>modCount</strong>：用于 fail-fast 机制。迭代器创建时记录 modCount，每次 next() 检查是否变化，变了就抛 ConcurrentModificationException。</p>
+</div>
+
+<h3 id="linkedlist-source">3. LinkedList 源码要点</h3>
+
+<div class="highlight">
+<p><strong>底层</strong>：双向链表，内部类 Node 包含 item、prev、next 三个字段。</p>
+<p><strong>实现了 Deque 接口</strong>：所以可以当队列用（offer/poll）和栈用（push/pop）。</p>
+<p><strong>为什么一般不推荐用 LinkedList</strong>：内存开销大（每个 Node 对象头 + 3 个引用），缓存不友好。即使用作队列，ArrayDeque 也全面优于 LinkedList。</p>
+<p><strong>唯一适用场景</strong>：大量在头部插入/删除，且不需要随机访问。</p>
+</div>
+
+<h2 id="stack-queue">三、栈 (Stack) 与 队列 (Queue)</h2>
+
+<h3 id="stack">1. 栈 (Stack)</h3>
+
+<div class="card">
+<table>
+<tr><th>实现类</th><th>底层结构</th><th>线程安全</th><th>推荐度</th></tr>
+<tr><td>Stack（旧）</td><td>继承 Vector → Object[]</td><td>是（synchronized）</td><td>❌ 不推荐</td></tr>
+<tr><td>ArrayDeque</td><td>循环数组</td><td>否</td><td>✅ 首选用作栈</td></tr>
+<tr><td>LinkedList</td><td>双向链表</td><td>否</td><td>可用但内存开销大</td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<p><strong>LIFO</strong>（Last In First Out），后进先出。</p>
+<p><strong>典型应用</strong>：函数调用栈、括号匹配、表达式求值、DFS（深度优先搜索）、浏览器的前进后退。</p>
+<p><strong>Java 中的 Stack 为什么过时</strong>：Stack 继承 Vector，暴露了 Vector 的所有方法（如 get(int)、add(int, E)），破坏了栈的语义约束（你可以在中间插入元素）。推荐用 Deque 接口的 push/pop 方法。</p>
+</div>
+
+<h3 id="queue">2. 队列 (Queue)</h3>
+
+<div class="card">
+<table>
+<tr><th>类型</th><th>Java 实现</th><th>特点</th><th>应用</th></tr>
+<tr><td>普通队列</td><td>LinkedList / ArrayDeque</td><td>FIFO</td><td>BFS、消息中间件</td></tr>
+<tr><td>双端队列</td><td>ArrayDeque</td><td>两端都可进出</td><td>滑动窗口最大值</td></tr>
+<tr><td>优先队列</td><td>PriorityQueue</td><td>按优先级出队，小顶堆实现</td><td>任务调度、Dijkstra</td></tr>
+<tr><td>阻塞队列</td><td>ArrayBlockingQueue / LinkedBlockingQueue</td><td>队列空时 take() 阻塞</td><td>线程池任务队列</td></tr>
+<tr><td>延迟队列</td><td>DelayQueue</td><td>到延迟时间才能取出</td><td>订单超时取消</td></tr>
+</table>
+</div>
+
+<h2 id="hash-table">四、哈希表</h2>
+
+<h3 id="hash-overview">1. 核心概念</h3>
+
+<div class="mermaid">
+graph LR
+    Key["key"] --> HashFunc["hashCode()"]
+    HashFunc --> HashVal["哈希值"]
+    HashVal --> Index["index = hash & (n-1)"]
+    Index --> Bucket["桶（数组槽位）"]
+    Bucket -->|"无冲突"| Node["直接存储"]
+    Bucket -->|"有冲突"| Chain["链表 / 红黑树"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>哈希冲突的四种解决方案：</strong>
+<ul>
+  <li><strong>链地址法（Separate Chaining）</strong>：HashMap 默认方案。每个槽位是一个链表/红黑树。冲突了就追加到链表尾部。最简单、最常用。</li>
+  <li><strong>开放地址法（Open Addressing）</strong>：冲突后按某种探测序列找下一个空位。ThreadLocal 使用线性探测。优点：缓存友好，无指针开销。缺点：删除麻烦（需要标记墓碑），负载因子不能太高。</li>
+  <li><strong>再哈希法（Rehashing）</strong>：冲突后用第二个哈希函数重新计算。优点：不易聚集。缺点：需要多个哈希函数。</li>
+  <li><strong>公共溢出区</strong>：单独开辟一个区域存冲突元素。适合冲突较少的场景。</li>
+</ul>
+</div>
+
+<h3 id="hashmap-detail">2. HashMap 源码深度解析</h3>
+
+<div class="card">
+<table>
+<tr><th>版本</th><th>JDK 7</th><th>JDK 8+</th></tr>
+<tr class="row-expandable"><td>数据结构</td><td>数组 + 单向链表（头插法）</td><td>数组 + 链表（尾插法）+ 红黑树</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>头插法 vs 尾插法：</strong>
+<p>JDK 7 用头插法：新节点插入链表头部，认为新插入的更可能被再次访问（LRU 思路）。但在并发扩容时可能形成环形链表导致死循环（CPU 100%）。JDK 8 改为尾插法，完全消除了环形链表问题。</p>
+<p><strong>树化条件：</strong>链表长度 ≥ 8 且数组长度 ≥ 64 时转为红黑树。为什么是 8？根据泊松分布，当负载因子 0.75 时链表长度达到 8 的概率仅为 0.00000006，即几乎不可能发生，所以树化是个极罕见的兜底机制。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>哈希计算</td><td><code>h ^= (h >>> 20) ^ (h >>> 12); h ^ (h >>> 7) ^ (h >>> 4)</code></td><td><code>(h = key.hashCode()) ^ (h >>> 16)</code></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>JDK 8 的 hash 算法为什么简化了：</strong>
+<p>因为加入了红黑树，即使哈希碰撞较多，查找也从 O(n) 变成了 O(log n)，对 hash 质量的依赖降低。高 16 位与低 16 位异或，让高位也参与索引计算，减少低位相同的碰撞。这样做既快又有效，不用像 JDK 7 那样做多次扰动。</p>
+</div></td></tr>
+<tr><td>扩容</td><td>rehash 全部重新计算位置</td><td>原位置 或 原位置+旧容量（2的幂优化）</td></tr>
+<tr class="row-expandable"><td>插入方式</td><td>头插法（并发会死循环）</td><td>尾插法（安全）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>JDK 8 并发就一定安全吗？</strong>
+<p>不是。尾插法解决了死循环，但 put 操作仍然不是原子的——可能造成数据覆盖（两个线程同时 put 到同个位置，一个覆盖另一个）。并发场景仍需 ConcurrentHashMap。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>树化阈值</td><td>—</td><td>TREEIFY_THRESHOLD = 8</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>链表 ↔ 红黑树转换规则：</strong>
+<ul>
+  <li><strong>树化</strong>：链表长度 ≥ 8 且 table.length ≥ 64（数组太小时优先扩容）</li>
+  <li><strong>链化</strong>：扩容后红黑树节点 ≤ 6（UNTREEIFY_THRESHOLD），退化为链表</li>
+  <li>7 作为缓冲区间，避免频繁转换</li>
+</ul>
+</div></td></tr>
+<tr class="row-expandable"><td>为什么用红黑树而非 AVL</td><td>—</td><td>红黑树插入最多旋转 2 次，AVL 最多 O(log n) 次</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>红黑树 vs AVL 的取舍：</strong>
+<p>HashMap 中 put/get 都频繁，红黑树牺牲了严格的平衡性（查找比 AVL 稍慢），换来了更快的插入性能（最多旋转 2 次 vs AVL 可能旋转到根）。对于查找密集型场景 AVL 更优，对于读写均衡场景红黑树更优。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="hashmap-qa">3. HashMap 高频面试题</h3>
+
+<div class="highlight">
+<p><strong>Q：HashMap 容量为什么是 2 的幂？</strong></p>
+<p>A：为了用 <code>(n-1) & hash</code> 代替 <code>hash % n</code> 取模运算，位运算速度更快。扩容时，每个节点只可能在新数组的原位置或原位置+旧容量，减少了 rehash 开销。</p><br>
+
+<p><strong>Q：负载因子为什么是 0.75？</strong></p>
+<p>A：时间和空间的折中。0.75 使得哈希冲突概率较低（泊松分布下桶中元素数分布合理），同时空间利用率也较高（75%）。越大冲突越多（时间差），越小空间浪费越多。</p><br>
+
+<p><strong>Q：重写 equals 为什么必须重写 hashCode？</strong></p>
+<p>A：HashMap 先用 hashCode 定位桶，再用 equals 比较。若两个对象 equals 相等但 hashCode 不同，则 put 时放进不同桶，get 时用同样的 key 去不同的桶找，永远取不到，违反了 HashMap 的约定。</p><br>
+
+<p><strong>Q：HashMap 和 HashTable 的区别？</strong></p>
+<p>A：HashTable 全方法 synchronized（低效），不允许 null key/value；HashMap 非线程安全，允许一个 null key 和多个 null value。HashTable 已基本被 ConcurrentHashMap 替代。</p>
+</div>
+
+<h2 id="tree">五、二叉树</h2>
+
+<h3 id="binary-tree">1. 二叉树遍历</h3>
+
+<div class="card">
+<table>
+<tr><th>遍历方式</th><th>顺序</th><th>特点</th><th>应用</th></tr>
+<tr><td>前序遍历</td><td>根 → 左 → 右</td><td>第一个一定是根节点</td><td>序列化、复制树</td></tr>
+<tr><td>中序遍历</td><td>左 → 根 → 右</td><td>BST 的中序遍历是有序的</td><td>BST 排序输出</td></tr>
+<tr><td>后序遍历</td><td>左 → 右 → 根</td><td>最后一个一定是根节点</td><td>删除树（先删子节点）</td></tr>
+<tr><td>层序遍历</td><td>逐层从上到下</td><td>BFS，用队列实现</td><td>求树的宽度</td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<p><strong>递归 vs 迭代</strong>：递归实现简洁但可能栈溢出（树太深）。迭代需要显式使用栈（DFS）或队列（BFS），面试常考非递归写法。</p>
+<p><strong>根据遍历序列重建二叉树</strong>：必须要有中序遍历。前序+中序可以、后序+中序可以，但前序+后序不行（无法确定左右子树的分界）。</p>
+</div>
+
+<h3 id="bst">2. 二叉搜索树 (BST)</h3>
+
+<div class="highlight">
+<p><strong>定义</strong>：左子树所有节点 < 根节点 < 右子树所有节点。左右子树也是 BST。</p>
+<p><strong>优点</strong>：查找/插入/删除平均 O(log n)，中序遍历即有序输出。</p>
+<p><strong>致命缺点</strong>：如果按升序插入（1,2,3,4,5...），树会退化成单链表，复杂度退化到 O(n)。</p>
+<p><strong>解决方案</strong>：平衡二叉树——AVL 树、红黑树。</p>
+</div>
+
+<h3 id="avl-rbt">3. AVL vs 红黑树</h3>
+
+<div class="card">
+<table>
+<tr><th>特性</th><th>AVL 树</th><th>红黑树</th></tr>
+<tr><td>平衡条件</td><td>左右子树高度差 ≤ 1（严格平衡）</td><td>最长路径 ≤ 2 × 最短路径（弱平衡）</td></tr>
+<tr><td>查找性能</td><td>O(log n)，略优于红黑树（树更矮）</td><td>O(log n)，略差于 AVL</td></tr>
+<tr><td>插入旋转次数</td><td>最多 O(log n) 次</td><td>最多 2 次</td></tr>
+<tr><td>删除旋转次数</td><td>最多 O(log n) 次</td><td>最多 3 次</td></tr>
+<tr><td>适用场景</td><td>查找远多于插入/删除</td><td>插入/删除频繁</td></tr>
+<tr><td>Java 中的使用</td><td>较少</td><td>HashMap、TreeMap、ConcurrentHashMap</td></tr>
+</table>
+</div>
+
+<h3 id="rbt-rules">4. 红黑树五条性质</h3>
+
+<div class="highlight">
+<ol>
+<li>每个节点是红色或黑色</li>
+<li>根节点是黑色</li>
+<li>每个叶子节点（NIL）是黑色</li>
+<li>红色节点的两个子节点必须是黑色（不能有两个连续的红色）</li>
+<li>从任意节点到其所有后代叶子节点的路径上，黑色节点数量相同</li>
+</ol>
+<p><strong>核心推论</strong>：性质 4 和 5 共同保证了最长路径 ≤ 2 × 最短路径。最极端情况：最短路径全黑，最长路径红黑交替（红色数量 ≤ 黑色数量）。</p>
+</div>
+
+<h2 id="heap">六、堆 (Heap)</h2>
+
+<h3 id="heap-basics">1. 基本概念</h3>
+
+<div class="card">
+<table>
+<tr><th>特性</th><th>说明</th></tr>
+<tr><td>数据结构</td><td>完全二叉树（用数组存储，不需要指针）</td></tr>
+<tr><td>父子关系</td><td>parent[i] = (i-1)/2，leftChild[i] = 2i+1，rightChild[i] = 2i+2</td></tr>
+<tr><td>堆序性</td><td>大顶堆：父节点 ≥ 子节点；小顶堆：父节点 ≤ 子节点</td></tr>
+<tr><td>插入</td><td>O(log n) — 放在末尾，然后上浮（siftUp）</td></tr>
+<tr><td>删除堆顶</td><td>O(log n) — 末尾换到堆顶，然后下沉（siftDown）</td></tr>
+<tr><td>建堆</td><td>O(n) — 从最后一个非叶子节点开始向下调整（比逐个插入的 O(n log n) 更优）</td></tr>
+</table>
+</div>
+
+<h3 id="heap-app">2. 应用场景</h3>
+
+<div class="highlight">
+<p><strong>优先队列</strong>：Java 的 PriorityQueue 默认小顶堆。</p>
+<p><strong>Top K 问题</strong>：求最大的 K 个元素用小顶堆（堆顶是 K 个中最小的，新元素比堆顶大则替换）。求最小的 K 个用大顶堆。</p>
+<p><strong>堆排序</strong>：建堆 O(n) + n 次删除堆顶 O(n log n) = O(n log n)，原地排序，不稳定。</p>
+<p><strong>定时任务调度</strong>：DelayQueue 内部使用 PriorityQueue，按过期时间排序。</p>
+<p><strong>Dijkstra 最短路径</strong>：用优先队列获取当前最短距离节点。</p>
+</div>
+
+<h2 id="b-tree">七、B 树与 B+ 树</h2>
+
+<h3 id="b-vs-bplus">1. 对比表</h3>
+
+<div class="card">
+<table>
+<tr><th>特性</th><th>B 树</th><th>B+ 树</th></tr>
+<tr><td>数据存储</td><td>内部节点也存数据</td><td>只在叶子节点存数据</td></tr>
+<tr><td>内部节点内容</td><td>键 + 数据 + 子节点指针</td><td>仅键 + 子节点指针（更小，每页可存更多键）</td></tr>
+<tr><td>叶子节点</td><td>独立，无链表连接</td><td>用双向链表串联，支持范围查询</td></tr>
+<tr><td>范围查询</td><td>需要中序遍历，可能回溯</td><td>找到起点后沿链表遍历，O(k) 极快</td></tr>
+<tr><td>查询稳定性</td><td>可能在内节点提前返回</td><td>一定走到叶子节点，查询时间稳定</td></tr>
+<tr><td>典型应用</td><td>MongoDB 索引</td><td>MySQL InnoDB 索引</td></tr>
+</table>
+</div>
+
+<h3 id="bplus-why">2. 为什么 MySQL 用 B+ 树而不是 B 树？</h3>
+
+<div class="highlight">
+<p><strong>1. 磁盘 IO 更少</strong>：B+ 树内部节点只存键不存数据，单个节点能容纳更多键，树更矮（IO 次数更少）。假设每页 16KB，一个键值对 16B，B 树内部节点可能只放 500 个，而 B+ 树能放 1000 个键。</p>
+<p><strong>2. 范围查询高效</strong>：B+ 树叶子节点有链表，找到范围起点后直接沿链表遍历，不需要回到父节点。B 树做范围查询需要在树中跳来跳去。</p>
+<p><strong>3. 查询效率稳定</strong>：B+ 树任何查询都要到叶子节点，查询时间稳定。B 树可能在内部节点命中返回，查询时间波动大。</p>
+<p><strong>4. 全表扫描友好</strong>：B+ 树只需遍历叶子层链表，B 树需要中序遍历整棵树。</p>
+</div>
+
+<h2 id="skiplist">八、跳表 (Skip List)</h2>
+
+<div class="mermaid">
+graph TB
+    L4["Level 4: 1 ────────────────────→ 9"]
+    L3["Level 3: 1 ────────→ 5 ────────→ 9"]
+    L2["Level 2: 1 ────→ 3 ──→ 5 ──→ 7 ──→ 9"]
+    L1["Level 1: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9"]
+</div>
+
+<div class="highlight">
+<p><strong>核心思想</strong>：通过给链表增加多级索引，实现类似二分查找的 O(log n) 查找效率。</p>
+<p><strong>节点层数</strong>：随机生成（抛硬币），每层概率 1/2。期望空间复杂度 O(n)。</p>
+<p><strong>Redis 为什么用跳表而不是红黑树实现 ZSet？</strong></p>
+<ul>
+  <li>跳表实现简单，代码量少，不容易出 bug</li>
+  <li>跳表支持范围查询（找到起点后顺链表遍历），红黑树需要中序遍历</li>
+  <li>跳表天然支持按排名查找（每个节点跨度字段记录间距）</li>
+  <li>Redis 作者 antirez：跳表的性能与红黑树相当，但实现更简单</li>
+</ul>
+<p><strong>ConcurrentSkipListMap</strong>：Java 并发包中的跳表实现，线程安全且支持排序。是对 ConcurrentHashMap 的补充（后者无序）。</p>
+</div>
+
+<h2 id="graph">九、图 (Graph)</h2>
+
+<h3 id="graph-basics">1. 存储方式</h3>
+
+<div class="card">
+<table>
+<tr><th>方式</th><th>结构</th><th>空间</th><th>适用</th></tr>
+<tr><td>邻接矩阵</td><td>n × n 二维数组</td><td>O(n²)</td><td>稠密图，快速判断边是否存在</td></tr>
+<tr><td>邻接表</td><td>数组 + 链表</td><td>O(n + e)</td><td>稀疏图，遍历邻居快</td></tr>
+</table>
+</div>
+
+<h3 id="graph-algo">2. 核心算法</h3>
+
+<div class="card">
+<table>
+<tr><th>算法</th><th>用途</th><th>时间复杂度</th><th>数据结构</th></tr>
+<tr><td>DFS</td><td>连通性、拓扑排序、找环</td><td>O(V + E)</td><td>栈（隐式递归）</td></tr>
+<tr><td>BFS</td><td>最短路径（无权图）、层序遍历</td><td>O(V + E)</td><td>队列</td></tr>
+<tr><td>Dijkstra</td><td>单源最短路径（非负权）</td><td>O((V+E) log V)</td><td>优先队列</td></tr>
+<tr><td>拓扑排序</td><td>依赖关系排序（如 Maven 构建顺序）</td><td>O(V + E)</td><td>入度表 + 队列</td></tr>
+</table>
+</div>
+
+<h2 id="sort">十、排序算法</h2>
+
+<h3 id="sort-table">1. 十大排序总览</h3>
+
+<div class="card">
+<table>
+<tr><th>算法</th><th>平均时间</th><th>最坏时间</th><th>空间</th><th>稳定性</th><th>核心思想</th></tr>
+<tr><td>冒泡排序</td><td>O(n²)</td><td>O(n²)</td><td>O(1)</td><td>稳定</td><td>相邻比较，大的后移</td></tr>
+<tr><td>选择排序</td><td>O(n²)</td><td>O(n²)</td><td>O(1)</td><td>不稳定</td><td>每轮选最小放到前面</td></tr>
+<tr><td>插入排序</td><td>O(n²)</td><td>O(n²)</td><td>O(1)</td><td>稳定</td><td>将元素插入已排序部分</td></tr>
+<tr><td>希尔排序</td><td>O(n^1.3)</td><td>O(n²)</td><td>O(1)</td><td>不稳定</td><td>分组的插入排序</td></tr>
+<tr class="row-expandable"><td>归并排序</td><td>O(n log n)</td><td>O(n log n)</td><td>O(n)</td><td>稳定</td><td>分治，先分后合并</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>归并排序细节：</strong>
+<p>将数组不断二分直到每段长度为 1（天然有序），然后两两合并有序段。合并时用两个指针比较较小者放入临时数组。空间复杂度 O(n) 是需要额外数组存储合并结果。Java 中 <code>Arrays.sort(Object[])</code> 用的是 TimSort（归并+插入的混合算法）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>快速排序</td><td>O(n log n)</td><td>O(n²)</td><td>O(log n)</td><td>不稳定</td><td>选 pivot，分区递归</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>快速排序细节：</strong>
+<p>选一个基准值（pivot），将数组分为「小于 pivot」和「大于 pivot」两部分，然后递归排序两部分。最坏情况出现在待排序数组已经有序且 pivot 总选边界值，此时退化为 O(n²)。优化：随机选 pivot、三数取中法。</p>
+<p><strong>快排为什么在实际中比归并快？</strong>虽然同为 O(n log n)，但快排的常数小（原地交换，不需要额外数组），且缓存友好。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>堆排序</td><td>O(n log n)</td><td>O(n log n)</td><td>O(1)</td><td>不稳定</td><td>建堆 + 反复取堆顶</td></tr>
+<tr class="detail-tr"><td colspan="6"><div class="detail-content">
+<strong>堆排序细节：</strong>
+<p>建堆：从最后一个非叶子节点（n/2-1）开始向前遍历，每个节点做一次 siftDown。这一步是 O(n)，不是直觉上的 O(n log n)。然后依次将堆顶（最大值）与末尾交换，堆大小减 1，再 siftDown 新堆顶。</p>
+<p><strong>堆排序的缺点：</strong>虽然 O(n log n) 且原地排序，但实际慢于快排，因为跳跃访问不友好（父子节点 index 计算导致 cache miss 多）。</p>
+</div></td></tr>
+<tr><td>计数排序</td><td>O(n + k)</td><td>O(n + k)</td><td>O(k)</td><td>稳定</td><td>统计每个值出现次数</td></tr>
+<tr><td>桶排序</td><td>O(n + k)</td><td>O(n²)</td><td>O(n + k)</td><td>稳定</td><td>分桶 + 桶内排序</td></tr>
+<tr><td>基数排序</td><td>O(d(n + k))</td><td>O(d(n + k))</td><td>O(n + k)</td><td>稳定</td><td>按位排序，从低位到高位</td></tr>
+</table>
+</div>
+
+<h3 id="sort-compare">2. 算法选择策略</h3>
+
+<div class="highlight">
+<p><strong>通用场景 → 快速排序</strong>：实际最快，Java 的 <code>Arrays.sort(int[])</code> 使用双轴快排。</p>
+<p><strong>要求稳定 → 归并排序 / TimSort</strong>：Java 对象数组排序使用 TimSort（稳定）。</p>
+<p><strong>数据量小 → 插入排序</strong>：常数极小，快排递归到小数组时切换到插入排序。</p>
+<p><strong>范围有限 → 计数/桶/基数排序</strong>：O(n) 线性时间，但要求知道数据范围。</p>
+<p><strong>求 Top K → 堆排序思想</strong>：用小顶堆维护 K 个最大元素。</p>
+<p><strong>稳定性含义</strong>：相等元素的相对顺序在排序后保持不变。如按年龄排序后名字顺序不变。</p>
+</div>
+
+<h2 id="search">十一、查找算法</h2>
+
+<h3 id="binary-search">1. 二分查找</h3>
+
+<div class="highlight">
+<p><strong>前提</strong>：有序数组。时间复杂度 O(log n)。</p>
+<p><strong>边界条件</strong>：mid 的计算用 <code>left + (right - left) / 2</code> 而非 <code>(left + right) / 2</code>，防止整数溢出。</p>
+<p><strong>变体</strong>：查找第一个等于 target 的位置、最后一个等于 target 的位置、第一个大于等于 target 的位置（lower_bound）、第一个大于 target 的位置（upper_bound）。这些都是二分查找的面试高频变体。</p>
+<p><strong>Arrays.binarySearch()</strong>：Java 内置二分查找，未找到时返回 <code>-(insertionPoint + 1)</code>（负数表示应该插入的位置）。</p>
+</div>
+
+<h3 id="search-compare">2. 查找结构对比</h3>
+
+<div class="card">
+<table>
+<tr><th>结构</th><th>查找</th><th>插入</th><th>删除</th><th>有序</th><th>适用</th></tr>
+<tr><td>有序数组 + 二分</td><td>O(log n)</td><td>O(n)</td><td>O(n)</td><td>是</td><td>静态数据，极少插入删除</td></tr>
+<tr><td>二叉搜索树</td><td>O(log n) ~ O(n)</td><td>O(log n) ~ O(n)</td><td>O(log n) ~ O(n)</td><td>是</td><td>退化风险，需要平衡</td></tr>
+<tr><td>平衡二叉树(AVL/RBT)</td><td>O(log n)</td><td>O(log n)</td><td>O(log n)</td><td>是</td><td>读写均衡</td></tr>
+<tr><td>哈希表</td><td>O(1) ~ O(n)</td><td>O(1) ~ O(n)</td><td>O(1) ~ O(n)</td><td>否</td><td>等值查询，不需要有序</td></tr>
+<tr><td>跳表</td><td>O(log n)</td><td>O(log n)</td><td>O(log n)</td><td>是</td><td>并发有序查找</td></tr>
+<tr><td>B+ 树</td><td>O(log n)</td><td>O(log n)</td><td>O(log n)</td><td>是</td><td>磁盘存储，范围查询</td></tr>
+</table>
+</div>
+
+<h2 id="algo-complexity">十二、时空复杂度速查</h2>
+
+<div class="highlight">
+<p><strong>递归时间复杂度：Master 定理</strong></p>
+<p>对于 T(n) = a·T(n/b) + f(n)：</p>
+<ul>
+  <li>若 f(n) = O(n<sup>log_b a - ε</sup>) → T(n) = Θ(n<sup>log_b a</sup>)</li>
+  <li>若 f(n) = Θ(n<sup>log_b a</sup>) → T(n) = Θ(n<sup>log_b a</sup> · log n) ← 归并排序</li>
+  <li>若 f(n) = Ω(n<sup>log_b a + ε</sup>) → T(n) = Θ(f(n))</li>
+</ul><br>
+
+<p><strong>常见复杂度排序</strong></p>
+<p>O(1) < O(log n) < O(√n) < O(n) < O(n log n) < O(n²) < O(n³) < O(2^n) < O(n!)</p><br>
+
+<p><strong>常见算法的复杂度</strong></p>
+<table>
+<tr><th>操作</th><th>复杂度</th></tr>
+<tr><td>数组随机访问</td><td>O(1)</td></tr>
+<tr><td>链表查找</td><td>O(n)</td></tr>
+<tr><td>二叉搜索树查找（平衡）</td><td>O(log n)</td></tr>
+<tr><td>哈希表查找（无冲突）</td><td>O(1)</td></tr>
+<tr><td>二分查找</td><td>O(log n)</td></tr>
+<tr><td>快排/归并/堆排</td><td>O(n log n)</td></tr>
+<tr><td>建堆</td><td>O(n)</td></tr>
+<tr><td>堆插入/删除</td><td>O(log n)</td></tr>
+<tr><td>Dijkstra（二叉堆）</td><td>O((V+E) log V)</td></tr>
+</table>
+</div>
+
+<h2 id="coding-tips">十三、面试手撕代码 TIPS</h2>
+
+<div class="highlight">
+<ol>
+<li><strong>链表题</strong>：善用 dummy 头节点，简化边界（如删除头节点的情况）</li>
+<li><strong>链表题</strong>：快慢指针判断环、找中点（快指针走两步，慢指针走一步）</li>
+<li><strong>链表题</strong>：反转链表用 pre/cur/next 三指针</li>
+<li><strong>二叉树</strong>：递归是首选思路，栈模拟递归是加分项</li>
+<li><strong>二分查找</strong>：注意 while(left <= right) vs while(left < right)，return left vs right 的区别</li>
+<li><strong>滑动窗口</strong>：双指针 + HashMap/HashSet 维护窗口内状态</li>
+<li><strong>动态规划</strong>：定义 dp[i] 含义 → 找递推公式 → 初始化 → 确定遍历顺序</li>
+<li><strong>图的遍历</strong>：用 visited 数组/Set 防止重复访问</li>
+<li><strong>Top K</strong>：优先考虑堆，数据量大考虑分治/快速选择</li>
+<li><strong>LRU 缓存</strong>：HashMap + 双向链表，Java 中可直接用 LinkedHashMap</li>
+</ol>
+</div>
+
+</div>
+
+</body>
+</html>
