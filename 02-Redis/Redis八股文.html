@@ -445,6 +445,278 @@ sequenceDiagram
 </table>
 </div>
 
+<h3 id="four-3">3. Redisson 底层原理</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "Redisson 整体架构"
+        A["业务代码<br/>调用 RLock.lock()"] --> B["Redisson 客户端<br/>Netty 异步连接池"]
+        B --> C["Lua 脚本引擎<br/>原子执行锁逻辑"]
+        C --> D["Redis Server"]
+    end
+    subgraph "RLock 核心机制"
+        E["加锁：Hash 结构<br/>key → {threadId: count}"]
+        F["续期：看门狗 Watchdog<br/>定时刷新 TTL"]
+        G["释放：Lua 脚本<br/>count-- → count==0 则 DEL"]
+        H["等待：Pub/Sub + 信号量<br/>锁释放通知 → 唤醒竞争线程"]
+    end
+</div>
+
+<div class="highlight">
+<strong>Redisson</strong> 是 Redis 官方推荐的 Java 客户端之一，不仅封装了 Redis 基础命令，更实现了 JUC（java.util.concurrent）接口规范的分布式版本——RLock（分布式锁）、RReadWriteLock（读写锁）、RSemaphore（信号量）、RCountDownLatch（闭锁）等。底层通信基于 Netty，锁逻辑全部通过 Lua 脚本在 Redis 中原子执行。
+</div>
+
+<h4>3.1 RLock 可重入分布式锁的数据结构</h4>
+
+<div class="card">
+<strong>核心数据结构：Hash</strong><br/><br/>
+Redisson 的可重入锁使用 Redis <strong>Hash</strong> 结构存储，而非简单的 String：
+<pre><code>Key（锁的名称）: "myLock"
+
+Hash fields（Hash 字段）:
+  field = "线程ID:连接ID"  →  value = 重入次数
+
+例如：
+  myLock → {
+    "9f3a2b1c-1:123" : 1       // 线程1第一次获取：重入计数=1
+  }
+
+同一线程再次 lock() → value 变为 2（可重入）
+线程 unlock() → value 变为 1 → unlock() → value 变为 0 → 删除 key（释放锁）</code></pre>
+
+<strong>为什么用 Hash 而不是 String？</strong>
+<ul>
+<li>Hash 天然支持"同一把锁存储多个字段"——每个线程的 threadId 作为一个 field，value 记录重入次数</li>
+<li>不同线程尝试获取同一把锁时，Hash 中有各自的 field，互不影响</li>
+<li>释放锁时先 deccrease 重入计数，只有计数归零才真正删除锁 key——完美支持可重入语义</li>
+</ul>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Hash 结构的精妙之处：</strong>
+<p>可重入锁的核心语义是：同一个线程可以多次获取同一把锁而不死锁。如果用 String（SET NX），每次都 SET 同一个 key，无法知道当前线程已经持有锁。用 Hash 后——field = 线程唯一标识（UUID + threadId 拼接），value = 重入计数器。每次 lock() 如果 field 已存在，只需 incrby value；每次 unlock() 只需 decr value，value = 0 时 del field，field 全部删完时 del key。</p>
+<p><strong>线程标识的生成：</strong>Redisson 使用 <code>UUID:threadId</code> 作为 field 名。UUID 在 RedissonClient 创建时生成一次（区分不同 JVM 实例），threadId 是当前线程的 ID（区分同一 JVM 内的不同线程）。这样即使两个 JVM 的 threadId 相同（如都是线程 1），UUID 也不同，不会冲突。</p>
+</div>
+
+<h4>3.2 加锁的 Lua 脚本详解</h4>
+
+<div class="mermaid">
+flowchart TD
+    A["线程调用 RLock.lock()"] --> B{"执行 Lua 脚本"}
+    B --> C{"锁 key 存在吗？"}
+    C -->|"不存在"| D["创建 Hash<br/>field=UUID:threadId<br/>value=1<br/>设置 TTL=30s"]
+    D --> E["启动看门狗<br/>定时续期"]
+    C -->|"存在"| F{"field 是当前线程吗？"}
+    F -->|"是（可重入）"| G["incrby value +1<br/>刷新 TTL"]
+    G --> E
+    F -->|"否（被其他线程持有）"| H["返回锁的剩余 TTL"]
+    H --> I["订阅锁释放通知<br/>(Pub/Sub 频道)"]
+    I --> J["Semaphore 阻塞等待"]
+    J --> K{"收到通知 / 超时"}
+    K -->|"重新尝试"| B
+</div>
+
+<div class="card">
+<strong>Redisson 加锁的核心 Lua 脚本（简化版）：</strong>
+<pre><code>-- KEYS[1] = 锁的 key，ARGV[1] = TTL(30s)，ARGV[2] = field(UUID:threadId)
+
+-- 如果锁不存在（不存在 or 刚好过期）→ 创建并加锁
+if (redis.call('exists', KEYS[1]) == 0) then
+    redis.call('hincrby', KEYS[1], ARGV[2], 1);   -- Hash field +1
+    redis.call('pexpire', KEYS[1], ARGV[1]);        -- 设置 TTL
+    return nil;  -- nil 表示加锁成功
+end;
+
+-- 如果锁存在且 field 是当前线程 → 可重入，计数+1
+if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then
+    redis.call('hincrby', KEYS[1], ARGV[2], 1);
+    redis.call('pexpire', KEYS[1], ARGV[1]);        -- 续期 TTL
+    return nil;  -- nil 表示加锁成功
+end;
+
+-- 锁被其他线程持有 → 返回剩余 TTL
+return redis.call('pttl', KEYS[1]);
+</code></pre>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Lua 脚本的三个关键设计点：</strong>
+<ol>
+<li><strong>返回 nil vs 返回数字：</strong>如果加锁成功，返回 nil（Java 端收到 null → 加锁成功）。如果失败，返回锁的剩余 TTL（毫秒）——Java 端收到一个数字 → 说明锁还被别人持有，还需要等多久。这个返回值决定了后续的等待策略。</li>
+<li><strong>可重入判断（hexists）：</strong>检查 Hash 中当前线程的 field 是否已存在。如果存在说明是同一线程再次获取锁——安全地 incrby +1 并刷新 TTL，不会死锁。</li>
+<li><strong>原子性保证：</strong>全部逻辑在一个 Lua 脚本中执行，Redis 单线程保证中间不会被其他命令插入。这意味着"判断锁不存在→创建锁→设置 TTL"是原子操作，不会出现"判断不存在但创建前被别人抢了"的竞态条件。</li>
+</ol>
+<strong>等待线程如何被唤醒——Pub/Sub + Semaphore 机制：</strong>
+<p>加锁失败后，Redisson 不是简单地 while(true) + sleep 轮询，而是：① 订阅一个专门的 Pub/Sub 频道（频道名 = "redisson_lock__channel:{" + lockName + "}"）；② 使用 Java 的 Semaphore(0) 阻塞当前线程；③ 当其他线程释放锁时，Redisson 会向该频道发布一条消息；④ 收到消息后 Semaphore.release() 唤醒阻塞线程；⑤ 被唤醒的线程重新尝试执行加锁 Lua 脚本。</p>
+<p>这比轮询高效得多——轮询消耗 CPU 且可能还要等待锁 TTL 剩余时间；Pub/Sub 实现了"被通知时才醒来"，几乎没有 CPU 开销。但 Redisson 也设置了等待时间上限，超时后自动醒来重新尝试（防止通知丢失）。</p>
+</div>
+
+<h4>3.3 看门狗（Watchdog）自动续期机制</h4>
+
+<div class="mermaid">
+sequenceDiagram
+    participant T as 业务线程
+    participant R as Redisson
+    participant Redis as Redis
+
+    T->>R: lock()
+    R->>Redis: Lua 脚本：创建锁(key,threadId,1)，TTL=30s
+    Redis-->>R: 加锁成功
+    R-->>T: 返回
+    R->>R: 启动看门狗定时任务<br/>(基于 Netty 时间轮)
+
+    loop 每隔 lockTimeout/3(即10s)
+        R->>Redis: Lua 脚本：<br/>if hexists(key, threadId) then pexpire(key, 30s) end
+        Redis-->>R: OK（续期成功）
+    end
+
+    T->>R: 业务执行完毕，unlock()
+    R->>R: 停止看门狗定时任务
+
+    Note over R: 如果 JVM 崩溃 → 看门狗停止 → TTL 到期 → 锁自动释放
+</div>
+
+<div class="card">
+<strong>看门狗的核心参数：</strong>
+<table>
+<tr><th>参数</th><th>默认值</th><th>含义</th></tr>
+<tr><td><strong>lockTimeout</strong></td><td>30000ms (30s)</td><td>锁的初始 TTL</td></tr>
+<tr><td><strong>续期间隔</strong></td><td>lockTimeout / 3 = 10s</td><td>每 10 秒续期一次，把 TTL 重新设为 30s</td></tr>
+<tr><td><strong>实现引擎</strong></td><td>Netty HashedWheelTimer</td><td>用时间轮实现高效定时任务调度</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>看门狗的续期 Lua 脚本（简化版）：</strong>
+<pre><code>-- KEYS[1] = 锁 key, ARGV[1] = TTL(30s), ARGV[2] = field(UUID:threadId)
+
+-- 只续期属于自己的锁
+if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then
+    redis.call('pexpire', KEYS[1], ARGV[1]);
+    return 1;  -- 续期成功
+end;
+return 0;  -- 锁已不存在（被释放/过期）
+</code></pre>
+
+<strong>为什么续期间隔是 lockTimeout / 3？</strong>
+<p>这是一个工程经验值。如果间隔太长（如 lockTimeout/1.5 = 20s），一旦一次续期失败（网络抖动），锁只剩下 10s 的 TTL，给予的容错窗口太小。如果间隔太短（如 lockTimeout/10 = 3s），频繁续期增加 Redis 负载。lockTimeout/3 = 10s 是在容错和负载之间的平衡——续期失败后有 20s（两次续期间隔 × 2 = TTL × 2/3）的容错窗口来重试。</p>
+
+<strong>看门狗什么时候不启动？</strong>
+<p>如果调用 lock() 时指定了 leaseTime（自定义过期时间），Redisson 不会启动看门狗——由调用者自己控制锁的生命周期。只有调用 <code>lock()</code>（不传参）或 <code>lock(-1, TimeUnit.MILLISECONDS)</code> 时，才会启动看门狗使用默认 30s TTL + 自动续期。这是有意设计的——如果业务明确知道锁只需要持有 5 秒（leaseTime=5s），就没必要续期。</p>
+
+<strong>看门狗 vs 自己设过期时间的场景选择：</strong>
+<ul>
+<li><strong>用看门狗（不设 leaseTime）：</strong>业务执行时间不确定，可能 1 秒可能 30 秒。看门狗保证"只要不崩溃，锁永远有效"</li>
+<li><strong>设 leaseTime：</strong>业务执行时间可预期（如 5 秒内一定完成）。更简单、无续期开销</li>
+<li><strong>银行场景建议：</strong>给 leaseTime 一个合理的上限（如 60s）+ 看门狗兜底。即使业务正常执行不超过 60s，也要防止极端情况（如 GC 停顿导致的执行时间暴增）</li>
+</ul>
+
+<strong>Netty 的时间轮（HashedWheelTimer）——看门狗的底层实现：</strong>
+<p>看门狗需要一个定时任务调度器来周期性地执行续期。Redisson 使用 Netty 的 HashedWheelTimer（时间轮），而非 JDK 的 ScheduledExecutorService（优先队列 + 堆）。时间轮的优势：添加/取消定时任务 O(1)（将任务放到对应槽位的链表中），而堆是 O(logN)。对于可能有大量锁（成千上万把）的场景，时间轮的延迟更低、CPU 开销更稳定。</p>
+<p>时间轮原理：将一个时间周期（如 10 秒）切分为 N 个槽（如 100 个槽，每个 100ms）。指针每 100ms 前进一个槽，到达某个槽时执行该槽链表中的所有任务。多周期任务（如每隔 10s 执行）通过"rounds"字段处理——指针经过一格时 rounds--，rounds=0 才执行。</p>
+</div>
+
+<h4>3.4 释放锁的 Lua 脚本详解</h4>
+
+<div class="card">
+<strong>Redisson 释放锁的 Lua 脚本（简化版）：</strong>
+<pre><code>-- KEYS[1] = 锁 key, KEYS[2] = Pub/Sub 频道, ARGV[1] = 解锁消息
+-- ARGV[2] = TTL(30s), ARGV[3] = field(UUID:threadId)
+
+-- 锁不存在 → 返回 nil（说明不需要释放）
+if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then
+    return nil;
+end;
+
+-- 重入计数 -1
+local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1);
+
+if (counter > 0) then
+    -- 重入计数 > 0 → 还没完全释放，只续期
+    redis.call('pexpire', KEYS[1], ARGV[2]);
+    return 0;
+else
+    -- 重入计数 = 0 → 完全释放，删除锁
+    redis.call('del', KEYS[1]);
+    -- 发布释放消息，通知等待的线程
+    redis.call('publish', KEYS[2], ARGV[1]);
+    return 1;
+end;
+</code></pre>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>释放锁的三个步骤：</strong>
+<ol>
+<li><strong>安全检查：</strong>先 hexists 判断这个 field 是否是当前线程的。如果不是 → 返回 nil（说明锁已经过期被释放了，或根本不是自己的锁）→ Java 端收到 null 抛出 IllegalMonitorStateException。注意：这个检查只能防"释放别人的锁"的 bug，不能防安全攻击（攻击者可以伪造 field 名）。</li>
+<li><strong>重入计数递减：</strong>hincrby -1。如果减到 0 → 说明当前线程完全释放了锁 → 删除 key。如果还 > 0 → 说明还有嵌套的 lock() 没释放 → 只续期 TTL（防止看门狗续期期间锁过期）。</li>
+<li><strong>通知等待者：</strong>真正释放锁（counter == 0 且 del 成功）后，向 Pub/Sub 频道发布一条消息。所有阻塞等待这把锁的线程都订阅了这个频道，收到消息后被唤醒（Semaphore.release()），重新竞争锁。</li>
+</ol>
+<strong>Pub/Sub 的可靠性问题：</strong>
+<p>Redis 的 Pub/Sub 是即发即忘的（fire-and-forget）——如果客户端断线期间发布了消息，该消息不会存储，重连后无法补收。Redisson 的处理方式是：等待线程设一个超时（基于锁的剩余 TTL），超时后自动醒来重新尝试——即使 Pub/Sub 消息丢了，也能通过超时轮询来兜底。这是"通知 + 轮询兜底"的经典模式。</p>
+</div>
+
+<h4>3.5 Redisson 的连接方式与性能</h4>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>Redisson</th><th>Jedis</th><th>Lettuce</th></tr>
+<tr class="row-expandable"><td><strong>底层网络</strong></td><td>Netty（异步 NIO）</td><td>BIO 连接池（同步阻塞）</td><td>Netty（异步 NIO）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>Netty 异步 NIO 的优势：</strong>Redisson 基于 Netty，使用 NIO（多路复用）连接 Redis。一个连接可以同时发送多个命令（pipeline，无需等第一个命令返回再发第二个），而 Jedis 的 BIO 连接一个线程一次只能发一个命令、阻塞等结果。高并发场景下 Redisson 能用更少的连接数达到更高的吞吐量。但注意：Redis 服务端是单线程的，所以"异步发送"的优势主要是减少了客户端的线程和连接数开销。</div></td></tr>
+<tr class="row-expandable"><td><strong>连接数需求</strong></td><td>低（异步复用）</td><td>高（每线程独占连接）</td><td>低（异步复用）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>分布式锁</strong></td><td>内置（RLock/看门狗/RedLock）</td><td>需手写</td><td>需手写或集成 Redisson</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>分布式集合</strong></td><td>内置（Map/Set/Queue/Semaphore等）</td><td>无</td><td>无</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>命令调用方式</strong></td><td>异步 + 响应式 + 同步</td><td>仅同步</td><td>异步 + 响应式 + 同步</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>Redisson 的三种调用模式：</strong>
+<ul><li><strong>同步：</strong>RLock.lock() → 阻塞等待结果</li>
+<li><strong>异步：</strong>RLock.lockAsync() → 返回 RFuture，可以 thenAccept/thenCompose 链式处理</li>
+<li><strong>响应式（Reactive）：</strong>基于 Project Reactor，完全非阻塞的编程模型</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Spring Boot 集成</strong></td><td>spring-boot-starter-data-redis<br/>默认使用 Lettuce<br/>Redisson 需独立引入 redisson-spring-boot-starter</td><td>spring-boot-starter-data-redis<br/>可配置为 Jedis</td><td>spring-boot-starter-data-redis<br/>默认客户端</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content"></div></td></tr>
+</table>
+<small style="color:var(--orange)">注意：Spring Boot 默认的 Redis 客户端是 <strong>Lettuce</strong>（Netty 异步），不是 Redisson。如果需要 Redisson 的分布式锁功能，需单独引入 redisson-spring-boot-starter。</small>
+</div>
+
+<h4>3.6 其他分布式组件简介</h4>
+
+<div class="card">
+<table>
+<tr><th>组件</th><th>JUC 对应</th><th>实现方式</th></tr>
+<tr class="row-expandable"><td><strong>RReadWriteLock</strong></td><td>ReentrantReadWriteLock</td><td>读锁支持共享（多个线程同时持有），写锁排他。Redis 端通过不同 key 实现</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>读写锁的实现原理：</strong>Redisson 的 RReadWriteLock 实际上创建两个 RLock——读锁（lockName + ":read_lock"）和写锁（lockName + ":write_lock"）。读锁的模式是 ReadWriteLockMode.READ——允许多个客户端同时获取读锁（Redis Hash 中记录多个 field，每个客户端一个）。写锁是排他的——只有一个客户端能持有。</br/>
+<strong>读锁可以升级为写锁吗？</strong>不支持。Redisson（和 JUC 一样）不支持读锁升级为写锁（会导致死锁——两个读线程都可能永久等待对方释放读锁）。但支持写锁降级为读锁（先获取写锁 → 再获取读锁 → 释放写锁 → 只保留读锁）。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>RSemaphore</strong></td><td>Semaphore</td><td>Redis String 存储可用许可数 + Lua 脚本原子增减</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>信号量的使用场景：</strong>限流控制——如"最多允许 10 个线程同时操作数据库"。与 RLock 的区别：RLock 的许可数是 1（互斥），RSemaphore 的许可数是 N（共享）。获取时 tryAcquire() 检查 String 值 > 0 则 decr，释放时 incr。需要注意：信号量没有看门狗机制，不会自动收回——需要有超时处理或手动释放逻辑。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>RCountDownLatch</strong></td><td>CountDownLatch</td><td>Redis String 存计数器 + Pub/Sub 通知</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>闭锁的典型场景：</strong>分布式任务的协调等待——如 5 个微服务各自完成数据预处理后，第 6 个服务才能开始汇总。每个服务完成后 countDown()（decr + publish 通知），汇总服务 await() 等待计数器归零。
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>Redisson 底层核心三要素：</strong><br/>
+① <strong>Hash 结构</strong>实现可重入：field=线程ID，value=重入次数<br/>
+② <strong>Lua 脚本</strong>原子执行：加锁/续期/释放全部在 Redis 中原子完成<br/>
+③ <strong>看门狗 Watchdog</strong>：基于 Netty 时间轮，每隔 lockTimeout/3 续期一次，JVM 崩溃自然停止→锁不会死锁<br/>
+④ <strong>Pub/Sub + Semaphore</strong>：等待线程订阅释放频道，收到通知后唤醒，不用轮询<br/><br/>
+<strong>面试话术模板：</strong>"Redisson 的可重入锁使用 Redis 的 Hash 结构存储——key 是锁名，field 是 UUID+线程ID，value 是重入次数。加锁/释放/续期全部通过 Lua 脚本原子执行。看门狗基于 Netty 时间轮实现，默认每 10 秒续期一次把 TTL 重置为 30 秒。等待线程通过 Pub/Sub 接收释放通知，用 Semaphore 阻塞而非轮询，效率更高。"
+</div>
+
 <!-- ============ 五、线程模型 ============ -->
 <h2 id="five-1">五、线程模型</h2>
 

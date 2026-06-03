@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#090d1a">
 <link rel="apple-touch-icon" href="../icon.svg">
 <title>上海银行科技岗面试 - 银行科技岗面试宝典</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <link rel="stylesheet" href="../styles.css">
 <style>
   :root { --page-accent: #06b6d4; }
@@ -80,7 +81,7 @@
 <h3>4. 招聘流程</h3>
 
 <div class="mermaid">
-flowchart LR
+graph LR
     A["① 网申<br/>(9月初开始)"] --> B["② 笔试<br/>(10月统一笔试)"]
     B --> C["③ 一面<br/>(技术面 20-30min)"]
     C --> D["④ 二面<br/>(半结构化+HR)"]
@@ -127,7 +128,7 @@ flowchart LR
 <h3 id="qa-mysql">Q1: MySQL 中 MVCC 原理是什么？用了什么数据结构？</h3>
 
 <div class="mermaid">
-flowchart TB
+graph TB
     subgraph "MVCC 核心数据结构"
         A["聚簇索引记录<br/>隐藏列: trx_id + roll_pointer"] --> B["Undo Log<br/>版本链"]
         A --> C["Read View<br/>可见性判断"]
@@ -162,7 +163,7 @@ flowchart TB
 <h3 id="qa-sync">Q2: synchronized 实现原理是什么？用了什么数据结构？</h3>
 
 <div class="mermaid">
-flowchart LR
+graph LR
     subgraph "synchronized 底层"
         A["Java 代码<br/>synchronized块"] --> B["字节码<br/>monitorenter / monitorexit"]
         B --> C["Monitor 对象<br/>(ObjectMonitor)"]
@@ -243,7 +244,7 @@ flowchart LR
 <h3 id="qa-redis">Q4: 你项目中 Redis 数据一致性问题怎么解决的？</h3>
 
 <div class="mermaid">
-flowchart TD
+graph TD
     A["写操作: 先更新 DB"] --> B["再删除 Cache"]
     B --> C{"删除成功?"}
     C -->|"成功"| D["完成"]
@@ -501,7 +502,1774 @@ graph TD
 • 面试反问环节问"应届生培养方案"体现长期发展意愿
 </div>
 
+<!-- ==================== 八、Java技术面真题 · 分模块详解 ==================== -->
+<h2 id="eight-1">八、上海银行 Java 技术面真题 · 分模块详解</h2>
+
+<div class="highlight">
+<strong>说明：</strong>以下 20 道题目来自上海银行校招真实面经，覆盖 SQL（8题）、Java（3题）、JVM（3题）、Linux（3题）、计算机网络（3题）五大模块。每题附详细答案 + 展开深度解析，面试前逐题过一遍即可。
+</div>
+
+<!-- ========== SQL 模块 ========== -->
+<h3 id="sql-module">（一）SQL 模块（8题）</h3>
+
+<h3>Q1: 数据库的索引用的什么数据结构？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "InnoDB 索引结构"
+        A["主键索引（聚簇索引）"] --> B["B+ 树"]
+        C["二级索引（非聚簇索引）"] --> B
+        D["自适应哈希索引（AHI）"] --> E["Hash 表"]
+    end
+    subgraph "B+ 树核心优势"
+        F["非叶子只存键 → 树矮 → IO 少"]
+        G["叶子双向链表 → 范围查询快"]
+        H["叶子存完整数据 → 主键查询一次到位"]
+    end
+</div>
+
+<div class="card">
+<strong>核心答案：</strong>InnoDB 主键索引使用 <strong>B+ 树</strong>，哈希索引使用 <strong>Hash 表</strong>。B+ 树叶子节点按照主键顺序存放整行数据，叶子之间通过双向指针连接形成有序链表——这使得等值查询和范围查询都能高效完成，且磁盘 IO 次数少（3-4 层即可覆盖千万级数据）。
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么 InnoDB 选择 B+ 树而不是其他数据结构？</strong>
+<ul>
+<li><strong>vs 哈希索引：</strong>哈希 O(1) 等值查询极快，但完全不支持范围查询（WHERE id > 100）、排序（ORDER BY）、模糊匹配（LIKE）。InnoDB 的自适应哈希索引（AHI）仅作为 B+ 树的补充——当某个数据页被频繁等值访问时，InnoDB 自动在内存中为它建立哈希索引，加速热点查询。</li>
+<li><strong>vs 二叉搜索树/红黑树：</strong>二叉树每个节点只有两个子节点，数据量大时树高极高（1000 万行 → 树高约 23 层），每次查询需要 ~23 次磁盘 IO。B+ 树每个节点是一个 16KB 的页，可以存放成百上千个索引键（扇出约 1170），高度通常仅 3-4 层。</li>
+<li><strong>vs B 树：</strong>B 树的非叶子节点也存储完整数据行，导致每个页能存的键更少、树更高。B+ 树非叶子节点只存键不存数据，单个页能放更多键，树更矮。且 B+ 树叶子节点的双向链表天然支持范围扫描，而 B 树需要中序遍历来回溯父节点。</li>
+</ul>
+<strong>B+ 树在 InnoDB 中的物理存储细节：</strong>
+<p>InnoDB 以 16KB 页为最小存储单位，每个页包含若干条记录。B+ 树的根页、分支页（内节点）、叶子页均以页的形式存储在表空间（.ibd 文件）中。叶子页之间通过 FIL 页头中的前后指针（previous page / next page）连接成双向链表。页内记录通过单向指针连接。当页满时触发页分裂（page split），当页太空时触发页合并（page merge）。</p>
+<strong>面试加分点：</strong>提一下 InnoDB 的自适应哈希索引（AHI）——它是自动的，不需要手动创建，当 InnoDB 检测到某个索引被频繁等值查询时，会在 buffer pool 中为热点页建哈希索引。可以通过 <code>SHOW ENGINE INNODB STATUS</code> 查看 AHI 命中率。
+</div>
+
+<h3>Q2: 索引失效的几个场景？</h3>
+
+<div class="card">
+<table>
+<tr><th>#</th><th>失效场景</th><th>原因</th><th>示例</th></tr>
+<tr class="row-expandable"><td>1</td><td>索引列使用<strong>函数或运算</strong></td><td>破坏了索引值，优化器无法匹配</td><td><code>WHERE YEAR(create_time)=2024</code></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>深入解析：</strong>索引存的是 create_time 列的原始值（如 '2024-03-15 10:30:00'），而 WHERE 条件是对 YEAR() 函数的结果（2024）进行判断。优化器看到的不是"create_time 在某个区间"，而是"某个函数计算后的值等于 2024"——完全无法利用 B+ 树的有序性。<br/>
+<strong>解决方案：</strong><code>WHERE create_time >= '2024-01-01' AND create_time < '2025-01-01'</code>——等价的范围条件，可以走索引。
+</div></td></tr>
+<tr class="row-expandable"><td>2</td><td><strong>左模糊</strong> LIKE</td><td>无法二分定位起点</td><td><code>WHERE name LIKE '%张三'</code></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>为什么 LIKE '张%' 可以走索引？</strong>因为 B+ 树按字典序排序，知道以"张"开头，可以直接在 B+ 树中定位到"张"的起始位置，然后向后扫描。而 '%张' 表示"以张结尾的任意字符串"——在字典序中"张"可能在任意位置（如"a张"、"b张"、"c张"），无法二分查找定位。<br/>
+<strong>面试加分：</strong>如果确实需要后缀模糊查询，可以建反向索引（把字符串反转后建索引），或者用全文索引（FULLTEXT）。
+</div></td></tr>
+<tr class="row-expandable"><td>3</td><td><strong>隐式类型转换</strong></td><td>MySQL 对索引列做了隐式函数转换</td><td><code>WHERE phone=13800138000</code>（phone 是 varchar）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>为什么是索引列被转换？</strong>MySQL 的隐式转换规则是：字符串和数字比较时，<strong>把字符串转为数字</strong>。所以 phone（varchar）被隐式 CAST 为数字——相当于 <code>WHERE CAST(phone AS SIGNED)=13800138000</code>，索引列上有了函数，索引失效。<br/>
+<strong>反过来不失效：</strong><code>WHERE id='100'</code>（id 是 int 型）——MySQL 把 '100' 转为数字 100，不会对 id 列做转换，索引正常。<br/>
+<strong>字符集不一致也会导致隐式转换：</strong>两个表的 JOIN 列字符集不同（如 utf8mb4 vs utf8），也会触发隐式转换导致索引失效。
+</div></td></tr>
+<tr class="row-expandable"><td>4</td><td><strong>!= / NOT IN / IS NOT NULL</strong></td><td>非等值无法精确定位区间</td><td><code>WHERE status != 1</code></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>分情况讨论：</strong>
+<ul><li><strong>!= 和 <>：</strong>大部分情况不走索引（因为"不等于 1"意味着大部分行都满足，优化器认为回表代价太高）。但如果结合其他等值条件，优化器可能走其他列的索引。</li>
+<li><strong>NOT IN：</strong>通常不走索引，且注意 NULL 陷阱——如果 NOT IN 的子查询结果中有 NULL，整个查询返回空。</li>
+<li><strong>IS NOT NULL：</strong>在某些情况下可以走索引（MySQL 5.6+ 对 IS NOT NULL 做了一定的索引优化），但通常不如 IS NULL 高效。</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td>5</td><td><strong>OR</strong> 条件中一侧无索引</td><td>优化器认为全表扫描更快</td><td><code>WHERE a=1 OR b=2</code>（b 没索引）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>优化策略：</strong>如果 OR 两侧各自有索引，MySQL 5.6+ 可以用 <strong>index_merge</strong>（索引合并）——在内存中用 bitmap 做并集运算。如果 OR 一侧无索引，改写成 UNION ALL：<code>SELECT * FROM t WHERE a=1 UNION ALL SELECT * FROM t WHERE b=2 AND a!=1</code>（让 a=1 走索引，b=2 全表扫描但只扫一次不重复 a=1 的部分）。
+</div></td></tr>
+<tr class="row-expandable"><td>6</td><td>联合索引<strong>不满足最左前缀</strong></td><td>跳过最左列，后续列无法二分定位</td><td>索引 (a,b,c)，只查 <code>WHERE b=2</code></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>最左前缀的核心原因：</strong>联合索引按 (a, b, c) 的顺序排序——先按 a 排，a 相同再按 b 排，b 相同再按 c 排。如果跳过 a 直接查 b，索引就不是有序的了，无法用二分查找定位起始位置。<br/>
+<strong>特殊情况——跳跃扫描（Index Skip Scan）：</strong>MySQL 8.0.13+ 引入了跳跃扫描优化——当联合索引的前导列基数很低（比如 a 只有 2-3 个不同值）时，优化器会自动拆成多个 a 等值条件分别扫描。但这不是通用的，不能依赖。
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试口诀：</strong>"函数 LIKE% 转类型，!= OR 没前缀"——六种场景一个字不落说出来，面试官会认为你基础扎实。
+</div>
+
+<h3>Q3: HAVING 关键字作用？</h3>
+
+<div class="mermaid">
+graph LR
+    A["WHERE age > 18"] --> B["过滤后 600 行"]
+    B --> C["GROUP BY dept_id 分组"]
+    C --> D["聚合: COUNT/SUM/AVG"]
+    D --> E["HAVING COUNT > 10 过滤"]
+</div>
+
+<div class="card">
+<table>
+<tr><th>对比维度</th><th>WHERE</th><th>HAVING</th></tr>
+<tr><td>过滤对象</td><td>原始数据<strong>行</strong></td><td>分组后的<strong>聚合结果</strong></td></tr>
+<tr><td>执行阶段</td><td>GROUP BY <strong>之前</strong></td><td>GROUP BY <strong>之后</strong></td></tr>
+<tr><td>能否用聚合函数</td><td><strong>不能</strong></td><td><strong>可以</strong>（COUNT/SUM/AVG 等）</td></tr>
+<tr><td>能否用列别名</td><td><strong>不能</strong>（WHERE 先于 SELECT 执行）</td><td><strong>可以</strong>（MySQL 扩展，非标准 SQL）</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>完整 SQL 的执行顺序（必背）：</strong>
+<p><code>FROM → ON → JOIN → WHERE → GROUP BY → 聚合函数计算 → HAVING → SELECT → DISTINCT → ORDER BY → LIMIT</code></p>
+<p>这个顺序可以解释很多现象：为什么 WHERE 不能用别名（SELECT 在后面执行，别名还没定义）→ 为什么 HAVING 可以用聚合函数（聚合函数在它前面计算）→ 为什么 ORDER BY 可以用别名（SELECT 在它前面执行）。</p>
+<strong>实战案例：</strong>
+<pre><code>-- 查询平均薪资 > 15000 的部门中，25 岁以上员工的平均薪资
+SELECT dept_id, AVG(salary) AS avg_sal
+FROM employee
+WHERE age > 25          -- ① 先过滤掉 ≤25 岁的
+GROUP BY dept_id        -- ② 按部门分组
+HAVING AVG(salary) > 15000  -- ③ 只保留均薪 > 15000 的部门
+ORDER BY avg_sal DESC;  -- ④ 按平均薪资降序排列</code></pre>
+<strong>HAVING 可以不用 GROUP BY 单独使用吗？</strong>
+<p>语法上可以（MySQL 允许），但这就退化为相当于 WHERE 了。标准 SQL 中 HAVING 应该和 GROUP BY 配对使用。面试中不建议提这种"语法糖"用法。</p>
+</div>
+
+<h3>Q4: 数据库优化了解过吗？</h3>
+
+<div class="mermaid">
+graph TD
+    A["数据库优化"] --> B["SQL 层面"]
+    A --> C["架构层面"]
+    A --> D["参数层面"]
+
+    B --> B1["合理建索引（覆盖索引 + 联合索引）"]
+    B --> B2["避免索引失效（函数/LIKE%/OR）"]
+    B --> B3["杜绝 SELECT *（覆盖索引失效）"]
+    B --> B4["深分页优化（延迟关联）"]
+    B --> B5["小表驱动大表 JOIN"]
+
+    C --> C1["读写分离（主写从读）"]
+    C --> C2["分库分表（水平+垂直）"]
+    C --> C3["冷热数据分离"]
+    C --> C4["引入缓存（Redis）"]
+
+    D --> D1["buffer_pool 调大"]
+    D --> D2["连接数 / 超时时间"]
+    D --> D3["慢查询阈值 long_query_time"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>五个优化层面逐一展开：</strong>
+
+<strong>① 建合适索引：</strong>
+<ul><li>为 WHERE / JOIN / ORDER BY / GROUP BY 的列建索引</li><li>高频查询考虑覆盖索引（把 SELECT 的列都包含在联合索引中，避免回表）</li><li>区分度低的列（如性别、状态）不建议单独建索引，但可以放在联合索引的最左列（利用其过滤后的数据再排序）</li><li>避免过多索引——索引占磁盘空间、拖慢写入速度（INSERT/UPDATE/DELETE 需要维护所有索引）</li></ul>
+
+<strong>② 优化 SQL 写法：</strong>
+<ul><li>杜绝 SELECT * → 一方面浪费网络带宽，另一方面破坏覆盖索引的可能性</li><li>避免索引失效场景（函数、前置 LIKE、隐式转换、OR 无索引）</li><li>多用 IN 代替多个 OR（MySQL 会对 IN 做优化）</li><li>大偏移量 LIMIT 用延迟关联改写</li><li>JOIN 时小表驱动大表，被驱动表关联列必须有索引</li></ul>
+
+<strong>③ 分库分表：</strong>
+<ul><li>垂直分库：按业务拆库（用户库、订单库、商品库），缓解单库并发压力</li><li>垂直分表：冷热字段分离（user 拆为 user_base + user_detail），减少单行大小，提高 buffer pool 利用率</li><li>水平分库分表：按分片键（如 user_id）hash 取模，解决单表数据量过大的问题（>500 万行考虑拆分）</li></ul>
+
+<strong>④ 读写分离：</strong>
+<ul><li>一主多从架构，写操作走主库、读操作走从库</li><li>需要处理主从延迟问题——对实时性要求高的读（如刚写入后立即读）仍需走主库</li><li>中间件方案：ShardingSphere-Proxy、MyCat、ProxySQL</li></ul>
+
+<strong>⑤ 参数调优：</strong>
+<ul><li><code>innodb_buffer_pool_size</code>：调大缓冲池（建议物理内存的 60-80%），减少磁盘 IO</li><li><code>slow_query_log</code> + <code>long_query_time</code>：开启慢查询日志，持续监控</li><li><code>max_connections</code>：根据业务并发量合理设置</li><li><code>innodb_flush_log_at_trx_commit</code>：强一致性设为 1，高并发可设为 2（但可能丢失 1 秒数据）</li></ul>
+</div>
+
+<h3>Q5: 怎么看 SQL 执行计划？</h3>
+
+<div class="card">
+<table>
+<tr><th>关键字段</th><th>含义</th><th>判断标准</th></tr>
+<tr class="row-expandable"><td><strong>type</strong></td><td>访问类型（最重要）</td><td>system > const > eq_ref > <strong>ref</strong> > <strong>range</strong> > index > <strong>ALL</strong></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>各类型详解：</strong>
+<ul><li><strong>const：</strong>主键或唯一索引等值查询，最多返回一行。最优。</li>
+<li><strong>eq_ref：</strong>JOIN 时被驱动表走主键/唯一索引。每个驱动行匹配至多一行，非常好。</li>
+<li><strong>ref：</strong>非唯一索引等值查询。可能返回多行，正常水平。</li>
+<li><strong>range：</strong>索引范围扫描（>、<、BETWEEN、IN）。可接受。</li>
+<li><strong>index：</strong>全索引扫描（扫整个索引树）。虽然用了索引但没有减少数据量，需优化。</li>
+<li><strong>ALL：</strong>全表扫描。需要优化的信号。</li></ul>
+</div></td></tr>
+<tr><td><strong>key</strong></td><td>实际使用的索引名</td><td>有值说明走了索引；NULL 说明没走</td></tr>
+<tr class="row-expandable"><td><strong>rows</strong></td><td>优化器预估扫描行数</td><td>越小越好。远大于实际返回行数 → 索引选择性差</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>rows 的局限性：</strong>rows 是基于统计信息的预估值，不是实际扫描行数。当统计信息过期时（表中数据大量变更后未执行 ANALYZE TABLE），rows 可能严重失准。通过 <code>SHOW INDEX FROM table</code> 查看索引基数（Cardinality），Cardinality 越接近表总行数，索引区分度越好。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Extra</strong></td><td>额外重要信息</td><td>Using index（好） | Using filesort（差） | Using temporary（差）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Extra 关键值解读：</strong>
+<ul><li><code>Using index</code>（好）：覆盖索引，不需要回表。</li>
+<li><code>Using index condition</code>（中等）：索引下推（ICP），在索引层过滤后再回表。</li>
+<li><code>Using where</code>（一般）：Server 层额外做了 WHERE 过滤。</li>
+<li><code>Using filesort</code>（坏）：需要额外排序——排序列没有索引，或排序方式无法利用索引。优化重点。</li>
+<li><code>Using temporary</code>（坏）：需要临时表（常见于 GROUP BY 和 ORDER BY 不同列、DISTINCT + ORDER BY 等场景）。严重影响性能。</li>
+<li><code>Using join buffer</code>（需关注）：JOIN 时被驱动表没走索引，数据被放入 join buffer。给被驱动表的 JOIN 列加索引。</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>key_len</strong></td><td>索引使用的字节数</td><td>越大说明联合索引中用到的列越多</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>key_len 实战用法：</strong>联合索引 (name VARCHAR(50), age INT, dept_id INT)，UTF-8MB4 编码下：<br/>
+- key_len=202 → 只用了 name 列（50×4+2=202）<br/>
+- key_len=206 → 用了 name + age（202+4=206）<br/>
+- key_len=210 → 用了完整三列（206+4=210）<br/>
+用这个可以验证最左前缀是否按预期生效。
+</div></td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>EXPLAIN 的三种用法：</strong>
+<ul><li><code>EXPLAIN SELECT ...</code>：查看执行计划（最常用）</li>
+<li><code>EXPLAIN FORMAT=JSON SELECT ...</code>：JSON 格式输出，包含优化器的成本估算（cost_info）和候选方案（considered_execution_plans）——面试提这个能体现深度</li>
+<li><code>EXPLAIN ANALYZE SELECT ...</code>（MySQL 8.0.18+）：实际执行 SQL 并输出每一步的真实耗时和实际返回行数，与估算的 rows 对比可以发现统计信息问题</li></ul>
+<strong>面试实战话术：</strong>"拿到一条慢 SQL，我先 EXPLAIN 看 type 是不是 ALL/index，然后看 key 有没有走索引，再看 rows 是否远大于实际返回行数，最后关注 Extra 有没有 filesort 和 temporary。如果没走索引，排查六大索引失效场景；如果走了索引但 rows 很大，考虑索引区分度是否够；如果出现 filesort，考虑给排序列加索引或改写 SQL。"
+</div>
+
+<h3>Q6: 怎么保持数据一致？</h3>
+
+<div class="mermaid">
+graph TD
+    A["数据一致性保证"] --> B["事务层面"]
+    A --> C["并发层面"]
+    A --> D["主从层面"]
+
+    B --> B1["ACID 四大特性"]
+    B --> B2["undo log（原子性/回滚）"]
+    B --> B3["redo log（持久性/崩溃恢复）"]
+
+    C --> C1["四种隔离级别"]
+    C --> C2["MVCC 多版本并发控制"]
+    C --> C3["行锁/间隙锁/表锁"]
+
+    D --> D1["binlog + redo log 两阶段提交"]
+    D --> D2["半同步复制"]
+    D --> D3["主从一致性校验（pt-table-checksum）"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>三个层面的一致性保障机制：</strong>
+
+<strong>1. 事务层面——单机数据一致性：</strong>
+<ul><li><strong>原子性（Atomicity）：</strong>通过 undo log 保证事务要么全部执行、要么全部回滚。undo log 记录修改前的旧数据，回滚时逆向操作恢复数据。</li>
+<li><strong>持久性（Durability）：</strong>通过 redo log（WAL 机制）保证事务提交后数据不丢失。即使系统崩溃，重启后通过 redo log 重放恢复已提交但未刷盘的数据。</li>
+<li><strong>一致性（Consistency）：</strong>由原子性+隔离性+持久性共同保证，加上数据库层面的约束（主键、外键、NOT NULL、CHECK）。</li></ul>
+
+<strong>2. 并发层面——多事务数据一致性：</strong>
+<ul><li><strong>隔离性（Isolation）：</strong>通过 MVCC + 锁实现。MVCC 负责快照读（普通 SELECT 读历史版本），Next-Key Lock 负责当前读（SELECT FOR UPDATE/UPDATE/DELETE 锁住范围防幻读）。</li>
+<li><strong>四种隔离级别：</strong>READ UNCOMMITTED（脏读）→ READ COMMITTED（不可重复读）→ REPEATABLE READ（InnoDB 默认，MVCC 基本解决幻读）→ SERIALIZABLE（完全串行）。</li>
+<li><strong>银行场景特别提示：</strong>金融核心系统（如账务、交易）通常选择 RR 或更高隔离级别，配合乐观锁（version 字段）或悲观锁（SELECT FOR UPDATE）保证并发安全。</li></ul>
+
+<strong>3. 主从层面——分布式数据一致性：</strong>
+<ul><li><strong>两阶段提交：</strong>保证 binlog 和 redo log 的一致性——redo prepare → 写 binlog → redo commit。如果 binlog 写完但 redo 未 commit 时崩溃，恢复时会检查 binlog 完整性并重新提交。</li>
+<li><strong>半同步复制：</strong>主库提交事务时等待至少一个从库确认收到 binlog 后才返回客户端成功。相比异步复制（主库不等待从库），减少了主从切换时的数据丢失风险。</li>
+<li><strong>主从一致性校验：</strong>使用 pt-table-checksum（Percona Toolkit）定期校验主从数据是否一致，发现不一致用 pt-table-sync 修复。</li></ul>
+
+<strong>面试加分句：</strong>"数据一致性是一个多层面的保证——事务 ACID 保证单机一致、MVCC+锁保证并发一致、两阶段提交+半同步复制保证主从一致。不存在万能的一致性方案，需要根据业务场景在一致性和性能之间权衡。"
+</div>
+
+<h3>Q7: Session 共享问题怎么实现？</h3>
+
+<div class="mermaid">
+graph TD
+    A["分布式 Session 方案"] --> B["方案①：Redis 集中存储<br/>(推荐)"]
+    A --> C["方案②：Session 复制<br/>(Tomcat 内置)"]
+    A --> D["方案③：Cookie 存储<br/>(简单但有风险)"]
+    A --> E["方案④：统一 Session 服务<br/>(大型系统)"]
+
+    B --> B1["Spring Session + Redis<br/>自动接管 HttpSession"]
+    B --> B2["优点：高性能、可扩展<br/>缺点：Redis 故障影响登录"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要 Session 共享？</strong>
+<p>单体应用部署多台机器 + Nginx 负载均衡后，用户的两次请求可能被分发到不同服务器。如果 Session 存储在服务器本地（Tomcat 内存），第二次请求到了第二台服务器上拿不到第一次登录时存的 Session，用户就被判定为未登录。这就是 Session 不共享的问题。</p>
+
+<strong>四种方案详细对比：</strong>
+
+<strong>方案① — Redis 集中存储（最推荐）：</strong>
+<ul><li>原理：所有服务器共享同一个 Redis，Session 统一读写 Redis</li>
+<li>实现：Spring Session + spring-session-data-redis，引入依赖后自动接管 HttpSession，对业务代码透明</li>
+<li>优点：高性能（Redis 内存操作）、支持分布式扩展、Session 独立于应用服务器（服务器重启不丢 Session）</li>
+<li>缺点：Redis 变成单点（需要 Redis 哨兵/集群保证高可用）、网络延迟（同机房-1ms 可忽略）</li>
+<li>配置关键：<code>spring.session.store-type=redis</code> + Session 过期时间合理设置</li></ul>
+
+<strong>方案② — Session 复制（Tomcat 内置）：</strong>
+<ul><li>原理：Tomcat 的 Session 复制机制，一台服务器创建/修改 Session 后广播给集群中所有其他服务器</li>
+<li>优点：内置支持，不需要额外中间件</li>
+<li>缺点：<strong>只适合小集群（3-5 台）</strong>——随着服务器数量增加，广播量呈 N² 增长，网络开销巨大；所有服务器都存全量 Session，内存浪费</li>
+</ul>
+
+<strong>方案③ — Cookie 存储：</strong>
+<ul><li>原理：Session 数据加密后存在客户端的 Cookie 中，每次请求自动携带</li>
+<li>优点：服务端完全无状态，架构最简单</li>
+<li>缺点：Cookie 有 4KB 大小限制（只适合存少量信息）；数据暴露在客户端有安全风险（需要加密+签名防篡改）；每次请求都携带增大网络开销</li>
+</ul>
+
+<strong>方案④ — 统一 Session 服务：</strong>
+<ul><li>原理：独立部署一个 Session 微服务，所有应用的登录/鉴权都走这个服务</li>
+<li>适合：大型微服务体系，多个独立应用需要单点登录（SSO）</li>
+<li>实现：基于 OAuth2.0 / JWT Token + 认证中心</li>
+</ul>
+
+<strong>面试话术模板：</strong>"我们项目用的是 Spring Session + Redis 方案。引入 spring-session-data-redis 后配置 session store type 为 redis 即可，对业务代码完全透明。Redis 我们做了哨兵模式保证高可用，Session 过期时间设为 30 分钟，同时在 Nginx 配置了 ip_hash 策略作为降级方案。"
+</div>
+
+<h3>Q8: 代理模式好处？</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph "静态代理"
+        A["客户端"] --> B["代理类<br/>(编译时生成)"]
+        B --> C["目标类"]
+        B -.->|"增强"| D["日志/权限/事务"]
+    end
+    subgraph "动态代理"
+        E["客户端"] --> F["JDK 动态代理<br/>(基于接口)"]
+        E --> G["CGLIB 代理<br/>(基于继承)"]
+        F --> H["目标类(接口实现)"]
+        G --> I["目标类(可无接口)"]
+    end
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>代理模式的核心价值——"增强而不侵入"：</strong>
+<p>代理模式在不修改原始类代码的前提下，为其增加额外的功能（日志记录、权限校验、事务管理、性能监控等）。这符合开闭原则（对扩展开放，对修改关闭），是 AOP（面向切面编程）的思想基础。</p>
+
+<strong>三种代理方式详解：</strong>
+
+<strong>1. 静态代理：</strong>
+<ul><li>编译时手动创建代理类，代理类和目标类实现同一接口</li><li>优点：实现简单直观，编译期确定代理关系，运行效率高</li><li>缺点：每个需要被代理的类都要手动写一个代理类 → 代码冗余、难以维护。如果 100 个 Service 都需要加日志，就要写 100 个代理类</li></ul>
+
+<strong>2. JDK 动态代理：</strong>
+<ul><li>运行时通过 <code>Proxy.newProxyInstance()</code> + <code>InvocationHandler</code> 动态生成代理类</li><li>核心限制：目标类<strong>必须实现接口</strong>——代理类实现与目标类相同的接口</li><li>原理：在 JVM 运行时动态生成一个实现了指定接口的代理类字节码，所有方法调用通过 InvocationHandler.invoke() 转发</li><li>Spring AOP 默认使用 JDK 动态代理（当目标类实现了接口时）</li></ul>
+
+<strong>3. CGLIB 动态代理：</strong>
+<ul><li>通过字节码技术（ASM）在运行时为目标类动态生成一个<strong>子类</strong>（继承目标类）</li><li>优点：目标类<strong>不需要实现接口</strong>，可以对普通类进行代理</li><li>限制：final 类和 final 方法不能被代理（因为无法继承/重写）</li><li>Spring AOP 中当目标类没有实现接口时，自动切换为 CGLIB</li></ul>
+
+<strong>面试关键总结：</strong>
+<ul><li>JDK 代理：基于接口，通过反射调用，创建代理对象快但执行略慢（反射有开销）</li><li>CGLIB 代理：基于继承，通过字节码生成子类，创建代理对象慢（需要生成字节码）但执行快（直接方法调用）</li><li>Spring Boot 2.x 开始默认使用 CGLIB（因为大多数 Service 类不需要定义接口）</li><li>代理模式最大的应用场景是 Spring AOP——@Transactional 事务管理就是通过 AOP 代理实现的</li></ul>
+</div>
+
+<div class="highlight">
+<strong>代理模式一句话：</strong>在不修改原代码的前提下增强功能（日志/事务/权限），实现解耦。静态代理编译生成、JDK 动态代理基于接口、CGLIB 基于继承。Spring AOP 的 @Transactional 就是通过代理实现的。
+</div>
+
+<!-- ========== Java 模块 ========== -->
+<h3 id="java-module">（二）Java 模块（3题）</h3>
+
+<h3>Q1: Java 创建多线程的方式？</h3>
+
+<div class="card">
+<table>
+<tr><th>方式</th><th>原理</th><th>特点</th></tr>
+<tr class="row-expandable"><td>① 继承 Thread 类</td><td>extends Thread，重写 run()</td><td>简单但单继承限制，不推荐</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<pre><code>class MyThread extends Thread {
+    @Override
+    public void run() {
+        System.out.println("线程运行中");
+    }
+}
+new MyThread().start();</code></pre>
+<strong>不推荐原因：</strong>Java 是单继承，继承了 Thread 就不能继承其他类了，扩展性差。且任务和线程耦合在一起，不符合"任务与执行分离"的设计原则。
+</div></td></tr>
+<tr class="row-expandable"><td>② 实现 Runnable 接口</td><td>implements Runnable，重写 run()</td><td>推荐。任务与线程分离，可复用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<pre><code>class MyTask implements Runnable {
+    @Override
+    public void run() {
+        System.out.println("任务执行中");
+    }
+}
+new Thread(new MyTask()).start();
+// 或 Lambda
+new Thread(() -> System.out.println("执行")).start();</code></pre>
+<strong>为什么推荐：</strong>Runnable 只是任务定义，可以交给多个 Thread、线程池、甚至其他执行器来执行。任务和线程解耦，符合单一职责原则。
+</div></td></tr>
+<tr class="row-expandable"><td>③ Callable + FutureTask</td><td>implements Callable，有返回值 + 可抛异常</td><td>需要返回值时使用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<pre><code>class MyCallable implements Callable&lt;String&gt; {
+    @Override
+    public String call() throws Exception {
+        Thread.sleep(1000);
+        return "执行结果";
+    }
+}
+FutureTask&lt;String&gt; ft = new FutureTask&lt;&gt;(new MyCallable());
+new Thread(ft).start();
+String result = ft.get();  // 阻塞等待获取结果</code></pre>
+<strong>Callable vs Runnable 的关键区别：</strong>
+<ul><li>Runnable.run() 无返回值，不抛受检异常</li>
+<li>Callable.call() 有返回值（泛型），可以抛 Exception</li>
+<li>FutureTask 同时实现了 Runnable 和 Future 接口，起到桥接作用——既能被 Thread 执行，又能通过 get() 获取返回值</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td>④ 线程池创建</td><td>通过 Executors 或 ThreadPoolExecutor</td><td>最佳实践，生产环境必须用</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<pre><code>// 不推荐：Executors（阿里规约禁止）
+ExecutorService pool = Executors.newFixedThreadPool(10);
+
+// 推荐：手动 new ThreadPoolExecutor
+ThreadPoolExecutor pool = new ThreadPoolExecutor(
+    5,                    // corePoolSize
+    10,                   // maximumPoolSize
+    60L, TimeUnit.SECONDS,// keepAliveTime
+    new LinkedBlockingQueue<>(100),  // workQueue
+    new ThreadPoolExecutor.CallerRunsPolicy()  // 拒绝策略
+);
+pool.execute(() -> System.out.println("任务执行"));</code></pre>
+<strong>为什么不推荐 Executors？</strong>
+<ul><li>newFixedThreadPool / newSingleThreadExecutor 使用无界 LinkedBlockingQueue → 任务堆积可能导致 OOM</li>
+<li>newCachedThreadPool 允许创建无限线程 → 高并发下大量线程导致 OOM</li>
+<li>阿里规约强制要求用 ThreadPoolExecutor 显式设置参数</li></ul>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试黄金回答：</strong>"实际开发中只用线程池（Runnable + ThreadPoolExecutor），不推荐直接 new Thread。继承 Thread 和实现 Runnable 都要手动创建销毁线程，而线程池复用线程、控制并发数、管理任务队列，是生产环境的最佳实践。"
+</div>
+
+<h3>Q2: 线程池原理、核心配置赋值？</h3>
+
+<div class="mermaid">
+graph TD
+    A["提交任务"] --> B{"corePoolSize 未满?"}
+    B -->|"是"| C["创建新线程执行"]
+    B -->|"否"| D{"队列已满?"}
+    D -->|"未满"| E["任务入队等待"]
+    D -->|"已满"| F{"maxPoolSize 未满?"}
+    F -->|"是"| G["创建新线程执行"]
+    F -->|"否"| H["执行拒绝策略"]
+</div>
+
+<div class="card">
+<strong>线程池 7 大参数（ThreadPoolExecutor 构造器）：</strong>
+<table>
+<tr><th>参数</th><th>含义</th><th>常用值</th></tr>
+<tr><td><strong>corePoolSize</strong></td><td>核心线程数（常驻线程）</td><td>CPU 密集型：CPU 核数+1<br/>IO 密集型：2×CPU 核数</td></tr>
+<tr><td><strong>maximumPoolSize</strong></td><td>最大线程数</td><td>≥ corePoolSize，一般设为核心线程数的 2-3 倍</td></tr>
+<tr><td><strong>keepAliveTime</strong></td><td>非核心线程空闲存活时间</td><td>60s 常见</td></tr>
+<tr><td><strong>unit</strong></td><td>keepAliveTime 时间单位</td><td>TimeUnit.SECONDS</td></tr>
+<tr><td><strong>workQueue</strong></td><td>阻塞队列（缓存等待任务）</td><td>LinkedBlockingQueue（有界！）/ ArrayBlockingQueue</td></tr>
+<tr><td><strong>threadFactory</strong></td><td>线程工厂（命名线程）</td><td>自定义，给线程起有意义的名字方便排查</td></tr>
+<tr><td><strong>handler</strong></td><td>拒绝策略</td><td>CallerRunsPolicy（推荐）</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>线程池运行流程（四个阶段）：</strong>
+<p>① 提交任务 → ② 当前线程数 < corePoolSize → 创建新线程执行（即使有空闲线程）<br/>
+③ 当前线程数 >= corePoolSize → 任务放入 workQueue 等待<br/>
+④ workQueue 满了 + 当前线程数 < maximumPoolSize → 创建非核心线程执行<br/>
+⑤ workQueue 满了 + 当前线程数 = maximumPoolSize → 执行拒绝策略</p>
+
+<strong>核心线程数怎么设置（面试高频）：</strong>
+<ul><li><strong>CPU 密集型任务（计算为主，极少 IO）：</strong>coreSize = CPU 核心数 + 1。因为 CPU 密集型任务几乎不阻塞，线程数超过 CPU 核心数会导致频繁上下文切换，反而降低性能。+1 是为了在某线程因缺页中断等原因暂停时，有一个备用线程顶上。</li>
+<li><strong>IO 密集型任务（网络/磁盘 IO 多，线程大部分时间在等待）：</strong>coreSize = 2 × CPU 核心数（或更高，取决于 IO 等待时间占比）。因为线程大部分时间在阻塞等待 IO，CPU 是空闲的，可以多开几个线程在 CPU 空闲时处理其他任务。</li>
+<li><strong>更精确的公式：</strong>核心数 = CPU 核心数 × (1 + IO 等待时间 / CPU 计算时间)。例如线程 50% 时间在等 IO → 核心数 = CPU 核数 × (1 + 0.5/0.5) = 2 × CPU 核数。</li>
+</ul>
+
+<strong>线程池与银行场景的结合：</strong>
+<p>银行系统中，线程池常用于批量任务处理（如日终跑批、批量短信通知）、异步日志写入、定时任务调度等。合理配置线程池可以避免任务堆积导致的服务不可用——例如支付接口调用超时后，如果线程池无界可能所有线程都被卡住。因此银行系统尤其需要注意：① 线程池配合超时熔断；② workQueue 必须设上限；③ 监控线程池状态（activeCount、queueSize、completedTaskCount）。</p>
+
+<strong>阿里规约中的线程池规范：</strong>
+<p>① 不允许使用 Executors 创建线程池（OOM 风险）→ 用 ThreadPoolExecutor<br/>
+② 线程池不允许使用无界队列（LinkedBlockingQueue 不设容量 = Integer.MAX_VALUE ≈ 无界）<br/>
+③ 线程池需要提供 ThreadFactory 给线程命名（方便排查问题）<br/>
+④ 任务执行需要加 try-catch，防止异常导致线程退出</p>
+</div>
+
+<h3>Q3: 线程池拒绝策略？</h3>
+
+<div class="card">
+<table>
+<tr><th>策略</th><th>行为</th><th>适用场景</th></tr>
+<tr class="row-expandable"><td><strong>AbortPolicy</strong><br/>（默认）</td><td>直接抛 RejectedExecutionException</td><td>需要感知任务被拒绝的场景</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>特点：</strong>最直接的拒绝方式——任务被拒后立即抛异常，调用方可以捕获并处理（如记录日志、告警、降级）。<br/>
+<strong>缺点：</strong>如果调用方没捕获异常，会导致上层业务异常（如 HTTP 请求返回 500）。<br/>
+<strong>适用：</strong>任务必须执行、不能丢失的场景。异常信息明确，便于排查问题。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>DiscardPolicy</strong></td><td>直接丢弃任务，不抛异常</td><td>允许丢失的次要任务（如非关键日志）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>最大风险：</strong>任务被静默丢弃——调用方不知道任务没被执行，也没有任何日志或异常提示。在银行场景中非常危险——如果支付通知被丢弃，用户和系统都不知情。<br/>
+<strong>使用建议：</strong>如果非要用，至少加日志记录（自定义一个包装策略，丢弃前 log.warn）。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>DiscardOldestPolicy</strong></td><td>丢弃队列中最旧的任务，重试当前任务</td><td>只关心最新任务，可丢弃历史</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>特点：</strong>"喜新厌旧"——抛弃队首（最早等待的任务），然后把当前任务加入队尾。<br/>
+<strong>风险：</strong>被丢弃的旧任务可能是关键任务（如先提交的支付请求被丢了），所以适用场景非常有限。一般只用于"最新数据最重要"的场景（如实时行情推送，旧行情没意义了）。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>CallerRunsPolicy</strong><br/>（推荐）</td><td>由提交任务的线程自己执行</td><td>通用场景，银行系统推荐</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>工作原理：</strong>线程池满了 → 不拒绝、不丢弃 → 由调用方线程（如 main 线程或 Tomcat 线程）自己执行这个任务。相当于"老板（调用方）自己干活"——牺牲了调用方的处理能力，但保证了任务不丢失。<br/>
+<strong>优点：</strong>① 任务不会丢失；② 调用方线程执行任务时不会接收新任务，相当于一种<strong>天然的流量控制和背压机制</strong>；③ 系统不会因为任务堆积而完全崩溃。<br/>
+<strong>缺点：</strong>调用方线程被占用期间无法处理其他请求，可能影响整体吞吐量。<br/>
+<strong>银行场景推荐理由：</strong>金融系统中数据的完整性高于吞吐量——"慢一点可以，但丢了不行"。CallerRunsPolicy 在系统过载时提供了一种优雅降级方式。
+</div></td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>如何选择拒绝策略——银行系统视角：</strong>
+<p>① <strong>核心交易类（支付、转账）：</strong>AbortPolicy + 异常监控告警。任务拒绝就是系统容量问题了，必须人工介入。</p>
+<p>② <strong>普通异步任务（短信通知、日志写入）：</strong>CallerRunsPolicy。允许调用方线程自己执行，牺牲一点响应时间但保证任务不丢。</p>
+<p>③ <strong>非关键实时数据（监控指标采集、非核心统计）：</strong>DiscardOldestPolicy。如果系统已经过载，丢弃旧数据采集任务，保留最新的。</p>
+<p>④ <strong>DiscardPolicy：</strong>银行系统中几乎不使用——任何静默丢弃的行为都有合规风险。</p>
+
+<strong>自定义拒绝策略：</strong>
+<p>可以实现 RejectedExecutionHandler 接口，自定义拒绝逻辑。例如：</p>
+<ul><li>拒绝时写入数据库持久化，后续定时任务补偿</li>
+<li>拒绝时写入 MQ，由独立消费者处理</li>
+<li>拒绝时触发告警（企业微信/钉钉/邮件通知运维）</li></ul>
+</div>
+
+<div class="highlight">
+<strong>面试记忆口诀：</strong>"Abort 抛异常，Discard 静默丢，DiscardOldest 丢旧取新，CallerRuns 自己干。"<br/>
+<strong>银行推荐：</strong>CallerRunsPolicy >> AbortPolicy > DiscardOldestPolicy > DiscardPolicy（基本不用）
+</div>
+
+<!-- ========== JVM 模块 ========== -->
+<h3 id="jvm-module">（三）JVM 模块（3题）</h3>
+
+<h3>Q1: JVM 内存分区 & 存储内容？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "线程私有（随线程生灭）"
+        A["程序计数器<br/>当前执行行号，唯一无 OOM"]
+        B["虚拟机栈<br/>局部变量、方法调用栈帧"]
+        C["本地方法栈<br/>native 方法调用"]
+    end
+    subgraph "线程共享（GC 主战场）"
+        D["堆 Heap<br/>对象实例、数组，GC 主战场"]
+        E["元空间 MetaSpace<br/>类信息、常量、静态变量"]
+    end
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>五大内存区域逐一详解：</strong>
+
+<strong>① 程序计数器（Program Counter Register）：</strong>
+<ul><li>存储内容：当前线程正在执行的字节码指令的<strong>行号</strong></li>
+<li>特点：JVM 规范中唯一没有规定 OOM 的区域</li>
+<li>作用：多线程切换时，每个线程需要记住自己执行到哪了——PC 寄存器就是记录这个位置的。线程恢复执行时从中断位置继续</li>
+</ul>
+
+<strong>② 虚拟机栈（JVM Stack）：</strong>
+<ul><li>存储内容：<strong>栈帧</strong>（Stack Frame），每个方法调用对应一个栈帧</li>
+<li>栈帧包含：局部变量表（基本类型 + 对象引用）、操作数栈、动态链接、方法返回地址</li>
+<li>常见异常：StackOverflowError（递归过深导致栈深度超过限制）、OutOfMemoryError（无法申请足够内存扩展栈）</li>
+</ul>
+
+<strong>③ 本地方法栈（Native Method Stack）：</strong>
+<ul><li>与虚拟机栈类似，但服务于 <strong>native 方法</strong>（用 C/C++ 写的本地方法）</li>
+<li>HotSpot 将本地方法栈和虚拟机栈合并，不单独区分</li>
+</ul>
+
+<strong>④ Java 堆（Heap）——最重要：</strong>
+<ul><li>存储内容：<strong>所有对象实例和数组</strong>（基本类型在栈上，引用类型对象在堆上）</li>
+<li>分区：新生代（Eden + Survivor S0 + Survivor S1） + 老年代（Old Gen）</li>
+<li>GC 主战场：Minor GC 回收新生代，Major/Full GC 回收老年代和整个堆</li>
+<li>JDK 8+ 的改进：字符串常量池从方法区移到了堆中</li>
+</ul>
+
+<strong>⑤ 元空间（MetaSpace，JDK 8+）：</strong>
+<ul><li>替代了 JDK 7 及之前的<strong>方法区（永久代 PermGen）</strong></li>
+<li>存储内容：类的元数据（类名、方法信息、字段信息）、运行时常量池、静态变量</li>
+<li>与永久代的关键区别：<strong>元空间使用本地内存（Native Memory），不再是 JVM 堆的一部分</strong>——不再受 -XX:MaxPermSize 限制，而是受系统可用内存限制。可以通过 <code>-XX:MaxMetaspaceSize</code> 限制</li>
+<li>Why 移出堆？永久代大小难以预测（不同项目的类数量和字符串常量差异大），经常导致 OOM: PermGen space。移出后用本地内存更灵活</li>
+</ul>
+
+<strong>银行面试加分点——OOM 与内存区域的关系：</strong>
+<p>Heap space OOM → 堆内存不足（对象太多/内存泄漏）→ 排查大对象<br/>
+MetaSpace OOM → 动态生成类太多（CGLIB 代理类、反射）→ 排查类加载<br/>
+StackOverflow → 递归太深或栈太小 → 排查递归逻辑或调大 -Xss<br/>
+Unable to create new native thread → 线程数超系统限制 → 减少线程或调大系统 ulimit</p>
+</div>
+
+<h3>Q2: 自动装箱拆箱？</h3>
+
+<div class="card">
+<table>
+<tr><th>操作</th><th>方向</th><th>底层方法</th><th>示例</th></tr>
+<tr class="row-expandable"><td><strong>装箱</strong></td><td>基本类型 → 包装类</td><td><code>Integer.valueOf(int)</code></td><td><code>Integer i = 100;</code></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>valueOf 的缓存机制（-128 ~ 127）：</strong>
+<pre><code>public static Integer valueOf(int i) {
+    if (i >= IntegerCache.low && i <= IntegerCache.high)
+        return IntegerCache.cache[i + (-IntegerCache.low)];
+    return new Integer(i);
+}</code></pre>
+<p>Integer 内部维护了一个 IntegerCache，默认缓存 -128 到 127 的所有 Integer 对象。在这个范围内的装箱操作<strong>不会创建新对象</strong>，而是直接从缓存中取。这就是为什么：</p>
+<pre><code>Integer a = 100, b = 100;
+System.out.println(a == b);  // true（同一个缓存对象）
+Integer c = 200, d = 200;
+System.out.println(c == d);  // false（超出缓存范围，new 了两个不同对象）</code></pre>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>拆箱</strong></td><td>包装类 → 基本类型</td><td><code>Integer.intValue()</code></td><td><code>int j = i;</code></td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>拆箱的 NPE 陷阱：</strong>
+<pre><code>Integer i = null;
+int j = i;  // NullPointerException！拆箱时调用 i.intValue()，但 i 是 null</code></pre>
+<p>银行开发中常见场景：数据库查询返回的字段可能为 NULL，如果用 Integer 接收后在逻辑中做拆箱操作（如 > < 比较、加减运算），必须判空。阿里规约要求所有 POJO 属性用包装类型、RPC 返回值用包装类型，但使用前要判空。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>常见包装类的缓存范围：</strong>
+<ul><li><strong>Byte / Short / Integer / Long：</strong>缓存 -128 ~ 127</li>
+<li><strong>Character：</strong>缓存 0 ~ 127（ASCII 字符）</li>
+<li><strong>Boolean：</strong>缓存 TRUE 和 FALSE 两个常量</li>
+<li><strong>Float / Double：</strong><strong>没有缓存</strong>（浮点数取值无限，缓存意义不大）</li></ul>
+
+<strong>面试陷阱题——三目运算符中的拆箱：</strong>
+<pre><code>Integer i = null;
+Object o = true ? i : 0;  // 三目运算符要求两个分支类型一致
+// 这里 0 是 int，i 被自动拆箱为 int → NPE！</code></pre>
+<p>三目运算符要求返回类型一致——如果一个是基本类型（0 是 int），另一个的包装类型会被自动拆箱。如果包装类型恰为 null → NPE。解决方案是让两个分支类型一致：<br/>
+<code>Object o = true ? i : Integer.valueOf(0);</code></p>
+
+<strong>包装类的实际使用场景：</strong>
+<ul><li>泛型：List&lt;Integer&gt; 不能用 List&lt;int&gt;（泛型不支持基本类型）</li><li>数据库 NULL 值：POJO 中的字段用 Integer/Long 等包装类型，因为数据库字段可能为 NULL</li><li>RPC 返回值：远程调用后字段可能为 NULL</li><li>反射调用：反射中获取和设置字段值只能用 Object，无法用基本类型</li></ul>
+</div>
+
+<h3>Q3: Spring 容器启动流程？</h3>
+
+<div class="mermaid">
+graph TD
+    A["加载配置 XML/注解"] --> B["扫描 BeanDefinition"]
+    B --> C["实例化 Bean 反射创建"]
+    C --> D["依赖注入 Autowired"]
+    D --> E["初始化回调 PostConstruct"]
+    E --> F["容器就绪"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Spring 容器启动的六大步骤详解：</strong>
+
+<strong>① 加载配置：</strong>
+<p>读取配置文件（XML、注解 @Configuration、或 properties/yaml）。对于 Spring Boot，从 application.yml 和 @SpringBootApplication 注解开始解析。这个阶段确定了要扫描哪些包、加载哪些配置类。</p>
+
+<strong>② 扫描 BeanDefinition：</strong>
+<p>Spring 通过 @ComponentScan 扫描指定包路径下的所有类，找到带 @Component、@Service、@Repository、@Controller 等注解的类，以及 @Bean 方法返回的对象。每个 Bean 被包装成一个 <strong>BeanDefinition</strong> 对象，包含：Bean 的类名、作用域（singleton/prototype）、是否懒加载、依赖关系、初始化/销毁方法等元信息。所有 BeanDefinition 注册到 BeanDefinitionRegistry（一个 ConcurrentHashMap）中。</p>
+
+<strong>③ 实例化 Bean（通过反射）：</strong>
+<p>遍历 BeanDefinition 列表，通过<strong>反射</strong>（Class.newInstance() 或 Constructor.newInstance()）创建 Bean 实例对象。此时对象属性还未赋值，只是一个"空壳"对象。</p>
+<p>这个阶段只是创建对象，不做依赖注入。Spring 会处理循环依赖——通过<strong>三级缓存</strong>（singletonFactories → earlySingletonObjects → singletonObjects）来解决构造器循环依赖以外的情况。</p>
+
+<strong>④ 依赖注入（DI）：</strong>
+<p>给实例化后的 Bean 填充属性——解析 @Autowired、@Value、@Resource 等注解，从容器中找到对应的依赖 Bean 并注入。注入方式优先级：构造器注入 > setter 注入 > 字段注入（反射直接设置字段）。Spring 官方推荐构造器注入（不可变、不依赖反射、方便测试）。</p>
+
+<strong>⑤ 初始化回调：</strong>
+<p>Bean 属性填充完成后，按以下顺序执行初始化回调：<br/>
+① @PostConstruct 注解的方法<br/>
+② InitializingBean 接口的 afterPropertiesSet() 方法<br/>
+③ @Bean(initMethod = "xxx") 指定的方法</p>
+<p>这个阶段可以做：数据预热（把数据库数据加载到缓存）、资源初始化（连接池预热）、启动后自检等。</p>
+
+<strong>⑥ 容器就绪：</strong>
+<p>Spring 容器完全初始化完成，发布 ContextRefreshedEvent 事件。可以通过监听这个事件（ApplicationListener 或 @EventListener）来执行一些"所有 Bean 都就绪后"的操作。</p>
+
+<strong>面试加分——三级缓存解决循环依赖：</strong>
+<p>一级缓存 singletonObjects（成品池）→ 二级缓存 earlySingletonObjects（半成品池）→ 三级缓存 singletonFactories（半成品工厂）。A 依赖 B、B 依赖 A 时：创建 A → 发现需要 B → 把 A 的半成品工厂放入三级缓存 → 创建 B → 发现需要 A → 从三级缓存获取 A 的半成品 → B 注入 A 半成品 → B 初始化完毕 → A 注入成品 B → A 初始化完毕。三级缓存是 Spring 解决循环依赖的核心设计。</p>
+</div>
+
+<!-- ========== Linux 模块 ========== -->
+<h3 id="linux-module">（四）Linux 模块（3题）</h3>
+
+<h3>Q1: 查看系统资源使用？</h3>
+
+<div class="card">
+<table>
+<tr><th>资源类型</th><th>命令</th><th>关键信息</th></tr>
+<tr class="row-expandable"><td>整体负载</td><td><code>top</code> / <code>htop</code></td><td>CPU 使用率、内存使用率、负载均值（load average）、进程列表</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>top 输出关键指标解读：</strong>
+<ul><li><strong>load average：</strong>三个值分别是 1 分钟、5 分钟、15 分钟的 CPU 平均负载（正在运行 + 等待运行的进程数）。如果 1 分钟值突然 > CPU 核心数，说明系统正在过载。</li>
+<li><strong>us（user）：</strong>用户态 CPU 占比——应用代码消耗的 CPU。如果 us 持续很高，说明应用计算密集。</li>
+<li><strong>sy（system）：</strong>内核态 CPU 占比——系统调用消耗。如果 sy 很高，可能是频繁的系统调用（如频繁 IO、大量线程切换）。</li>
+<li><strong>wa（iowait）：</strong>等待 IO 的 CPU 占比——如果 wa 很高，说明磁盘 IO 是瓶颈。</li>
+<li><strong>id（idle）：</strong>CPU 空闲率。</li>
+<li><strong>RES（resident memory）：</strong>进程实际占用的物理内存（不包含 swap）。</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td>内存</td><td><code>free -h</code></td><td>总内存（total）、已用（used）、空闲（free）、缓存（buff/cache）、可用（available）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>free -h 输出的关键理解：</strong>
+<ul><li><strong>free 和 available 的区别：</strong>free 是完全没有使用的内存；available 是 free + 可以被回收的缓冲/缓存（buff/cache）。判断内存是否够用，看 available 而非 free。Linux 会积极用空闲内存做文件缓存（buff/cache），这部分在内存紧张时可以释放。</li>
+<li><strong>swap：</strong>如果 swap 的 used 值持续增长，说明物理内存不够了，系统开始用磁盘当内存——性能会急剧下降。</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td>磁盘</td><td><code>df -h</code></td><td>文件系统、总大小、已用、可用、挂载点</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>补充命令：</strong>
+<ul><li><code>du -sh /path/*</code>：查看某个目录下各子目录的大小（对比 df 是看整个文件系统）</li>
+<li><code>iostat -x 1</code>：查看磁盘 IO 详情——await（平均响应时间）、%util（磁盘繁忙度）。util 持续 100% 说明磁盘 IO 瓶颈</li>
+<li><code>lsblk</code>：列出所有块设备（磁盘、分区）的树状结构</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td>网络</td><td><code>netstat -tlnp</code> / <code>ss -tlnp</code></td><td>监听端口、协议、进程名/PID</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>ss 替代 netstat：</strong>现代 Linux 推荐用 ss（Socket Statistics）代替 netstat，因为 ss 直接从内核获取 socket 信息，速度更快（尤其是大量连接时）。<br/>
+常用 ss 参数：
+<ul><li><code>ss -tlnp</code>：查看所有 TCP 监听端口</li>
+<li><code>ss -anp | grep :8080</code>：查看 8080 端口的连接状态</li>
+<li><code>ss -s</code>：socket 统计概要</li></ul>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试话术：</strong>"日常排查流程——先 top 看整体负载和 CPU/内存情况，如果 CPU 高用 top -Hp PID 看哪个线程在消耗；如果内存不够用 free -h + jmap 看是不是堆太大；如果磁盘告警用 df -h + du -sh 找大文件；如果网络异常用 ss/netstat 看连接状态。"
+</div>
+
+<h3>Q2: 进程和线程的区别？</h3>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>进程（Process）</th><th>线程（Thread）</th></tr>
+<tr class="row-expandable"><td>定义</td><td>资源分配的最小单位</td><td>CPU 调度的最小单位</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>为什么是这样定义的？</strong>操作系统给每个进程分配独立的虚拟地址空间、文件描述符表、信号处理等资源——进程是"持有资源的实体"。而 CPU 是按线程粒度来调度的——一个进程可以有多个线程，CPU 轮流执行这些线程。因此"资源分配看进程，CPU 调度看线程"。
+</div></td></tr>
+<tr class="row-expandable"><td>内存</td><td>每个进程拥有<strong>独立的虚拟地址空间</strong></td><td>同一进程内的线程<strong>共享</strong>进程的地址空间（堆、全局变量、文件句柄）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>线程共享 vs 独享：</strong>
+<ul><li>线程共享：堆、全局变量、静态变量、文件描述符、信号处理器、代码段</li>
+<li>线程独享：栈（每个线程有自己的调用栈）、程序计数器、寄存器、线程局部存储（TLS）</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td>通信方式</td><td>IPC（管道、消息队列、共享内存、Socket）</td><td>直接读写共享内存（堆中对象），但需注意线程安全</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>进程间通信（IPC）的几种方式：</strong>
+<ul><li><strong>管道（Pipe）：</strong>半双工，父子进程间使用（如 Linux 命令的 | 操作符）</li><li><strong>消息队列：</strong>消息的链表，存放在内核中，独立于进程生命周期</li><li><strong>共享内存：</strong>最快的 IPC 方式——直接映射同一块物理内存到多个进程的虚拟地址空间。但需要配合信号量等同步机制</li><li><strong>Socket：</strong>不仅可以用于网络通信，也可以用于本机进程间通信（Unix Domain Socket）</li><li><strong>信号（Signal）：</strong>异步通知机制，如 kill -9 发送 SIGKILL</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td>创建/销毁开销</td><td>大（需分配独立地址空间 + PCB + 页表）</td><td>小（只需分配栈 + TCB + 寄存器）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>开销对比分析：</strong>创建进程需要复制父进程的地址空间（fork 时的写时拷贝优化可以减少复制，但仍需要建立页表映射），分配进程控制块（PCB），开销通常是毫秒级。创建线程只需要分配栈空间（通常 1MB）+ 线程控制块（TCB），开销是微秒级。在 Linux 中，线程实际上是轻量级进程（LWP），通过 clone() 系统调用创建，可以指定共享哪些资源。
+</div></td></tr>
+<tr class="row-expandable"><td>隔离性</td><td>强（一个进程崩溃不影响其他进程）</td><td>弱（一个线程崩溃可能导致整个进程退出）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>银行系统的选择：</strong>对于银行核心系统，隔离性非常重要。所以微服务通常部署为独立的 JVM 进程——一个服务 OOM 不会拖垮另一个。但在单个服务内部，使用线程池来处理并发请求以提高吞吐量。这是"进程做隔离，线程做并发"的经典实践。
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>一句话总结：</strong>进程是资源分配的最小单位（独享内存），线程是 CPU 调度的最小单位（共享进程资源、创建开销小）。<br/>
+<strong>面试金句：</strong>"进程之间就像不同家庭的房子——各住各的，互不影响；线程就像同一家里的不同成员——共享客厅厨房但有自己独立的卧室。"
+</div>
+
+<h3>Q3: 服务注册 & 发现？</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant S as 服务提供者 A
+    participant R as 注册中心<br/>(Nacos/Eureka)
+    participant C as 服务消费者 B
+
+    S->>R: ① 启动时注册：我是 A，IP=10.0.1.5:8080
+    R-->>S: ② 注册成功
+    R->>S: ③ 定时心跳检测（健康检查）
+    C->>R: ④ 拉取可用服务列表
+    R-->>C: ⑤ 返回：[A: 10.0.1.5:8080, A: 10.0.1.6:8080]
+    C->>S: ⑥ 根据负载均衡策略直接调用 A
+    Note over S,R: A 宕机时：心跳超时 → 注册中心剔除 A → 通知 C 更新列表
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么需要服务注册与发现？</strong>
+<p>单体应用时代，服务地址是固定的（写死在配置文件里）。微服务时代，服务实例数量是动态变化的——弹性伸缩会增加实例、容器重启会换 IP、灰度发布会有不同版本。如果还是硬编码服务地址，每次变更都要改配置重启，不可维护。</p>
+<p>服务注册与发现的核心思想：<strong>服务提供者把自己的地址告诉注册中心（注册），服务消费者从注册中心获取可用地址列表（发现），不再硬编码地址。</strong></p>
+
+<strong>主流注册中心对比：</strong>
+<table>
+<tr><th>组件</th><th>CAP</th><th>关键特点</th><th>银行系统适用性</th></tr>
+<tr><td><strong>Nacos</strong></td><td>CP + AP 可切换</td><td>阿里开源，同时支持服务发现 + 配置中心。CP 模式用 Raft 协议，AP 模式用 Distro 协议</td><td>推荐。阿里系成熟度高，国内银行使用广泛</td></tr>
+<tr><td><strong>Eureka</strong></td><td>AP（强调可用性）</td><td>Netflix 出品，自我保护模式（宁可保留坏节点也不错杀好节点）。已停止维护</td><td>不推荐新项目使用</td></tr>
+<tr><td><strong>Consul</strong></td><td>CP</td><td>Hashicorp 出品，健康检查强，支持多数据中心</td><td>国外使用多，国内较少</td></tr>
+<tr><td><strong>ZooKeeper</strong></td><td>CP</td><td>Apache 经典。强一致性但可用性弱（Leader 选举期间不可用）</td><td>曾经是 Dubbo 默认，现在被 Nacos 替代</td></tr>
+</table>
+
+<strong>健康检查的两种模式：</strong>
+<ul><li><strong>客户端心跳（Eureka 模式）：</strong>服务提供者定时向注册中心发送心跳（如每 30s 一次）。注册中心 N 秒未收到心跳就剔除该实例。这种模式对注册中心压力小，但可能误判（心跳断了但服务还能用）。</li>
+<li><strong>服务端探测（Consul/Nacos 模式）：</strong>注册中心主动探测服务提供者的健康端点（如 GET /actuator/health）。更准确（能判断服务是否真的健康），但对注册中心压力大。</li></ul>
+
+<strong>服务发现的两种模式：</strong>
+<ul><li><strong>客户端发现（Client-Side Discovery）：</strong>消费者从注册中心拉取服务列表，自己决定调用哪个实例（通过 Ribbon/LoadBalancer 做客户端负载均衡）。Spring Cloud + Nacos 就是这种模式。</li>
+<li><strong>服务端发现（Server-Side Discovery）：</strong>消费者通过中间代理（如 Nginx/K8s Service）调用服务提供者，代理层负责从注册中心获取列表并转发。K8s 的 Service + kube-proxy 就是这种模式。</li></ul>
+
+<strong>银行场景的特殊性——灰度发布与注册中心：</strong>
+<p>银行系统经常需要灰度发布（比如先在 10% 的实例上部署新版本，观察没问题再全量）。Nacos 支持通过元数据标签（如 version=v2）将服务实例分组，消费者根据标签选择调用哪些实例，配合网关实现流量染色和灰度路由。</p>
+</div>
+
+<!-- ========== 计算机网络模块 ========== -->
+<h3 id="network-module">（五）计算机网络（3题）</h3>
+
+<h3>Q1: TCP 位于哪一层？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "OSI 七层模型"
+        L7["应用层 HTTP/FTP/DNS"]
+        L6["表示层 数据格式转换/加密"]
+        L5["会话层 会话管理"]
+        L4["传输层 TCP/UDP"]
+        L3["网络层 IP/ICMP"]
+        L2["数据链路层 MAC/ARP"]
+        L1["物理层 比特流传输"]
+    end
+    subgraph "TCP/IP 四层模型"
+        A["应用层 (L7+L6+L5)"]
+        B["传输层 (L4)"]
+        C["网络层 (L3)"]
+        D["网络接口层 (L2+L1)"]
+    end
+    L4 -.-> B
+</div>
+
+<div class="card">
+<strong>核心答案：</strong>TCP 位于 <strong>OSI 七层模型的传输层（第 4 层）</strong>，也对应 <strong>TCP/IP 四层模型的传输层</strong>。传输层负责端到端的可靠数据传输，TCP 通过序列号/确认号、滑动窗口、拥塞控制等机制提供可靠的、面向连接的数据传输服务。
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>各层快速定位表：</strong>
+<table>
+<tr><th>层</th><th>OSI 模型</th><th>TCP/IP 模型</th><th>典型协议</th><th>数据单元</th></tr>
+<tr><td>7</td><td>应用层</td><td rowspan="3">应用层</td><td>HTTP、FTP、SMTP、DNS</td><td>报文（Message）</td></tr>
+<tr><td>6</td><td>表示层</td><td></td><td>TLS/SSL（加密解密）、数据格式转换</td><td></td></tr>
+<tr><td>5</td><td>会话层</td><td></td><td>会话建立/管理/终止</td><td></td></tr>
+<tr><td><strong>4</strong></td><td><strong>传输层</strong></td><td><strong>传输层</strong></td><td><strong>TCP、UDP</strong></td><td>段（Segment）</td></tr>
+<tr><td>3</td><td>网络层</td><td>网络层</td><td>IP、ICMP、ARP</td><td>包（Packet）</td></tr>
+<tr><td>2</td><td>数据链路层</td><td rowspan="2">网络接口层</td><td>MAC、以太网</td><td>帧（Frame）</td></tr>
+<tr><td>1</td><td>物理层</td><td></td><td>网线、光纤、无线电</td><td>比特（Bit）</td></tr>
+</table>
+
+<strong>为什么需要分层？</strong>
+<p>分层设计的核心思想——每一层只关心自己的职责，上层不需要知道下层怎么实现。例如浏览器（应用层）只负责 HTTP 协议的打包和解包，不需要关心数据怎么可靠地传过去（那是 TCP 的事），更不需要关心数据走哪条路由（那是 IP 的事）。这样每层独立演进：HTTP/1.1 升级到 HTTP/2，TCP 层完全不用改。</p>
+</div>
+
+<h3>Q2: HTTP 常用状态码？</h3>
+
+<div class="card">
+<table>
+<tr><th>状态码</th><th>含义</th><th>场景</th><th>排查思路</th></tr>
+<tr class="row-expandable"><td><strong>200 OK</strong></td><td>请求成功</td><td>GET 获取数据、POST 创建、PUT 更新成功</td><td>—</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+200 是最常见也是"没有问题"的状态码。但要注意：有些接口即使业务逻辑出错也返回 200（在响应 body 里用 code 字段区分），这种 anti-pattern 会增加前端和网关的处理复杂度。建议遵循 RESTful 规范用 4xx/5xx 表达错误。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>301 / 302</strong></td><td>重定向</td><td>301 永久重定向（浏览器缓存）<br/>302 临时重定向</td><td>检查 Location 头确定跳转目标</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>301 vs 302 的本质区别：</strong>301 表示资源<strong>永久</strong>迁移（如 HTTP→HTTPS、旧域名→新域名），浏览器会缓存这个重定向，下次直接跳转不发起原请求。302 表示<strong>临时</strong>跳转（如未登录跳登录页），浏览器不缓存，每次都会先访问原 URL。<br/>
+<strong>银行场景的注意：</strong>302 常用于 OAuth2.0 授权码模式——用户访问银行应用 → 302 跳转到统一认证中心 → 用户登录后 302 回调应用。确保 302 的跳转地址在安全域名白名单内，防止开放重定向漏洞。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>400 Bad Request</strong></td><td>请求参数错误</td><td>参数校验不通过、格式不符合要求</td><td>检查请求体格式和必填参数</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>400 vs 422：</strong>400 通常表示请求语法错误（如 JSON 格式不合法）；422 Unprocessable Entity 表示语法正确但语义错误（如必填字段为空、数值超出范围）。银行接口建议用 422 区分参数校验失败。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>401 Unauthorized</strong></td><td>未认证</td><td>未登录或 token 过期</td><td>检查 Authorization 头 / Cookie</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>401 vs 403：</strong>401 "你是谁我都不知道"（未认证）→ 需要先登录。403 "我知道你是谁，但你没权限"（已认证但未授权）→ 如普通用户访问管理员接口。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>403 Forbidden</strong></td><td>无权限</td><td>已认证但权限不足</td><td>检查角色和权限配置</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>银行系统的 403 场景：</strong>柜员尝试执行超级管理员操作、非本人查询他人账户详情、越权访问敏感数据。银行通常在网关层统一做权限校验，无权限直接返回 403 不路由到下游服务。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>404 Not Found</strong></td><td>资源不存在</td><td>URL 路径错误、数据 ID 不存在</td><td>检查 URL 拼写和资源 ID</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>安全建议：</strong>对不存在的资源返回 404 即可，<strong>不要</strong>返回"用户不存在" vs "密码错误"的不同提示——这会暴露用户名枚举漏洞。应该统一返回"用户名或密码错误"或 401。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>405 Method Not Allowed</strong></td><td>HTTP 方法不对</td><td>用 GET 调用只支持 POST 的接口</td><td>检查接口文档确认请求方法</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>500 Internal Server Error</strong></td><td>服务器内部错误</td><td>代码 bug、空指针、数据库异常</td><td>查服务端日志</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>银行系统对 500 的处理：</strong>① 必须记录错误堆栈到日志；② 返回给前端的信息<strong>不能</strong>包含堆栈或敏感信息（如 SQL 语句、IP 地址）→ 统一返回"系统繁忙，请稍后再试"；③ 触发告警通知运维；④ 做好全局异常处理（@ControllerAdvice + @ExceptionHandler）。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>502 Bad Gateway</strong></td><td>网关错误</td><td>网关收到上游服务的无效响应</td><td>检查上游服务是否存活</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+502 在微服务架构中非常常见——Nginx/Spring Cloud Gateway 作为网关，转发请求到后端微服务时，后端服务挂了或返回了不含标准的 HTTP 响应。排查步骤：① 确认后端服务是否启动；② 确认端口是否正确；③ 确认网关和服务之间的网络是否通。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>503 Service Unavailable</strong></td><td>服务不可用</td><td>服务器过载、停机维护</td><td>检查服务器状态和负载</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+503 通常有两种情况：① 主动维护——服务在发布/重启期间，返回 503 告知暂时不可用（配合 Retry-After 头）；② 被动过载——请求量超过处理能力，配合熔断器（如 Sentinel/Hystrix）快速失败返回 503，避免级联故障。
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试记忆口诀：</strong>"2 成 3 跳 4 你错 5 我错"——2xx 成功、3xx 重定向、4xx 客户端错误、5xx 服务端错误。<br/>
+<strong>必须脱口而出的 7 个：</strong>200 成功、301/302 重定向、400 参数错、401 未认证、403 无权限、404 找不到、500 服务端异常、502 网关错、503 不可用。
+</div>
+
+<h3>Q3: TCP 和 UDP 区别？</h3>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>TCP</th><th>UDP</th></tr>
+<tr class="row-expandable"><td>连接</td><td>面向连接（三次握手建立、四次挥手释放）</td><td>无连接（直接发送，无需建立连接）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>为什么 TCP 需要三次握手？</strong>"三次"是因为要确认双方的收发能力都正常——一次握手客户端确认服务器可达，二次握手服务器确认客户端可收到自己消息，三次握手客户端告诉服务器"我知道你能收到我的消息了"。两次握手无法防止失效的连接请求到达服务器导致服务器空等（历史连接问题）。
+</div></td></tr>
+<tr class="row-expandable"><td>可靠性</td><td>可靠（序列号+确认应答+超时重传+校验和）</td><td>不可靠（发了就不管，丢包不重传）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>TCP 如何保证可靠？</strong>四个机制：<br/>
+① 序列号与确认应答（Seq + Ack）——每个字节都有编号，接收方确认收到的字节<br/>
+② 超时重传——发送方在一定时间内没收到 ACK 就重传<br/>
+③ 流量控制（滑动窗口）——接收方告诉发送方自己还能收多少，防止发送过快撑爆接收方<br/>
+④ 拥塞控制（慢启动、拥塞避免、快重传、快恢复）——感知网络状况，防止过多数据注入网络
+</div></td></tr>
+<tr class="row-expandable"><td>速度</td><td>较慢（握手开销+确认机制+拥塞控制限速）</td><td>较快（无连接建立、无确认等待、无拥塞控制）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>UDP 为什么快？</strong>UDP 的包头只有 8 字节（TCP 20 字节），协议栈处理开销小。UDP 不需要维护连接状态（不需要 TCB），不需要保存发送窗口和接收窗口，不需要计时器管理。应用程序有数据直接往 socket 写，内核直接打包发送。但代价是没有任何可靠性保证。
+</div></td></tr>
+<tr class="row-expandable"><td>首部开销</td><td>20 字节（最少）</td><td>8 字节</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td>适用场景</td><td>文件传输、网页浏览、邮件、远程登录——需要数据完整性的场景</td><td>直播、视频通话、在线游戏、DNS 查询——实时性优先、允许少量丢包的场景</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>银行系统中 TCP/UDP 的使用：</strong>
+<ul><li>银行几乎所有的业务通信都用 TCP（HTTP/HTTPS、数据库连接、MQ 消息投递、RPC 调用），因为金融数据不能丢。</li><li>UDP 在银行系统中的使用非常有限——一般是 DNS 查询（域名解析，默认用 UDP）、NTP 时间同步（银行对时间戳要求极高）等基础协议。</li><li>偶尔有极低延迟交易场景（如量化交易行情推送）会用 UDP 组播，但要配合应用层做丢包补偿。</li></ul>
+</div></td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>TCP 三次握手详解：</strong>
+<pre>
+Client → Server: SYN=1, seq=x                    （"在吗？我想建立连接"）
+Server → Client: SYN=1, ACK=1, seq=y, ack=x+1    （"在的，我准备好了"）
+Client → Server: ACK=1, seq=x+1, ack=y+1          （"好的，开始传数据吧"）
+</pre>
+<ul><li>第一次握手：只是 Client 证明自己发送能力正常</li>
+<li>第二次握手：Server 证明自己收发正常 + Client 收到后证明自己收发都正常</li>
+<li>第三次握手：Server 收到后证明 Client 能收到自己的消息（双方收发能力都验证完毕）</li></ul>
+
+<strong>TCP 四次挥手详解：</strong>
+<pre>
+Client → Server: FIN=1, seq=u                （"我说完了，准备关"）
+Server → Client: ACK=1, seq=v, ack=u+1       （"知道了，等我收完"）
+Server → Client: FIN=1, ACK=1, seq=w, ack=u+1（"我也说完了，可以关了"）
+Client → Server: ACK=1, seq=u+1, ack=w+1     （"好的，再见"）
+Client 进入 TIME_WAIT 状态，等 2MSL 后关闭
+</pre>
+<p><strong>为什么是四次而不是三次？</strong>因为 TCP 是全双工的——双方都可以独立地发送和接收数据。Client 说"我说完了"只关闭了 Client→Server 的方向，Server 可能还有数据要发。所以 Server 先 ACK 表示"知道了"，等自己也发完了再发 FIN。这就是"两次控制消息、四次交互"。</p>
+
+<strong>TCP 拥塞控制的四个算法：</strong>
+<ul><li><strong>慢启动（Slow Start）：</strong>连接建立后，拥塞窗口 cwnd 从 1 开始，每收到一个 ACK 翻倍（指数增长），直到达到慢启动阈值 ssthresh</li>
+<li><strong>拥塞避免（Congestion Avoidance）：</strong>cwnd >= ssthresh 后，线性增长（每个 RTT +1），慢慢探测网络容量</li>
+<li><strong>快重传（Fast Retransmit）：</strong>收到 3 个重复 ACK 时（说明中间有一个包丢了），不等超时立即重传</li>
+<li><strong>快恢复（Fast Recovery）：</strong>快重传后不进入慢启动（不把 cwnd 降到 1），而是把 ssthresh 和 cwnd 都设为原来的一半，进入拥塞避免</li></ul>
+
+<strong>面试加分——TCP 粘包/拆包问题：</strong>
+<p>TCP 是流式协议，没有消息边界。发送方两次 write("Hello") 和 write("World") 可能被合并为一个 TCP 段发送（粘包），也可能被拆成多个段发送（拆包）。接收方需要自己定义消息边界——常用方案：① 固定长度消息；② 特殊分隔符（如换行符）；③ 消息头 + 消息体（头中定义体长度，如 Netty 的 LengthFieldBasedFrameDecoder）。</p>
+</div>
+
+<!-- ==================== 九、面经补充 · 分类详解 ==================== -->
+<h2 id="nine-1">九、上海银行面经补充 · 分类详解</h2>
+
+<div class="highlight">
+<strong>说明：</strong>以下题目来自上海银行校招面经的补充整理，与前面"八"中的 20 题不重复。涵盖 Redis 分布式锁、算法手撕、MQ 中间件、Java 进阶、连接池、Spring 全家桶、MySQL 补充等 7 大模块。
+</div>
+
+<!-- ========== （一）Redis & 分布式锁 ========== -->
+<h3 id="add-redis">（一）Redis & 分布式锁</h3>
+
+<h3>Q1: 乐观锁、悲观锁、分布式锁三者区别？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph A["悲观锁"]
+        A1["先加锁再操作"] --> A2["数据库行锁/表锁"]
+        A2 --> A3["其他事务阻塞等待"]
+    end
+    subgraph B["乐观锁"]
+        B1["先操作不加锁"] --> B2["提交时检查版本号"]
+        B2 --> B3["冲突则重试"]
+    end
+    subgraph C["分布式锁"]
+        C1["跨多个服务实例"] --> C2["Redis/ZK 统一管控"]
+        C2 --> C3["协调分布式并发"]
+    end
+</div>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>悲观锁</th><th>乐观锁</th><th>分布式锁</th></tr>
+<tr class="row-expandable"><td><strong>核心思想</strong></td><td>"一定会有人跟我抢"<br/>先锁住再操作</td><td>"大概率没人跟我抢"<br/>先操作，提交时检查</td><td>"不同机器上的服务要协调"<br/>通过外部中间件统一管控</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>三种锁的设计哲学对比：</strong>
+<ul><li><strong>悲观锁——预防为主：</strong>认为冲突是常态，每次读写都加锁。适合写多读少、冲突概率高的场景（如银行账户扣款）。</li>
+<li><strong>乐观锁——事后检查：</strong>认为冲突是偶然，不加锁直接操作，提交时检查是否有人改过。适合读多写少、冲突概率低的场景（如商品信息编辑）。</li>
+<li><strong>分布式锁——跨进程协调：</strong>悲观/乐观锁只能解决单机（单个数据库/单个 JVM）的并发问题，分布式锁解决多个独立服务实例之间的互斥问题。</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>实现方式</strong></td><td>数据库：SELECT ... FOR UPDATE<br/>Java：synchronized / ReentrantLock</td><td>数据库：version 字段 + UPDATE WHERE version=old<br/>Java：AtomicInteger(CAS)</td><td>Redis：SET NX EX + Lua<br/>ZooKeeper：临时顺序节点 + Watch</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>三种实现的具体写法：</strong>
+<pre><code>-- 悲观锁：SELECT ... FOR UPDATE
+BEGIN;
+SELECT stock FROM product WHERE id=1 FOR UPDATE;  -- 锁住这一行
+UPDATE product SET stock=stock-1 WHERE id=1;
+COMMIT;
+
+-- 乐观锁：版本号
+UPDATE product SET stock=stock-1, version=version+1
+WHERE id=1 AND version=#{oldVersion};  -- 版本号对不上就失败
+
+-- 分布式锁：Redis
+SET lock:product:1 uuid NX EX 30  -- 获取锁
+-- 执行业务...
+-- Lua 脚本释放锁</code></pre>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>适用场景</strong></td><td>单机/单库，写多读少<br/>冲突概率高（账户余额、库存扣减）</td><td>单机/单库，读多写少<br/>冲突概率低（用户信息编辑）</td><td>分布式微服务环境<br/>跨 JVM/跨机器的互斥</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>银行场景中的选择策略：</strong>
+<ul><li><strong>账户扣款（扣余额）：</strong>用悲观锁（SELECT FOR UPDATE），因为并发扣款概率高且数据绝对不能错。</li>
+<li><strong>用户修改手机号：</strong>用乐观锁（version），因为很少有两个操作同时修改同一用户的手机号。</li>
+<li><strong>定时任务（多实例只执行一次）：</strong>用分布式锁（Redis SET NX），保证多个微服务实例中只有一个执行。</li>
+<li><strong>分布式场景下的库存扣减：</strong>悲观锁 + 分布式锁结合——先用 Redis 分布式锁拿到操作权，再在 DB 中用悲观锁完成扣减。</li></ul>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>性能</strong></td><td>低（阻塞等待，锁持有期间其他事务等待）</td><td>高（无锁操作，提交时只需一次版本校验）</td><td>中（网络开销 + Lua执行，但比 DB 锁快）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content"></div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>一句话总结：</strong>悲观锁"先锁再用"（防冲突）、乐观锁"用了再查"（事后校验）、分布式锁"跨机器协调"（外部中间件统一管控）。三种锁解决的是不同层面的并发问题，实际项目中经常组合使用。<br/>
+<strong>面试金句：</strong>"悲观乐观是思想，分布锁是工具。悲观锁靠数据库，乐观锁靠版本号，分布式锁靠 Redis/ZK。"
+</div>
+
+<h3>Q2: Redis 数据不一致的解决方案？</h3>
+
+<div class="highlight">
+<strong>核心方案（四层递进）：</strong><br/>
+① <strong>延迟双删</strong>：删缓存 → 更新 DB → 等几百 ms → 再删缓存（清除并发写回的旧数据）<br/>
+② <strong>先更新 DB，再删缓存</strong>（推荐）：更新 DB 成功后删除缓存，下次读 miss 从 DB 加载最新数据<br/>
+③ <strong>删缓存失败兜底</strong>：MQ 消息队列重试删除 / 数据库任务表 + 定时 Job 补偿<br/>
+④ <strong>Canal 监听 binlog</strong>：伪装为 MySQL 从库，解析 binlog 变更事件 → MQ → 缓存更新消费<br/>
+<br/>
+<strong>详见本文第三章 Q4 的详细展开，不再赘述。</strong>
+</div>
+
+<h3>Q3: 什么是多级缓存？</h3>
+
+<div class="mermaid">
+graph LR
+    A["用户请求"] --> B["L1 本地缓存 Caffeine"]
+    B --> C["L2 分布式缓存 Redis"]
+    C --> D["L3 数据库 MySQL"]
+    B -.-> E["微秒级响应"]
+    C -.-> F["多实例共享"]
+    D -.-> G["持久化兜底"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么要多级缓存？单级缓存不好吗？</strong>
+<p>单靠 Redis：每个请求都要走网络（即使是内网也约 1ms），高并发下 Redis 成为瓶颈。单靠本地缓存：多实例数据不一致，且 JVM 堆容量有限（存太多会导致 GC 频繁）。多级缓存结合了两者的优势——大部分请求在本地命中了，没命中的走 Redis，两个都 miss 才打到 DB。</p>
+
+<strong>L1 本地缓存的选型：</strong>
+<ul><li><strong>Caffeine（推荐）：</strong>Google Guava Cache 的继任者，使用 W-TinyLFU 算法（Window TinyLFU），结合了 LFU 的高命中率和 LRU 的时效性。性能远超 Guava Cache。</li>
+<li><strong>配置示例：</strong><code>maximumSize=10000, expireAfterWrite=60s, refreshAfterWrite=30s</code>——最多 1 万条、60 秒过期、30 秒后异步刷新。</li></ul>
+
+<strong>多级缓存的一致性处理：</strong>
+<p>更新数据时：① 更新 DB → ② 删除 Redis → ③ 通知所有实例删除本地缓存（通过 MQ/Redis Pub/Sub 广播）。Caffeine 收到通知后 invalidate 对应 key，下次读时重新从 Redis 加载。</p>
+
+<strong>银行场景的实际价值：</strong>
+<p>如银行的热门活动页面配置（利率、活动规则等）——访问量极大、数据变化不频繁。用本地缓存（Caffeine 5 分钟）+ Redis（30 分钟），大部分流量在本地消化，Redis 压力降低 90%+，即使 Redis 挂了本地缓存还能撑一段时间。</p>
+</div>
+
+<div class="highlight">
+<strong>多级缓存 = 本地缓存(Caffeine) + 分布式缓存(Redis) + 数据库(MySQL)</strong><br/>
+L1（本地）命中率最高、RT 最低；L2（Redis）多实例共享；L3（DB）兜底。更新时依次删除各级缓存保证最终一致。
+</div>
+
+<!-- ========== （二）算法手撕 ========== -->
+<h3 id="add-algo">（二）算法手撕</h3>
+
+<h3>Q1: 判断回文字符串（两种思路）</h3>
+
+<div class="card">
+<strong>思路一：反转对比</strong>
+<pre><code>public boolean isPalindrome(String s) {
+    // 预处理：只保留字母数字，转小写
+    String filtered = s.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+    String reversed = new StringBuilder(filtered).reverse().toString();
+    return filtered.equals(reversed);
+}</code></pre>
+
+<strong>思路二：双指针（推荐，O(1) 额外空间）</strong>
+<pre><code>public boolean isPalindrome(String s) {
+    int left = 0, right = s.length() - 1;
+    while (left < right) {
+        // 跳过非字母数字字符
+        while (left < right && !Character.isLetterOrDigit(s.charAt(left)))
+            left++;
+        while (left < right && !Character.isLetterOrDigit(s.charAt(right)))
+            right--;
+        // 比较字符（忽略大小写）
+        if (Character.toLowerCase(s.charAt(left))
+                != Character.toLowerCase(s.charAt(right)))
+            return false;
+        left++;
+        right--;
+    }
+    return true;
+}</code></pre>
+
+<strong>时间复杂度：</strong>O(n) &nbsp;|&nbsp; <strong>空间复杂度：</strong>反转法 O(n)，双指针法 O(1)
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>面试中如何展示你的思考过程：</strong>
+<p>"首先我想到最直观的方法——把字符串反转，如果和原串一样就是回文。这是 O(n) 时间 + O(n) 空间。但我马上意识到可以优化空间——用两个指针一个从左、一个从右，同时向中间移动并比较字符，不等就直接返回 false。这是 O(n) 时间 + O(1) 空间。"</p>
+<p><strong>加分表现：</strong>提到如何处理非字母数字字符（Character.isLetterOrDigit）、大小写忽略（Character.toLowerCase），以及 left < right 的边界条件。面试官通常会接着问"如果字符串很长（1GB）怎么办"——双指针一次只比较两个字符，不需要加载整个串到内存，更适合大文件。反转法需要完整加载 + 反转 + 比较，内存占用大。</p>
+</div>
+
+<h3>Q2: 二叉树层次遍历用什么数据结构实现？</h3>
+
+<div class="mermaid">
+graph TD
+    A["层序遍历 = BFS"] --> B["用队列 Queue 实现"]
+    B --> C["① 根入队"]
+    C --> D["② 出队并访问"]
+    D --> E["③ 左右子节点入队"]
+    E --> F["④ 重复 ②③ 直到队空"]
+</div>
+
+<div class="card">
+<strong>核心答案：用<strong>队列（Queue）</strong>实现。</strong><br/><br/>
+<strong>为什么是队列不是栈？</strong>栈是 LIFO（后进先出），会导致深度优先（DFS）；队列是 FIFO（先进先出），保证同一层的节点按顺序依次被处理——这正是层序遍历的要求。
+
+<strong>代码实现：</strong>
+<pre><code>public List&lt;List&lt;Integer&gt;&gt; levelOrder(TreeNode root) {
+    List&lt;List&lt;Integer&gt;&gt; result = new ArrayList&lt;&gt;();
+    if (root == null) return result;
+
+    Queue&lt;TreeNode&gt; queue = new LinkedList&lt;&gt;();
+    queue.offer(root);
+
+    while (!queue.isEmpty()) {
+        int levelSize = queue.size();  // 当前层的节点数
+        List&lt;Integer&gt; level = new ArrayList&lt;&gt;();
+
+        for (int i = 0; i < levelSize; i++) {
+            TreeNode node = queue.poll();
+            level.add(node.val);
+            if (node.left  != null) queue.offer(node.left);
+            if (node.right != null) queue.offer(node.right);
+        }
+        result.add(level);  // 逐层收集结果
+    }
+    return result;
+}</code></pre>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>BFS vs DFS 的数据结构选择：</strong>
+<ul><li><strong>BFS（层序/广度优先）→ 队列 Queue：</strong>FIFO 保证了"先进入的先处理"。想象一层层扫描——第 1 层全处理完才开始第 2 层，这正是队列的顺序特性。</li>
+<li><strong>DFS（先序/中序/后序）→ 栈 Stack（或递归，本质是调用栈）：</strong>LIFO 保证了"一条路走到黑再回溯"。每次取最近入栈的节点深入探索。</li></ul>
+<strong>层序遍历的时间/空间复杂度：</strong>
+<ul><li><strong>时间复杂度：</strong>O(n)，每个节点入队出队一次</li>
+<li><strong>空间复杂度：</strong>O(w)，w 为树的最大宽度（队列中最多存放一整层的节点）。平衡二叉树最底层节点数 ≈ n/2，所以最坏 O(n)。但实际应用中队列大小远小于 n。</li></ul>
+<strong>扩展——层序遍历的变种：</strong>
+<ul><li>自底向上遍历（107 题）：结果列表反转即可</li>
+<li>锯齿形遍历（103 题）：加一个 flag 控制每层是正序还是逆序加入结果</li>
+<li>求二叉树的最大宽度（662 题）：给每个节点编号（i → 左子 2i，右子 2i+1），每层宽度 = 最右编号 - 最左编号 + 1</li></ul>
+</div>
+
+<div class="highlight">
+<strong>面试回答模板：</strong>"二叉树层次遍历用<strong>队列（Queue）</strong>实现，本质是 BFS。根节点入队，然后循环：出队 → 访问 → 左右子节点入队。关键是 BFS 用队列（FIFO），DFS 用栈（LIFO）或递归——这是数据结构决定算法行为的最经典案例。"
+</div>
+
+<!-- ========== （三）MQ & 中间件 ========== -->
+<h3 id="add-mq">（三）MQ & 中间件</h3>
+
+<h3>Q1: 项目用到的中间件底层原理？（通用答题框架）</h3>
+
+<div class="card">
+<strong>此题没有标准答案，考察的是你对项目中使用过的中间件的理解深度。以下是一个通用的"三步答题框架"：</strong>
+<table>
+<tr><th>步骤</th><th>内容</th><th>示例（以 Redis 为例）</th></tr>
+<tr><td>① <strong>定位</strong></td><td>这个中间件解决什么问题？为什么引入它？</td><td>"用于热点数据缓存，减少 DB 压力，提升接口 RT"</td></tr>
+<tr><td>② <strong>原理</strong></td><td>核心工作机制是什么？（数据结构/协议/流程）</td><td>"单线程事件循环 + IO 多路复用(epoll) + RESP 协议，内存 Hash/SkipList 等高效数据结构"</td></tr>
+<tr><td>③ <strong>实践</strong></td><td>项目中怎么用的？遇到什么问题？怎么解决？</td><td>"缓存三兄弟的防护：布隆过滤器防穿透、互斥锁防击穿、随机 TTL 防雪崩"</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>常见中间件的"一句话底层原理"（面试前准备）：</strong>
+<ul><li><strong>Redis：</strong>单线程事件循环 + epoll IO 多路复用，内存数据结构（跳表/压缩列表/SDS），RESP 简单协议</li>
+<li><strong>RocketMQ：</strong>CommitLog 顺序写（所有消息写一个文件）→ 分发到 ConsumerQueue（按 topic+queue 索引）→ 消费者拉取或 Broker 推送。NameServer 做路由发现（去中心化）</li>
+<li><strong>Kafka：</strong>分区（Partition）顺序写磁盘 + 页缓存 + 零拷贝（sendfile），ISR 机制保证副本一致性，ZooKeeper/KRaft 协调</li>
+<li><strong>Nacos：</strong>服务注册用 HTTP 心跳 + 内存注册表（AP），配置管理用 Raft 一致性协议（CP）</li>
+<li><strong>Sentinel：</strong>滑动窗口统计 QPS → 超过阈值触发限流/熔断，基于责任链模式（Slot Chain）处理规则</li></ul>
+<strong>面试中如果被问到没准备过的中间件怎么办？</strong>
+<p>诚实地回答"这个中间件我主要是在项目中使用，对底层原理了解不够深入"比瞎编好。但紧接着要补一句"我比较熟悉的是 XX 中间件，它的底层原理是..."——把话题引导到你准备过的领域。面试官更看重你对自己熟悉的技术的理解深度。</p>
+</div>
+
+<h3>Q2: MQ 中 TTL 是什么？</h3>
+
+<div class="card">
+<strong>TTL（Time To Live）= 消息存活时间。</strong><br/><br/>
+消息在队列中超过 TTL 仍未消费 → 自动变为<strong>死信消息（Dead Letter Message）</strong>，进入<strong>死信队列（DLQ）</strong>。
+
+<strong>两种设置方式：</strong>
+<table>
+<tr><th>方式</th><th>粒度</th><th>示例</th></tr>
+<tr><td><strong>队列 TTL</strong></td><td>队列中所有消息的默认 TTL</td><td>创建队列时声明 <code>x-message-ttl=60000</code></td></tr>
+<tr><td><strong>消息 TTL</strong></td><td>单条消息级别的 TTL</td><td>发送时 setExpiration 或 setTTL</td></tr>
+</table>
+<strong>注意：</strong>如果同时设置了队列 TTL 和消息 TTL，以<strong>较小的值</strong>为准。
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>TTL + 死信队列的典型应用场景：</strong>
+<ol>
+<li><strong>延时队列：</strong>发送消息到一个没有消费者的队列，设 TTL=30分钟。TTL 到期后消息进入死信队列，死信队列的消费者 30 分钟后才收到消息——实现了延时投递。常用于：订单 30 分钟未支付自动取消、定时提醒。</li>
+<li><strong>超时订单处理：</strong>下单时发一条 TTL=30分钟的消息到延时队列，消费者收到后检查订单状态，未支付则关闭订单。</li>
+<li><strong>失败重试上限：</strong>消息消费失败后重新投递，设置 TTL 限制最大存活时间。超时后进入死信队列，人工介入处理，避免无限重试。</li>
+</ol>
+
+<strong>不同 MQ 的 TTL 实现差异：</strong>
+<ul><li><strong>RabbitMQ：</strong>原生支持 TTL + DLX（死信交换机）。消息到期后可自动路由到指定交换机。</li>
+<li><strong>RocketMQ：</strong>通过 <code>delayLevel</code> 实现延时消息（1s/5s/10s/30s/1m/2m/...等 18 个级别）。不是任意 TTL 都支持，需要使用预设级别。</li>
+<li><strong>Kafka：</strong>没有原生的消息 TTL。通过 <code>retention.ms</code> 控制消息留存时间——超过时间的消息被删除而非进入死信队列。延时队列需靠业务层实现。</li></ul>
+
+<strong>银行场景中的 TTL 应用：</strong>
+<p>转账超时处理——用户发起跨行转账后，如果 2 小时内未收到对方银行的确认回执，消息进入死信队列触发人工对账流程。TTL 设为 2 小时，死信消费端自动生成异常工单并通知运营人员。</p>
+</div>
+
+<!-- ========== （四）Java 基础 & 多线程 ========== -->
+<h3 id="add-java">（四）Java 基础 & 多线程</h3>
+
+<h3>Q1: 如何保证 i++ 操作的原子性？</h3>
+
+<div class="mermaid">
+graph TD
+    A["i++ 为什么不是原子操作？"] --> B["① 读：从内存读 i 的值"]
+    B --> C["② 改：i + 1 计算"]
+    C --> D["③ 写：把新值写回内存"]
+    D --> E["这三步之间可能被其他线程打断！"]
+</div>
+
+<div class="card">
+<strong>三种保证 i++ 原子性的方案：</strong>
+<table>
+<tr><th>方案</th><th>实现</th><th>适用场景</th></tr>
+<tr class="row-expandable"><td>① <strong>synchronized</strong></td><td><code>synchronized(lock) { i++; }</code></td><td>简单、可靠，适合低竞争</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>原理：</strong>Java 内置锁（Monitor），编译后在同步块前后加上 monitorenter/monitorexit 字节码指令。JVM 保证同一时刻只有一个线程进入同步块。JDK 1.6 后经过锁升级优化（偏向锁 → 轻量级锁 → 重量级锁），性能已大幅提升。<br/>
+<strong>缺点：</strong>重量级锁涉及线程阻塞/唤醒的系统调用，低竞争时还好，高竞争下性能下降明显。
+</div></td></tr>
+<tr class="row-expandable"><td>② <strong>AtomicInteger（CAS）</strong></td><td><code>atomicInt.incrementAndGet();</code></td><td><strong>推荐</strong>，高性能，适合高并发计数</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>CAS 原理（Compare And Swap）：</strong>从内存读当前值 E → 计算新值 V → CPU 原子指令比较"内存值是否仍是 E"，是则更新为 V，否则重新读取重试。整个过程只有一次 CPU 原子指令，不需要加锁。<br/>
+<strong>核心代码（Unsafe 类）：</strong><code>compareAndSwapInt(this, valueOffset, expect, update)</code><br/>
+<strong>ABA 问题：</strong>CAS 只检查值是否相同，不检查期间是否被改过又改回来。解决方案：AtomicStampedReference（加版本号）。但在 i++ 计数场景中 ABA 不影响正确性。
+</div></td></tr>
+<tr class="row-expandable"><td>③ <strong>Lock 锁</strong></td><td><code>lock.lock(); try { i++; } finally { lock.unlock(); }</code></td><td>需要更灵活锁控制时（tryLock超时、公平锁）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>ReentrantLock vs synchronized：</strong>
+<ul><li>ReentrantLock 支持 tryLock(超时)、lockInterruptibly（可中断）、公平锁模式</li><li>synchronized 自动释放（代码块退出或异常）、语法更简洁、无需手动 unlock</li><li>一般场景推荐 synchronized（简单可靠），需要高级特性的用 ReentrantLock</li></ul>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试标准答案：</strong>"i++ 不是原子操作（读→改→写三步），多线程下有竞态条件。保证原子性有三招——synchronized 加锁（简单可靠）、AtomicInteger 的 CAS 自旋（高性能，推荐用于计数器）、ReentrantLock（灵活控制）。一般计数场景首选 AtomicInteger。"
+</div>
+
+<h3>Q2: Java 反射的含义？</h3>
+
+<div class="mermaid">
+graph LR
+    A["编译时<br/>不知道类名"] --> B["运行时<br/>动态加载类"]
+    B --> C["获取 Class 对象<br/>(3种方式)"]
+    C --> D["获取构造器<br/>Constructor"]
+    C --> E["获取方法<br/>Method"]
+    C --> F["获取字段<br/>Field"]
+    D --> G["newInstance()<br/>创建对象"]
+    E --> H["invoke()<br/>调用方法"]
+    F --> I["set()/get()<br/>读写字段"]
+</div>
+
+<div class="card">
+<strong>反射的核心定义：</strong>在<strong>运行时</strong>动态获取类的信息（类名、方法、字段、注解等），并动态操作它们——创建对象、调用方法、修改字段值——即使编译时不知道具体的类名。
+
+<strong>获取 Class 对象的三种方式：</strong>
+<pre><code>// 方式1：Class.forName（常用，从全限定类名加载）
+Class<?> clazz = Class.forName("com.example.User");
+
+// 方式2：类名.class（编译时已知类）
+Class<?> clazz = User.class;
+
+// 方式3：对象.getClass()
+User user = new User();
+Class<?> clazz = user.getClass();</code></pre>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>反射的核心 API（必会）：</strong>
+<pre><code>Class<?> clazz = Class.forName("com.example.User");
+
+// 创建对象
+Constructor<?> constructor = clazz.getConstructor(String.class, int.class);
+Object obj = constructor.newInstance("张三", 25);
+
+// 调用方法
+Method method = clazz.getMethod("setName", String.class);
+method.invoke(obj, "李四");  // 相当于 obj.setName("李四")
+
+// 访问私有字段（setAccessible 突破封装）
+Field field = clazz.getDeclaredField("age");
+field.setAccessible(true);  // 绕开 private 限制
+int age = (int) field.get(obj);  // 读
+field.set(obj, 30);              // 写</code></pre>
+
+<strong>反射在框架中的核心应用：</strong>
+<ul><li><strong>Spring IOC：</strong>读取 XML/注解配置 → Class.forName 加载类 → Constructor.newInstance 创建 Bean → Field.set 注入依赖。这就是 @Autowired 能工作的底层原因。</li>
+<li><strong>Spring AOP：</strong>JDK 动态代理通过反射获取接口方法 → Proxy.newProxyInstance 生成代理对象 → invoke 反射调用目标方法。</li>
+<li><strong>MyBatis：</strong>ResultSet 映射到 Java 对象时，通过反射调用 setter 方法或直接设置字段值。</li>
+<li><strong>JUnit：</strong>扫描带 @Test 注解的方法，通过 Method.invoke 执行测试方法。</li>
+<li><strong>序列化框架（Jackson/Gson）：</strong>反射读取对象的 getter 获取字段值，或读取 JSON key 后用反射 setter 设置值。</li></ul>
+
+<strong>反射的性能和缺点：</strong>
+<ul><li>反射调用比直接调用慢（需要安全检查、类型检查、方法查找），约慢 10-50 倍。但现代 JVM 通过反射调用的内联优化，热点代码差距会缩小。</li>
+<li>破坏封装性——setAccessible(true) 可以访问 private 成员，可能绕过安全限制。</li>
+<li>编译期无法检查——如果类名/方法名写错了，编译时不报错，运行时抛异常。</li>
+</ul>
+</div>
+
+<div class="highlight">
+<strong>一句话：</strong>反射让 Java 在运行时能够"看透"一个类的内部结构并动态操作它。Spring IOC/DI、AOP、MyBatis 的底层全都依赖反射。<br/>
+<strong>面试金句：</strong>"如果没有反射，我们可能还停留在配置文件 + new 对象的时代，是反射成就了 Java 框架生态。"
+</div>
+
+<h3>Q3: 常用 List 集合有哪些？</h3>
+
+<div class="card">
+<table>
+<tr><th>集合</th><th>底层结构</th><th>特点</th><th>使用场景</th></tr>
+<tr class="row-expandable"><td><strong>ArrayList</strong></td><td>Object[] 数组</td><td>按索引查 O(1) 快、插删 O(n) 慢<br/>非线程安全</td><td>随机访问多、尾部追加多</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>为什么随机访问快？</strong>数组在内存中是连续存储的，通过 <code>首地址 + index * 元素大小</code> 直接计算目标元素地址，一次内存访问即可（O(1)）。CPU 缓存友好（预读相邻数据）。</br/>
+<strong>为什么插入/删除慢？</strong>插入/删除中间位置需要把后面的全部元素整体移动一位（System.arraycopy），O(n)。但尾部插入（add）是 O(1)（不考虑扩容），头插最慢 O(n)。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>LinkedList</strong></td><td>双向链表</td><td>头尾插删 O(1)、按索引查 O(n)<br/>非线程安全</td><td>频繁头尾操作、实现队列/栈</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>LinkedList 为什么能当队列用？</strong>LinkedList 同时实现了 List 和 Deque（双端队列）接口。可以当作 Queue 用（offer/poll/peek），也可以当 Stack 用（push/pop）。Java 中它是最常用的"既是列表又是队列"的数据结构。</br/>
+<strong>缺点：</strong>每个节点额外存储两个指针（prev/next），内存开销大（约 24 字节/节点）。按索引查需要从头或尾遍历（O(n/2) ≈ O(n)），数据量大时远不如 ArrayList。
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Vector</strong></td><td>Object[] 数组 + synchronized</td><td>线程安全版 ArrayList<br/>所有方法加锁</td><td>已过时，不推荐使用</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>为什么过时了？</strong>Vector 使用重量级的 synchronized 修饰所有方法，即使读操作也加锁，并发性能极差。如果需要线程安全的 List，推荐 <code>Collections.synchronizedList(new ArrayList<>())</code> 或 <code>CopyOnWriteArrayList</code>（读多写少场景，写时复制，读不加锁）。
+</div></td></tr>
+</table>
+</div>
+
+<h3>Q4: ArrayList 扩容机制？初始化能否自定义扩容参数？</h3>
+
+<div class="card">
+<strong>扩容机制：</strong>
+<ol>
+<li><strong>默认构造：</strong>new ArrayList() → 初始为空数组 DEFAULTCAPACITY_EMPTY_ELEMENTDATA → 首次 add 时扩容到 <strong>10</strong></li>
+<li><strong>扩容算法：</strong>容量不够时，新容量 = 旧容量 + 旧容量 >> 1 = <strong>旧容量的 1.5 倍</strong></li>
+<li><strong>底层实现：</strong>Arrays.copyOf() → System.arraycopy()（将旧数组元素复制到新数组）</li>
+</ol>
+
+<strong>可以自定义初始化参数：</strong>
+<pre><code>// 方式1：指定初始容量（推荐，避免扩容开销）
+new ArrayList<>(100);  // 直接创建容量为 100 的数组
+
+// 方式2：传入已有集合
+new ArrayList<>(existingList);  // 根据集合大小初始化</code></pre>
+
+<strong>为什么 1.5 倍而不是 2 倍？</strong>
+<ul>
+<li>1.5 倍比 2 倍更节省空间（特别是大容量时，2 倍扩容可能浪费近 50% 空间）</li>
+<li>1.5 倍仍然保证了<strong>均摊 O(1)</strong>的插入时间（扩容次数是 O(log₁.₅ n) ≈ 比 2 倍多约 70% 的扩容次数，但每次扩容数据复制量更小）</li>
+</ul>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>扩容的 JDK 源码关键逻辑（简化版）：</strong>
+<pre><code>private void grow(int minCapacity) {
+    int oldCapacity = elementData.length;
+    // 新容量 = 旧容量 + 旧容量的一半（1.5 倍）
+    int newCapacity = oldCapacity + (oldCapacity >> 1);
+
+    if (newCapacity - minCapacity < 0)
+        newCapacity = minCapacity;  // 1.5 倍还不够 → 直接用所需容量
+
+    if (newCapacity - MAX_ARRAY_SIZE > 0)
+        newCapacity = hugeCapacity(minCapacity);  // 超大数组处理
+
+    elementData = Arrays.copyOf(elementData, newCapacity);
+}</code></pre>
+
+<strong>生产环境最佳实践：</strong>
+<ul><li><strong>如果能预估容量，一定要在构造时指定：</strong><code>new ArrayList<>(expectedSize)</code>。避免反复扩容的数据拷贝开销。</li>
+<li><strong>大数据量时调用 ensureCapacity()：</strong>在循环 add 之前调用 <code>list.ensureCapacity(10000)</code> 一次性扩容到位。</li>
+<li><strong>注意 1.5 倍扩容的内存峰值：</strong>扩容时需要同时存在旧数组和新数组，内存峰值是 1 + 1.5 = 2.5 倍原数组大小。10GB → 扩容峰值 25GB，可能导致 OOM。</li>
+</ul>
+</div>
+
+<h3>Q5: list.add(1) 底层执行流程？</h3>
+
+<div class="mermaid">
+graph TD
+    A["list.add(1)"] --> B["ensureCapacityInternal(size + 1)"]
+    B --> C{"elementData 够用？"}
+    C -->|"够"| D["elementData[size++] = 1"]
+    C -->|"不够"| E["grow() 扩容"]
+    E --> F["容量 = 1.5 倍 (或 minCapacity)"]
+    F --> G["Arrays.copyOf 复制到新数组"]
+    G --> D
+    D --> H["返回 true"]
+</div>
+
+<div class="card">
+<strong>完整执行步骤：</strong>
+<ol>
+<li><strong>判断容量：</strong>ensureCapacityInternal 检查当前 size+1 是否超出数组长度</li>
+<li><strong>容量不够 → 扩容：</strong>调用 grow()，新容量 = 旧容量 × 1.5，通过 Arrays.copyOf 创建新数组并复制旧数据</li>
+<li><strong>容量够 → 直接赋值：</strong><code>elementData[size] = 1;</code></li>
+<li><strong>size++：</strong>更新当前元素数量 <code>size = size + 1;</code></li>
+<li><strong>返回 true：</strong>add 方法总返回 true（List 接口定义）</li>
+</ol>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>面试中的细节——"默认构造首次 add 发生了什么？"</strong>
+<p>new ArrayList() 时 elementData = {}（空数组，长度 0），size = 0。第一次 add 时：ensureCapacityInternal(1) → calculateCapacity 检测到是空数组 → 取 Math.max(DEFAULT_CAPACITY=10, size+1=1) = 10 → grow(10) → 扩容到 10。这就是为什么 ArrayList 默认构造首次 add 后容量是 10，不是因为默认容量是 10，而是"首次 add 时如果容量不足，至少扩到 10"。</p>
+
+<strong>add(int index, Object element) 和 add(Object) 的区别：</strong>
+<ul><li><strong>尾部 add(e)：</strong>size++ 处直接赋值 O(1)（不考虑扩容）</li>
+<li><strong>中间位置 add(i, e)：</strong>先将 index 后面所有元素后移一位（System.arraycopy），再赋值，O(n) <code>System.arraycopy(elementData, index, elementData, index+1, size-index); elementData[index] = e;</code></li></ul>
+</div>
+
+<!-- ========== （五）连接池 ========== -->
+<h3 id="add-pool">（五）连接池</h3>
+
+<h3>Q1: 如何实现 / 创建连接池？</h3>
+
+<div class="mermaid">
+graph LR
+    A["初始化"] --> B["创建 N 个连接<br/>(minIdle 个)"]
+    B --> C["放入空闲队列<br/>(BlockingQueue)"]
+    C --> D["借出：从队列 poll"]
+    D --> E["归还：放回队列 offer"]
+    E --> F["空闲检测：定时检查<br/>超时未用则回收"]
+    F --> G["连接验证：归还时/借出时<br/>ping / SELECT 1 验活"]
+</div>
+
+<div class="card">
+<strong>连接池的核心组件（自行实现需要以下模块）：</strong>
+<ol>
+<li><strong>空闲队列（BlockingQueue）：</strong>存放空闲连接的容器。借出时 poll，归还时 offer</li>
+<li><strong>连接工厂（ConnectionFactory）：</strong>负责创建新连接（TCP 三次握手 + 认证）</li>
+<li><strong>参数配置：</strong>最小空闲数(minIdle)、最大连接数(maxActive)、最大等待时间(maxWait)、空闲回收时间</li>
+<li><strong>空闲检测线程：</strong>定时扫描空闲连接，超时的回收（关闭 TCP 连接），不足 minIdle 时补充</li>
+<li><strong>连接验证：</strong>借出/归还时检查连接是否存活——发一条 SELECT 1 或 ping 验证</li>
+</ol>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>生产环境中不需要手写连接池——直接用现成的：</strong>
+<ul><li><strong>数据库连接池：</strong>HikariCP（Spring Boot 默认，最快）、Druid（阿里开源，带 SQL 监控）</li>
+<li><strong>Redis 连接池：</strong>Lettuce（Spring Boot 默认，Netty 异步）、JedisPool（BIO）</li>
+<li><strong>HTTP 连接池：</strong>Apache HttpClient PoolingHttpClientConnectionManager、OkHttp ConnectionPool</li></ul>
+
+<strong>连接池的核心参数（以 HikariCP 为例）：</strong>
+<table>
+<tr><th>参数</th><th>含义</th><th>建议值</th></tr>
+<tr><td>maximumPoolSize</td><td>最大连接数</td><td>CPU核数 × 2 + 磁盘数（HikariCP 官网公式）</td></tr>
+<tr><td>minimumIdle</td><td>最小空闲连接数</td><td>= maximumPoolSize（预热，避免冷启动慢）</td></tr>
+<tr><td>connectionTimeout</td><td>等待连接的最大时间</td><td>30000ms（30秒，超时抛异常）</td></tr>
+<tr><td>idleTimeout</td><td>空闲连接最大存活时间</td><td>600000ms（10分钟）</td></tr>
+<tr><td>maxLifetime</td><td>连接最大生命周期</td><td>1800000ms（30分钟，比 DB 的超时短一点）</td></tr>
+</table>
+
+<strong>连接验证机制——为什么需要？</strong>
+<p>TCP 连接可能因为网络中断、服务器重启、防火墙踢掉空闲连接等原因"假活"——看起来还在，但实际发数据时会失败。连接池需要验证机制：① borrow 时验证（testOnBorrow）→ 借出前发 ping，保证拿到的连接一定可用；② idle 时验证（testWhileIdle）→ 空闲检测线程定时检查，剔除死连接。</p>
+</div>
+
+<h3>Q2: 连接池实际应用场景？</h3>
+
+<div class="card">
+<table>
+<tr><th>场景</th><th>组件</th><th>为什么需要连接池</th></tr>
+<tr><td><strong>数据库访问</strong></td><td>HikariCP / Druid</td><td>DB 连接建立需要 TCP 握手 + 认证（几十 ms），高并发下频繁创建/销毁不可接受</td></tr>
+<tr><td><strong>Redis 缓存</strong></td><td>Lettuce / JedisPool</td><td>同上，且 Redis 通常承载高 QPS，连接复用更关键</td></tr>
+<tr><td><strong>HTTP 调用</strong></td><td>HttpClient Pool / OkHttp</td><td>微服务间大量 HTTP/REST 调用，keep-alive + 连接池减少握手开销</td></tr>
+<tr><td><strong>RPC 框架</strong></td><td>Dubbo / gRPC</td><td>RPC 长连接 + 连接池，减少重复建连和 TCP TIME_WAIT 连接堆积</td></tr>
+<tr><td><strong>MQ 生产者/消费者</strong></td><td>RocketMQ / Kafka Client</td><td>与 Broker 维持长连接，连接池管理发送/消费通道</td></tr>
+</table>
+</div>
+
+<!-- ========== （六）Spring 全家桶 ========== -->
+<h3 id="add-spring">（六）Spring 全家桶</h3>
+
+<h3>Q1: SpringBoot 和 SpringCloud 区别？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph S1["Spring Boot 单体应用"]
+        A1["自动配置"] --> A2["内嵌 Tomcat"]
+        A2 --> A3["Starter 依赖管理"]
+    end
+    subgraph S2["Spring Cloud 微服务治理"]
+        B1["注册中心"] --> B2["配置中心"]
+        B2 --> B3["网关 + 负载均衡 + 熔断"]
+    end
+    S1 -.->|"Cloud 基于 Boot 构建"| S2
+</div>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>Spring Boot</th><th>Spring Cloud</th></tr>
+<tr><td><strong>定位</strong></td><td><strong>单体应用</strong>的快速开发框架</td><td><strong>微服务</strong>的治理框架（一套解决方案）</td></tr>
+<tr><td><strong>核心能力</strong></td><td>自动配置、Starter、内嵌容器</td><td>注册中心、配置中心、网关、熔断、负载均衡</td></tr>
+<tr><td><strong>依赖关系</strong></td><td>独立存在，不依赖 Cloud</td><td><strong>基于 Boot</strong>构建（Cloud 是 Boot 的上层框架）</td></tr>
+<tr><td><strong>打包部署</strong></td><td>单个 jar 直接运行</td><td>多个服务协同部署，依赖注册中心等基础设施</td></tr>
+<tr><td><strong>解决什么问题</strong></td><td>"让一个服务快速跑起来"</td><td>"让一群服务协调工作"</td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>一句话分清楚：</strong>Spring Boot 解决单个服务的"快速开发"问题（自动配置 + Starter + 内嵌容器），Spring Cloud 解决多个服务的"协同治理"问题（注册/发现/配置/网关/熔断）。Cloud 依赖 Boot，Boot 不依赖 Cloud。<br/>
+<strong>面试金句：</strong>"Boot 是造一辆车的工具，Cloud 是管理一个车队（调度、导航、维修）的系统。"
+</div>
+
+<h3>Q2: SpringBoot 中 starter 是什么？</h3>
+
+<div class="card">
+<strong>Starter = 一站式依赖启动器。</strong><br/><br/>
+<strong>本质：</strong>一个 Maven 依赖包，内部打包了"某个功能需要的所有 jar 包 + 自动配置类"。引入一个 starter 就引入了所有需要的依赖，不需要一个个手动添加和解决依赖冲突。<br/><br/>
+
+<strong>举例：引入 spring-boot-starter-web 后自动包含了：</strong>
+<pre><code>spring-boot-starter-web
+  ├── spring-boot-starter（核心 starter：自动配置 + 日志）
+  ├── spring-boot-starter-json（Jackson）
+  ├── spring-boot-starter-tomcat（内嵌 Tomcat）
+  ├── spring-webmvc（Spring MVC）
+  └── spring-web（Spring Web）</code></pre>
+一个 starter，自动传递引入 5 个核心依赖——这就是"一站式"的含义。
+
+<strong>新建 SpringBoot 项目最小需要的基础 starter：</strong>
+<pre><code>&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;  &lt;!-- Web 项目标配 --&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-test&lt;/artifactId&gt;   &lt;!-- 测试 --&gt;
+    &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;</code></pre>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>starter 的自动配置原理：</strong>
+<p>每个 starter jar 的 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports（Spring Boot 3.x）文件中，列出了需要自动加载的配置类。Spring Boot 启动时通过 @EnableAutoConfiguration → AutoConfigurationImportSelector 扫描并加载这些配置类。配置类上用 @ConditionalOnClass、@ConditionalOnBean 等条件注解控制是否生效。</p>
+<strong>自定义 Starter 的命名规范：</strong>
+<ul><li>官方 Starter：spring-boot-starter-xxx（如 spring-boot-starter-web）</li><li>第三方 Starter：xxx-spring-boot-starter（如 mybatis-spring-boot-starter、redisson-spring-boot-starter）。命名反过来的原因：Maven 中央仓库按 groupId 组织，方便搜索。</li></ul>
+</div>
+
+<h3>Q3: SpringBoot 常用注解有哪些？</h3>
+
+<div class="card">
+<table>
+<tr><th>类别</th><th>注解</th><th>作用</th></tr>
+<tr class="row-expandable"><td rowspan="3"><strong>启动与配置</strong></td><td><strong>@SpringBootApplication</strong></td><td>组合注解 = @Configuration + @EnableAutoConfiguration + @ComponentScan。一个注解启动 Spring Boot</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>@SpringBootApplication 是 Spring Boot 最核心的注解，等价于以下三个注解的组合：<br/>
+① <strong>@Configuration：</strong>声明当前类是配置类（相当于 XML 配置文件）<br/>
+② <strong>@EnableAutoConfiguration：</strong>开启自动配置——Spring Boot 自动根据 classpath 中的 jar 依赖来配置项目<br/>
+③ <strong>@ComponentScan：</strong>扫描当前包及子包下的 @Component/@Service/@Controller 等组件</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>@Configuration</strong></td><td>标记配置类，配合 @Bean 创建组件</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>@ConfigurationProperties</strong></td><td>读取 application.yml 中的配置并绑定到 Java 对象</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td rowspan="4"><strong>Bean 管理</strong></td><td><strong>@Component</strong></td><td>通用组件，把类交给 Spring 管理</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>@Service / @Repository</strong></td><td>语义化的 @Component（Service 层/DAO 层）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>@Autowired</strong></td><td>自动注入 Bean（按类型 byType，配合 @Qualifier 按名）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td rowspan="4"><strong>Web 层</strong></td><td><strong>@RestController</strong></td><td>= @Controller + @ResponseBody，返回 JSON</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>@RequestMapping / @GetMapping / @PostMapping</strong></td><td>请求路径映射</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+<tr class="row-expandable"><td><strong>@RequestParam / @PathVariable / @RequestBody</strong></td><td>获取请求参数（查询参数、路径变量、请求体）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>关键区别：@RequestParam 绑定 URL 查询参数（?name=张三），@PathVariable 绑定路径变量（/user/{id}），@RequestBody 绑定 HTTP 请求体（POST/PUT 的 JSON body）。三者经常被混淆，面试中要能清晰区分。</p>
+</div></td></tr>
+<tr class="row-expandable"><td rowspan="2"><strong>事务</strong></td><td><strong>@Transactional</strong></td><td>声明式事务，方法内出错自动回滚</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"></div></td></tr>
+</table>
+</div>
+
+<h3>Q4: @Transactional 注解作用，为什么用注解实现事务？</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as Controller
+    participant P as AOP Proxy
+    participant S as Service(目标)
+    participant DB as 数据库
+
+    C->>P: service.transfer()
+    P->>DB: ① 开启事务（BEGIN）
+    P->>S: ② 调用目标方法
+    S-->>P: ③ 返回结果 / 抛异常
+    alt 正常返回
+        P->>DB: ④ COMMIT
+    else 抛 RuntimeException
+        P->>DB: ④ ROLLBACK
+    end
+</div>
+
+<div class="card">
+<strong>@Transactional 的核心作用：</strong>声明式事务管理。在方法上加 @Transactional 注解后，Spring AOP 自动在方法前后加上事务管理逻辑——方法成功则提交（commit），出现 RuntimeException 则回滚（rollback），开发者不需要手写 begin/commit/rollback 代码。
+
+<strong>为什么用注解而不是手写事务？</strong>
+<ol>
+<li><strong>低侵入、高解耦</strong>：业务代码只关心业务逻辑，不需要夹杂事务控制代码。一个 @Transactional 注解替代了重复的 try-catch-commit-rollback 模板代码</li>
+<li><strong>AOP 动态代理实现</strong>：Spring 为标注了 @Transactional 的 Bean 生成代理对象，在代理中织入事务管理逻辑——这是 AOP 的经典应用</li>
+<li><strong>灵活配置</strong>：可以配置传播行为（propagation）、隔离级别（isolation）、超时时间（timeout）、只读（readOnly）等</li>
+<li><strong>声明即文档</strong>：看注解就知道这个方法需要事务，意图清晰</li>
+</ol>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>@Transactional 的关键属性：</strong>
+<table>
+<tr><th>属性</th><th>含义</th><th>常用值</th></tr>
+<tr><td><strong>propagation</strong></td><td>事务传播行为</td><td>REQUIRED(默认): 有则加入，无则新建<br/>REQUIRES_NEW: 总是新建独立事务</td></tr>
+<tr><td><strong>isolation</strong></td><td>隔离级别</td><td>DEFAULT(跟随数据库，通常是 RR)</td></tr>
+<tr><td><strong>timeout</strong></td><td>超时秒数</td><td>默认 -1（不超时），建议设合理值防长事务</td></tr>
+<tr><td><strong>readOnly</strong></td><td>只读事务（优化）</td><td>true: 纯查询，提示数据库无需加锁</td></tr>
+<tr><td><strong>rollbackFor</strong></td><td>哪些异常回滚</td><td>默认只回滚 RuntimeException 和 Error</td></tr>
+</table>
+
+<strong>@Transactional 常见失效场景（面试高频）：</strong>
+<ul>
+<li><strong>同一个类中方法调用：</strong>this.methodB() 不经过代理，事务不生效。因为 AOP 是通过代理对象工作的，this 是目标对象而非代理对象。</li>
+<li><strong>非 public 方法：</strong>Spring AOP 默认只代理 public 方法，private/protected 方法上加 @Transactional 无效。</li>
+<li><strong>异常被 catch 吞掉：</strong>方法内 try-catch 了 RuntimeException 且没往外抛，Spring 感知不到异常，不会回滚。</li>
+<li><strong>数据库引擎不支持事务：</strong>MyISAM 不支持事务，@Transactional 加了也没用。</li>
+<li><strong>rollbackFor 未指定受检异常：</strong>默认只回滚 RuntimeException，如果抛的是受检异常（Exception），需要指定 rollbackFor = Exception.class。</li>
+</ul>
+
+<strong>底层实现原理：</strong>Spring 通过 AOP 切入 @Transactional 方法——在代理的 invoke 方法中，TransactionInterceptor 调用 PlatformTransactionManager（如 DataSourceTransactionManager）获取事务，然后执行目标方法，根据结果提交或回滚。本质上是把你手写的 JDBC 事务模板代码（conn.setAutoCommit(false) → execute → commit/rollback → conn.setAutoCommit(true)）通过动态代理自动完成了。
+</div>
+
+<div class="highlight">
+<strong>@Transactional 一句话：</strong>声明式事务注解，AOP 动态代理自动管理事务（开/提/回）。业务代码零侵入，可灵活配置传播/隔离/超时。注意 5 个常见失效场景——同类调用、非 public、异常被吞、引擎不支持、rollbackFor 未指定。
+</div>
+
+<!-- ========== （七）MySQL 补充 ========== -->
+<h3 id="add-mysql">（七）MySQL 补充</h3>
+
+<h3>Q1: 聚簇索引与非聚簇索引区别？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph C1["聚簇索引 | 主键索引"]
+        A["叶子节点 = 完整行数据"] --> B["一张表只有一个"]
+    end
+    subgraph C2["非聚簇索引 | 二级索引"]
+        D["叶子节点 = 主键值"] --> E["一张表可有多个"]
+    end
+    D -->|"回表"| A
+</div>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>聚簇索引</th><th>非聚簇索引（二级索引）</th></tr>
+<tr><td><strong>叶子节点内容</strong></td><td><strong>完整行数据</strong></td><td><strong>主键值</strong>（不是整行数据）</td></tr>
+<tr><td><strong>一张表的数量</strong></td><td>只能有 <strong>1 个</strong></td><td>可以有 <strong>多个</strong></td></tr>
+<tr><td><strong>物理存储</strong></td><td>数据按主键顺序存放</td><td>索引单独存放，与数据分开</td></tr>
+<tr><td><strong>查询过程</strong></td><td>查到叶子 = 拿到所有数据</td><td>查到叶子 → 拿到主键 → <strong>回表</strong>查聚簇索引</td></tr>
+<tr><td><strong>默认创建</strong></td><td>主键自动成为聚簇索引</td><td>显式创建的索引都是非聚簇索引</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>深入理解"聚簇"的含义：</strong>
+<p>"聚簇"的意思是"数据和索引聚集（存在一起）"。InnoDB 的聚簇索引叶子节点就是数据页本身——数据和索引是同一个 B+ 树。MySQL 官方文档称之为 clustered index，Oracle 称之为 Index-Organized Table（索引组织表）。</p>
+<p>MyISAM 没有聚簇索引的概念——所有索引的叶子节点存的是数据文件的物理地址（行号），数据和索引分离存放。所以 MyISAM 的主键和二级索引在查询效率上没有本质区别。</p>
+<strong>为什么二级索引不直接存地址而存主键？</strong>
+<p>因为 InnoDB 的数据是按主键顺序存放的，如果发生页分裂（插入导致数据页分裂），行的物理位置会变化。如果二级索引存的是物理地址，每次页分裂都要更新所有二级索引的引用——代价太大。存主键值则不受物理位置变化的影响，主键值永远不变。</p>
+</div>
+
+<h3>Q2: 数据库性能调优怎么做？</h3>
+
+<div class="mermaid">
+graph TD
+    A["数据库性能调优"] --> B["① SQL 层面（见效最快）"]
+    A --> C["② 索引层面（性价比最高）"]
+    A --> D["③ 表结构层面"]
+    A --> E["④ 参数层面"]
+    A --> F["⑤ 架构层面"]
+
+    B --> B1["慢查询日志→EXPLAIN→优化 SQL"]
+    C --> C1["合理建索引 + 覆盖索引"]
+    C --> C2["避免索引失效"]
+    D --> D1["冷热分离（垂直分表）"]
+    D --> D2["合适的数据类型（int > varchar）"]
+    E --> E1["buffer_pool_size 调大"]
+    E --> E2["连接数/超时合理设置"]
+    F --> F1["读写分离（主写从读）"]
+    F --> F2["分库分表（水平拆分）"]
+    F --> F3["引入 Redis 缓存"]
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>五个层面的调优详解：</strong>
+
+<strong>① SQL 层面（最先做）：</strong>
+<ul><li>开启慢查询日志（slow_query_log + long_query_time），用 mysqldumpslow/pt-query-digest 找出耗时 SQL</li><li>EXPLAIN 分析 type/key/rows/Extra，定位全表扫描（ALL）和临时表（Using temporary）</li><li>改写 SQL：避免 SELECT *、大偏移量 LIMIT 用延迟关联、多表 JOIN 用子查询拆分、OR 改 UNION</li></ul>
+
+<strong>② 索引层面（最重要）：</strong>
+<ul><li>WHERE / JOIN / ORDER BY / GROUP BY 列建索引</li><li>高频查询建覆盖索引（联合索引包含所有 SELECT 列）</li><li>避免冗余索引和重复索引（如单独索引 + 联合索引前缀重复）</li><li>定期 ANALYZE TABLE 更新索引统计信息</li></ul>
+
+<strong>③ 表结构层面：</strong>
+<ul><li>字段选最小够用的数据类型（如 age 用 TINYINT 而不用 INT）</li><li>冷热字段分离——大字段（TEXT/BLOB）拆到扩展表</li><li>适当冗余减少 JOIN（反范式化）——如订单表冗余存用户名，避免每次都 JOIN 用户表</li></ul>
+
+<strong>④ 参数层面：</strong>
+<ul><li>innodb_buffer_pool_size：设为物理内存的 70-80%</li><li>innodb_flush_log_at_trx_commit：强一致用 1，性能优先用 2</li><li>max_connections：根据应用连接池配置合理设置</li><li>query_cache（8.0 已移除，不用管）</li></ul>
+
+<strong>⑤ 架构层面（最后手段）：</strong>
+<ul><li>读写分离：一主多从，写走主、读走从，中间件（ShardingSphere/ProxySQL）</li><li>垂直分库：按业务拆（用户库、订单库），缓解并发写入压力</li><li>水平分库分表：按 user_id hash 取模，解决单表过大问题（>1000 万行）</li><li>引入 Redis：热点数据缓存，减少 DB 读压力</li></ul>
+
+<strong>调优的优先顺序（面试话术模板）：</strong>"数据库性能调优我一般按这个顺序来——先看慢查询日志找到瓶颈 SQL → EXPLAIN 分析执行计划 → 建索引或优化 SQL 写法（90% 的问题到这一步就解决了）→ 如果还不够，调参数（主要是 buffer_pool）→ 升级硬件（SSD、加内存）→ 最后才考虑架构改造（读写分离、分库分表），因为架构改造成本最高、风险最大。"
+</div>
+
+<div class="highlight">
+<strong>调优优先级：</strong>SQL 优化 > 索引优化 > 参数调优 > 表结构优化 > 架构改造<br/>
+<strong>90% 的性能问题，加个索引、改条 SQL 就能解决。不要动不动就分库分表。</strong>
+</div>
+
 </div><!-- .main -->
 
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
 </body>
 </html>
