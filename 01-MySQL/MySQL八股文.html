@@ -712,6 +712,116 @@ graph TD
 <strong>带来的问题</strong>：分布式事务、跨库 JOIN、全局 ID（雪花算法）
 </div>
 
+<h3 id="four-5">5. DROP / DELETE / TRUNCATE 区别</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "DELETE — DML 逐行操作"
+        D1["DELETE FROM table WHERE ..."] --> D2["逐行删除 + 写 undo log"]
+        D2 --> D3["可加 WHERE 条件"]
+        D3 --> D4["触发 BEFORE/AFTER DELETE 触发器"]
+        D4 --> D5["空间不释放（标记为可复用）"]
+        D5 --> D6["事务内可 ROLLBACK"]
+    end
+    subgraph "TRUNCATE — DDL 整表清空"
+        T1["TRUNCATE TABLE table"] --> T2["删除并重建表/数据页"]
+        T2 --> T3["不可加条件，全表清空"]
+        T3 --> T4["不触发 DELETE 触发器"]
+        T4 --> T5["空间直接释放给 OS"]
+        T5 --> T6["隐式提交，不可回滚<br/>（部分 DB 如 PostgreSQL 可回滚）"]
+    end
+    subgraph "DROP — DDL 物理删除"
+        R1["DROP TABLE table"] --> R2["删除表结构定义 + 数据 + 索引"]
+        R2 --> R3["不可加条件"]
+        R3 --> R4["不触发任何 DML 触发器"]
+        R4 --> R5["空间完全释放"]
+        R5 --> R6["隐式提交，不可回滚"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>本质区别：DDL vs DML</strong>
+<p>DELETE 是 DML（Data Manipulation Language），操作的是数据行，每删除一行都记录 undo log，支持回滚。TRUNCATE 和 DROP 是 DDL（Data Definition Language），操作的是表结构或数据页的元数据，在 MySQL InnoDB 中会触发隐式提交（implicit commit），不可回滚。</p>
+<strong>性能差异的物理原因：</strong>
+<p>DELETE 逐行删除，每行都写 undo log + redo log，删除 100 万行可能需要几分钟，而且期间持有行锁/表锁（取决于存储引擎和条件）。TRUNCATE 直接删除数据文件然后重建（或标记数据页为空闲），几乎不写 undo log，100 万行毫秒级完成。DROP 直接删除表的元数据（frm 文件）和数据文件（ibd 文件），同样毫秒级。</p>
+<strong>MySQL InnoDB 中 TRUNCATE 的实现细节：</strong>
+<p>InnoDB 的 TRUNCATE 并非简单地 DELETE 全表——它会创建一个新的空表空间文件（tablespace），然后原子性地替换旧的。在这个"替换"瞬间，需要一个元数据锁（MDL），但不需要逐行加锁。不同版本行为有差异：MySQL 5.7 及以前 TRUNCATE 会逐行删除每个分区；MySQL 8.0 做了优化，对大表的 TRUNCATE 性能大幅提升。</p>
+<strong>触发器差异的陷阱：</strong>
+<p>DELETE 会触发 DELETE 触发器（BEFORE DELETE / AFTER DELETE），TRUNCATE 不会。如果触发器中有审计日志逻辑（如记录每一行删除到 audit_log），用 TRUNCATE 会导致审计记录缺失。这在金融系统中是严重的合规问题——建议在银行审计相关表上永远不要使用 TRUNCATE。</p>
+</div>
+
+<div class="card">
+<strong>完整对比速查表：</strong>
+<table>
+<tr><th>维度</th><th>DELETE</th><th>TRUNCATE</th><th>DROP</th></tr>
+<tr class="row-expandable"><td><strong>SQL 分类</strong></td><td>DML（数据操作语言）</td><td>DDL（数据定义语言）</td><td>DDL（数据定义语言）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>DML vs DDL 在 Binlog 中的记录方式：</strong>
+<p>DELETE 作为 DML，在 binlog 中记录每一行的变更（ROW 格式下是完整的前镜像/后镜像），用于主从复制和闪回。TRUNCATE 和 DROP 作为 DDL，在 binlog 中记录一条语句（STATEMENT 格式），主从复制时从库执行同样的 DDL。这意味着 DELETE 可以通过 binlog 闪回（如用 binlog2sql 工具反解析为 INSERT），TRUNCATE/DROP 只能通过备份恢复。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>删除方式</strong></td><td>逐行删除，写 undo log</td><td>删除并重建数据页/表空间</td><td>删除表结构 + 数据 + 索引 + 约束</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>Undo Log 的写入量差异：</strong>
+<p>DELETE 100 万行 ≈ 100 万条 undo log 记录，每条包含完整的前镜像（行旧值）。这不仅拖慢删除速度，还会撑大 undo 表空间。如果长事务中有大量 DELETE + 未提交，undo log 会不断膨胀（MySQL 8.0 支持 undo 表空间自动截断）。TRUNCATE 几乎不写 undo log，因为它是 DDL——直接操作表空间元数据而非逐行操作。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>是否可加 WHERE</strong></td><td>可以</td><td>不可以（全表清空）</td><td>不可以</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>DELETE + WHERE 在银行场景的典型用法：</strong>
+<p>① 按月归档：DELETE FROM transaction_log WHERE create_time < DATE_SUB(NOW(), INTERVAL 6 MONTH) LIMIT 10000 —— 分批删除超过半年的交易日志，避免一次锁太多行。</p>
+<p>② 条件清理：DELETE FROM temp_lock WHERE expire_time < NOW() —— 清理过期的分布式锁记录。</p>
+<p>③ 误删恢复：DELETE 可以通过 binlog 回滚（用工具反解析 binlog，将 DELETE 事件转为 INSERT），TRUNCATE 只能从备份恢复整表。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>事务回滚</strong></td><td>可以（BEGIN → DELETE → ROLLBACK）</td><td>MySQL 中不可回滚（隐式提交）</td><td>MySQL 中不可回滚（隐式提交）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>隐式提交（Implicit Commit）的触发条件：</strong>
+<p>MySQL 中所有 DDL 语句在执行前会隐式提交当前事务。这意味着：BEGIN; UPDATE accounts SET balance=100; TRUNCATE TABLE tmp_log; ROLLBACK; —— 如果 ROLLBACK，"UPDATE accounts" 实际上已经因为 TRUNCATE 的隐式提交而永久生效了（无法回滚）。</p>
+<p>PostgreSQL 中 TRUNCATE 在事务内是可回滚的（这是 PG 的一个重要优势），但 MySQL/Oracle 中 TRUNCATE 不能回滚。面试时如果能区分不同数据库的行为差异，是非常好的加分项。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>触发器触发</strong></td><td>触发 DELETE 触发器</td><td>不触发</td><td>不触发</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>触发器不触发的审计风险（银行关键点）：</strong>
+<p>如果表的审计日志依赖 DELETE 触发器实现（如 INSERT INTO audit_log SELECT ... FROM deleted），那么 TRUNCATE 会导致这些行的删除完全不被记录。金融系统中审计要求"所有数据变更必须可追溯"，所以对审计敏感的表应该：① 禁用 TRUNCATE 权限（只给 DBA 且需要审批）；② 审计日志不依赖触发器（改为 binlog 订阅，Canal 消费所有变更事件）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>空间释放</strong></td><td>不释放（标记为可复用，碎片化）</td><td>释放给 OS（表空间重置）</td><td>完全释放（文件删除）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>DELETE 后的表碎片问题：</strong>
+<p>DELETE 100 万行后，表的 ibd 文件大小不会减小——数据页中的数据行被标记为"已删除"，但页本身仍在表空间中。后续 INSERT 会优先复用这些空闲空间，但如果不再 INSERT 同等量级的数据，磁盘空间就被永久浪费。</p>
+<p>回收 DELETE 后的空间：ALTER TABLE t ENGINE=InnoDB（重建表，类似 TRUNCATE 但不丢数据）或 OPTIMIZE TABLE t（等于 ALTER TABLE ... ENGINE=InnoDB）。但这两种操作都会锁表且重建整个表空间（大表可能持续数小时），需要停机窗口。</p>
+<p>TRUNCATE 后空间立即释放——表空间文件被直接重置为初始大小（通常是 96KB 或 128KB，InnoDB 初始表空间的最小大小）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>自增 ID 重置</strong></td><td>不重置 AUTO_INCREMENT</td><td>重置为 1（或初始值）</td><td>表被删除，无所谓 ID</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>AUTO_INCREMENT 在各命令后的行为：</strong>
+<p>DELETE 全表后，INSERT 新行的自增 ID 从上一次的最大值 +1 继续，不会从头开始。例如：表中最大 ID=1000 → DELETE 全表 → INSERT 新行 → ID=1001。</p>
+<p>TRUNCATE 后 AUTO_INCREMENT 重置为初始值（通常 1）。这在业务上可能引发问题——如果别处记录了旧 ID（如日志、关联表），新数据用同样的旧 ID 会引起数据混乱。</p>
+<p>DROP + CREATE 后自增 ID 自然重置。注意：即使 TRUNCATE 重置了 AUTO_INCREMENT，计数器值存储在内存中，MySQL 重启后会从表中当前最大 ID+1 重新计算。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>锁行为</strong></td><td>行锁或表锁（取决于条件和引擎）</td><td>元数据锁 MDL（极短时间）</td><td>元数据锁 MDL + 排他锁</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>锁行为的实战影响：</strong>
+<p>DELETE 在 InnoDB 中是逐行加 X 锁（排他行锁），如果有 WHERE 条件没走索引，会退化为表锁。大表 DELETE 可能长时间持有大量行锁，阻塞其他事务。</p>
+<p>TRUNCATE 只需要短暂的元数据锁（MDL_EXCLUSIVE），在替换表空间文件的一瞬间持有。但在此瞬间如果表上还有未提交的事务，TRUNCATE 会被阻塞（等待事务提交），然后迅速完成。</p>
+<p>DROP 需要 MDL_EXCLUSIVE 且持续到文件从磁盘删除。如果表很大，删除 ibd 文件本身需要磁盘 IO 时间。在 MySQL 8.0.23+ 中，DROP TABLE 支持异步删除（innodb_data_file_purge=async），避免长时间阻塞。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>速度</strong></td><td>慢（逐行操作 + 写日志）</td><td>极快（元数据级操作）</td><td>快（元数据级操作，大文件删除需 IO）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>1000 万行删除对比（粗略数据）：</strong>
+<p>DELETE FROM big_table（无 WHERE）：约 10-30 分钟（取决于行大小和索引数量，每行都要维护索引） + 索引需要逐行更新。</p>
+<p>TRUNCATE TABLE big_table：约 0.01-0.1 秒（几乎不随行数增长），只操作元数据。</p>
+<p>DROP TABLE big_table：约 0.01-0.5 秒，额外需要 OS 释放文件（大文件可能需要一些 IO 时间，但 MySQL 8.0 支持异步删除后立即返回）。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>银行场景总结与最佳实践：</strong><br/>
+<strong>DELETE：</strong>业务数据归档（加 WHERE 条件分批删除）、需要触发审计触发器、需要回滚能力<br/>
+<strong>TRUNCATE：</strong>日终跑批的临时表清空、ETL 中间表重置、性能测试后的数据清理（需确保无外键依赖）<br/>
+<strong>DROP：</strong>下线废弃表、临时表用完清理<br/><br/>
+<strong>面试记忆口诀：</strong>"DELETE 删行能回滚，逐行日志空间留；TRUNCATE 清表秒级完，自增重置触发器跳；DROP 连表带结构，三者分清算你懂。"<br/><br/>
+<strong>银行核心教训：</strong>对审计敏感表绝不使用 TRUNCATE；DELETE 大批量数据时分批提交（每 10000 行 COMMIT 一次），避免长事务撑大 undo log 和阻塞复制。
+</div>
+
 <!-- ==================== 五、主从复制 ==================== -->
 <h2 id="five-1">五、主从复制</h2>
 
