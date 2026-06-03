@@ -67,7 +67,7 @@
 
   // Collapse toggle — protrudes from right edge of sidebar
   html += '<button class="sidebar-toggle" id="sidebar-toggle" title="收起侧边栏" aria-label="收起侧边栏">';
-  html += '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1.5"/><line x1="3" y1="8.5" x2="8" y2="8.5"/><line x1="3" y1="12" x2="8" y2="12"/><line x1="3" y1="15.5" x2="8" y2="15.5"/><polyline points="15 7 11 12 15 17"/></svg>';
   html += '</button>';
 
   html += '<div class="sidebar-scroll">';
@@ -169,7 +169,7 @@
     if (mainContent) mainContent.classList.add('expanded');
     if (handle) handle.classList.add('visible');
     toggleBtn.setAttribute('title', '展开侧边栏');
-    toggleBtn.querySelector('svg').innerHTML = '<polyline points="9 18 15 12 9 6"/>';
+    toggleBtn.querySelector('svg').innerHTML = '<rect x="16" y="4" width="5" height="16" rx="1.5" stroke="currentColor"/><line x1="16" y1="8.5" x2="21" y2="8.5" stroke="currentColor"/><line x1="16" y1="12" x2="21" y2="12" stroke="currentColor"/><line x1="16" y1="15.5" x2="21" y2="15.5" stroke="currentColor"/><polyline points="9 7 13 12 9 17" stroke="currentColor"/>';
     try { localStorage.setItem('sidebar-collapsed', '1'); } catch(e) {}
   }
 
@@ -178,7 +178,7 @@
     if (mainContent) mainContent.classList.remove('expanded');
     if (handle) handle.classList.remove('visible');
     toggleBtn.setAttribute('title', '收起侧边栏');
-    toggleBtn.querySelector('svg').innerHTML = '<polyline points="15 18 9 12 15 6"/>';
+    toggleBtn.querySelector('svg').innerHTML = '<rect x="3" y="4" width="5" height="16" rx="1.5" stroke="currentColor"/><line x1="3" y1="8.5" x2="8" y2="8.5" stroke="currentColor"/><line x1="3" y1="12" x2="8" y2="12" stroke="currentColor"/><line x1="3" y1="15.5" x2="8" y2="15.5" stroke="currentColor"/><polyline points="15 7 11 12 15 17" stroke="currentColor"/>';
     try { localStorage.setItem('sidebar-collapsed', '0'); } catch(e) {}
   }
 

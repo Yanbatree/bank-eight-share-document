@@ -14,12 +14,10 @@
   /* ── Page-specific: Landing Grid ─────────────────────── */
   body {
     min-height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 40px;
   }
-  .container { max-width: 1050px; width: 100%; }
+  .main {
+    max-width: calc(var(--sidebar-width) + 1050px);
+  }
 
   .hero-title {
     text-align: center;
@@ -115,7 +113,7 @@
 </head>
 <body>
 
-<div class="container">
+<div class="main">
   <h1 class="hero-title">银行科技岗 · 面试八股文</h1>
   <p class="hero-sub">SpringBoot 技术栈 · 21 大模块 · 含 Mermaid 图表 · 2025 面试版</p>
 
@@ -301,5 +299,6 @@
   <p class="footer-note">P0 全部熟背 → P1 高频 3 遍 → P2 说清原理 → 场景画架构图 → 业务+智能化+面经实战</p>
 </div>
 
+<script src="nav.js"></script>
 </body>
 </html>
