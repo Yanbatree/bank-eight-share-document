@@ -167,10 +167,15 @@ body {
   height: 100vh;
   background: var(--surface-elevated);
   border-right: 1px solid var(--border-subtle);
-  padding: var(--space-6);
-  overflow-y: auto;
   z-index: 20;
   backdrop-filter: blur(12px);
+  overflow: visible;
+}
+
+.sidebar-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
 }
 
 .sidebar-header {
@@ -265,22 +270,37 @@ body {
 /* ── Sidebar collapse toggle ──────────────────────────── */
 .sidebar-toggle {
   position: absolute;
-  top: 12px;
-  right: 8px;
-  width: 28px; height: 28px;
+  top: 50%;
+  right: -16px;
+  transform: translateY(-50%);
+  width: 32px; height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
-  border: none;
-  color: var(--text-tertiary);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
+  transition: all var(--duration-normal) var(--ease-out);
   padding: 0;
-  z-index: 1;
+  z-index: 25;
+  box-shadow: var(--shadow-md);
 }
-.sidebar-toggle:hover { color: var(--text-primary); }
-.sidebar-toggle svg { width: 15px; height: 15px; }
+.sidebar-toggle:hover {
+  color: var(--accent);
+  border-color: var(--border-accent);
+  background: var(--surface-hover);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-50%) scale(1.08);
+}
+.sidebar-toggle:active {
+  transform: translateY(-50%) scale(0.95);
+}
+.sidebar-toggle svg {
+  width: 16px; height: 16px;
+  transition: transform var(--duration-normal) var(--ease-out);
+}
 
 /* ── Theme toggle ─────────────────────────────────────── */
 .theme-toggle {
@@ -357,19 +377,38 @@ body {
   position: fixed;
   left: 0; top: 50%;
   transform: translateY(-50%);
-  width: 6px; height: 72px;
-  background: var(--border-default);
-  border-radius: 0 4px 4px 0;
+  width: 28px; height: 56px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
   z-index: 19;
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--duration-normal), background var(--duration-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity var(--duration-normal), background var(--duration-fast), box-shadow var(--duration-fast);
+  box-shadow: var(--shadow-sm);
+}
+.sidebar-handle::after {
+  content: '';
+  width: 0; height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid var(--text-tertiary);
+  transition: border-left-color var(--duration-fast);
 }
 .sidebar-handle.visible {
   opacity: 1;
 }
 .sidebar-handle:hover {
-  background: var(--accent);
+  background: var(--surface-hover);
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-md);
+}
+.sidebar-handle:hover::after {
+  border-left-color: var(--accent);
 }
 
 /* ── Sidebar transitions ───────────────────────────────── */
@@ -946,11 +985,16 @@ pre code {
     transition: transform var(--duration-slow) var(--ease-out);
     z-index: 30;
     width: 280px;
-    padding: var(--space-5);
-    padding-top: 56px;            /* clear hamburger */
+    padding: 0;
     box-shadow: var(--shadow-xl);
   }
   .sidebar.open { transform: translateX(0); }
+  .sidebar-scroll {
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--space-5);
+    padding-top: 56px;            /* clear hamburger */
+  }
 
   .sidebar a {
     padding: 10px var(--space-3);
@@ -1155,7 +1199,8 @@ pre code {
   .container { padding: 48px var(--space-3) var(--space-6); }
 
   /* ── Sidebar: narrower drawer ─────────────────────────── */
-  .sidebar { width: 260px; padding: var(--space-3); padding-top: 48px; }
+  .sidebar { width: 260px; padding: 0; }
+  .sidebar-scroll { padding: var(--space-3); padding-top: 48px; }
   .sidebar a { padding: 6px var(--space-2); font-size: 0.85rem; }
 
   /* ── Headings: tight ──────────────────────────────────── */

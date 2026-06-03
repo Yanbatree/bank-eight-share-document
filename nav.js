@@ -65,15 +65,19 @@
   // ── Build sidebar HTML ──────────────────────────────
   var html = '<nav class="sidebar" id="global-nav">';
 
-  // Header: home icon + title + collapse toggle
-  html += '<div class="sidebar-header" style="margin-bottom:14px;position:relative">';
+  // Collapse toggle — protrudes from right edge of sidebar
+  html += '<button class="sidebar-toggle" id="sidebar-toggle" title="收起侧边栏" aria-label="收起侧边栏">';
+  html += '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+  html += '</button>';
+
+  html += '<div class="sidebar-scroll">';
+
+  // Header: home icon + title
+  html += '<div class="sidebar-header">';
   html += '<a href="' + resolveHref('index.html') + '" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit;font-weight:700;font-size:15px;letter-spacing:-0.01em">';
   html += '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>';
   html += '<span>银行八股文</span>';
   html += '</a>';
-  html += '<button class="sidebar-toggle" id="sidebar-toggle" title="收起侧边栏" aria-label="收起侧边栏">';
-  html += '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
-  html += '</button>';
   html += '</div>';
 
   // Theme toggle — in sidebar flow, below header
@@ -111,6 +115,7 @@
   html += '<div id="page-toc"></div>';
   html += '</div>';
 
+  html += '</div>';  // close .sidebar-scroll
   html += '</nav>';
 
   // ── Inject sidebar + edge handle into page ──────────
