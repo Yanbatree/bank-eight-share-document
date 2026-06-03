@@ -219,3 +219,162 @@ RR 级别：事务中第一次 SELECT 生成 ReadView，之后复用。
 3. Slave 的 SQL 线程从 relay log 中重放 SQL
 
 **延迟原因**：Slave 单线程回放（5.7+ 支持并行复制）、大事务、机器性能差异。
+
+---
+
+## 六、SQL查询操作
+
+### 1. WHERE 和 HAVING 的区别？
+
+| | WHERE | HAVING |
+|---|-------|--------|
+| 作用对象 | 对**原始行**进行过滤 | 对**分组后的结果**进行过滤 |
+| 执行顺序 | GROUP BY **之前** | GROUP BY **之后** |
+| 聚合函数 | **不能**使用聚合函数 | **可以**使用聚合函数 |
+
+```sql
+-- WHERE：过滤行，不能用聚合函数
+SELECT * FROM user WHERE age > 18;
+
+-- HAVING：过滤分组，可以用聚合函数
+SELECT dept_id, COUNT(*) AS cnt
+FROM user
+GROUP BY dept_id
+HAVING cnt > 5;
+```
+
+### 2. IN、BETWEEN、LIKE、IS NULL 怎么用？
+
+| 操作符 | 用途 | 示例 |
+|--------|------|------|
+| IN | 匹配多个值 | `WHERE dept_id IN (1, 2, 3)` |
+| BETWEEN | 范围查询（闭区间） | `WHERE age BETWEEN 18 AND 30` |
+| LIKE | 模糊匹配 | `WHERE name LIKE '张%'` |
+| IS NULL | 判空（**不能用 = NULL**） | `WHERE email IS NULL` |
+
+**LIKE 注意**：`%` 匹配任意字符，`_` 匹配单个字符。`LIKE '%abc'` 会导致索引失效。
+
+**NULL 注意**：NULL 表示"未知"，不能用 `=` 或 `!=` 比较，只能用 `IS NULL` 或 `IS NOT NULL`。
+
+### 3. GROUP BY + 聚合函数怎么配合？
+
+**常用聚合函数**：`COUNT`、`SUM`、`AVG`、`MAX`、`MIN`
+
+```sql
+SELECT dept_id, COUNT(*) AS cnt, AVG(salary) AS avg_sal
+FROM employee
+GROUP BY dept_id;
+```
+
+**执行顺序**：WHERE → GROUP BY → 聚合函数 → HAVING → ORDER BY → LIMIT
+
+**注意**：SELECT 中的非聚合列必须出现在 GROUP BY 中，否则报错（`ONLY_FULL_GROUP_BY` 模式下）。
+
+### 4. ORDER BY 和 LIMIT 怎么用？
+
+```sql
+SELECT * FROM user
+ORDER BY age DESC, name ASC
+LIMIT 10 OFFSET 20;   -- 跳过前20条，取10条
+```
+
+- `ORDER BY`：默认 ASC（升序），DESC 降序。多列排序时从左到右依次比较
+- `LIMIT m, n` 等价于 `LIMIT n OFFSET m`：跳过 m 条后取 n 条
+- 大偏移量优化：`LIMIT 1000000, 10` 性能差，可用**延迟关联**——先用覆盖索引定位主键，再回表
+
+```sql
+-- 优化：先拿到主键，再关联取数据
+SELECT * FROM user t1
+INNER JOIN (SELECT id FROM user ORDER BY id LIMIT 1000000, 10) t2
+ON t1.id = t2.id;
+```
+
+### 5. UNION 和 UNION ALL 的区别？
+
+| | UNION | UNION ALL |
+|---|-------|-----------|
+| 去重 | 自动去重（DISTINCT） | 不去重 |
+| 性能 | 慢（需要排序去重） | 快 |
+| 使用场景 | 需要合并去重 | 明确无重复或允许重复 |
+
+```sql
+-- UNION：去重
+SELECT name FROM student_a
+UNION
+SELECT name FROM student_b;
+
+-- UNION ALL：不去重
+SELECT name FROM student_a
+UNION ALL
+SELECT name FROM student_b;
+```
+
+**注意**：UNION 要求各 SELECT 的列数相同、对应列类型兼容。
+
+### 6. INNER JOIN、LEFT JOIN、RIGHT JOIN 的区别？
+
+| 类型 | 结果 |
+|------|------|
+| INNER JOIN | 两表**都匹配**的行 |
+| LEFT JOIN | 左表**全部保留**，右表不匹配填 NULL |
+| RIGHT JOIN | 右表**全部保留**，左表不匹配填 NULL |
+
+```sql
+-- 内联：只返回两表都匹配的
+SELECT u.name, o.amount
+FROM user u
+INNER JOIN orders o ON u.id = o.user_id;
+
+-- 左联：user 全部保留，没订单的 amount 为 NULL
+SELECT u.name, o.amount
+FROM user u
+LEFT JOIN orders o ON u.id = o.user_id;
+
+-- 右联：orders 全部保留
+SELECT u.name, o.amount
+FROM user u
+RIGHT JOIN orders o ON u.id = o.user_id;
+```
+
+**LEFT JOIN 常见坑**：WHERE 条件过滤掉 NULL 等价于 INNER JOIN。如果想把条件作用在右表，应该写在 ON 里而非 WHERE 里。
+
+### 7. 子查询有哪些类型？
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| 标量子查询 | 返回**单个值**（一行一列） | `SELECT * FROM user WHERE salary > (SELECT AVG(salary) FROM user)` |
+| IN 子查询 | 检查是否在结果集中 | `SELECT * FROM user WHERE dept_id IN (SELECT id FROM dept WHERE name LIKE '技术%')` |
+| EXISTS 子查询 | 检查子查询是否有**任意一行**结果 | `SELECT * FROM user u WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id)` |
+
+**IN vs EXISTS**：
+- IN 先执行子查询，返回结果集，再和外部匹配。适用于子查询结果集**小**的情况
+- EXISTS 是**逐行**驱动外部表，对每一行执行子查询判断。适用于外部表**小**或子查询依赖外部表的情况
+
+```sql
+-- EXISTS：有订单的用户
+SELECT * FROM user u
+WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id);
+
+-- NOT EXISTS：没订单的用户（通常比 NOT IN 更安全，NOT IN 遇到 NULL 会全空）
+SELECT * FROM user u
+WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id);
+```
+
+### 8. 表别名和字段别名的使用场景？
+
+**字段别名**：用 `AS` 给列起别名（AS 可省略），常用于聚合、计算、重命名
+
+```sql
+SELECT COUNT(*) AS total_users, AVG(salary) avg_sal FROM user;
+```
+
+**表别名**：给表起短名，常用于自连接和多表查询
+
+```sql
+-- 自连接：查询每个员工的上级
+SELECT e.name AS emp, m.name AS manager
+FROM employee e
+LEFT JOIN employee m ON e.manager_id = m.id;
+```
+
+**别名执行顺序注意**：SELECT 中定义的别名在 WHERE 中不能用（WHERE 先执行），但可以在 GROUP BY、HAVING、ORDER BY 中使用。

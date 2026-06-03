@@ -856,6 +856,267 @@ flowchart LR
 <strong>半同步复制：</strong>Master 等至少一个 Slave 收到 binlog 后再返回成功。
 </div>
 
+<!-- ==================== 六、SQL查询操作 ==================== -->
+<h2 id="six-1">六、SQL查询操作</h2>
+
+<h3>1. WHERE 和 HAVING 的区别？</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>WHERE</th><th>HAVING</th></tr>
+<tr><td>作用对象</td><td>对<strong>原始行</strong>进行过滤</td><td>对<strong>分组后的结果</strong>进行过滤</td></tr>
+<tr><td>执行顺序</td><td>GROUP BY <strong>之前</strong></td><td>GROUP BY <strong>之后</strong></td></tr>
+<tr><td>聚合函数</td><td><strong>不能</strong>使用聚合函数</td><td><strong>可以</strong>使用聚合函数</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>执行顺序差异的图解：</strong>
+<p>完整 SELECT 的执行顺序：<code>FROM → WHERE → GROUP BY → 聚合函数 → HAVING → SELECT → ORDER BY → LIMIT</code></p>
+<p>WHERE 在 GROUP BY 之前执行，所以它过滤的是原始数据行——这时候还没有分组，聚合函数（如 COUNT、SUM）还没有计算出来，所以在 WHERE 中不能使用聚合函数。</p>
+<p>HAVING 在 GROUP BY 之后、聚合函数计算之后执行，所以它可以对分组结果（如 COUNT(*) > 5）进行过滤。</p>
+<strong>实战案例：</strong>
+<p><code>SELECT dept_id, AVG(salary) FROM emp WHERE age > 25 GROUP BY dept_id HAVING AVG(salary) > 10000;</code></p>
+<p>① WHERE age>25 先过滤掉年轻员工 → ② 按 dept_id 分组 → ③ 计算每个部门的 AVG(salary) → ④ HAVING 过滤掉平均薪资不到 1 万的部门。</p>
+</div>
+
+<div class="highlight">
+<strong>核心记忆：</strong>WHERE 过滤行，HAVING 过滤分组。WHERE 不能用聚合函数，HAVING 可以。
+</div>
+
+<h3>2. IN、BETWEEN、LIKE、IS NULL 怎么用？</h3>
+
+<div class="card">
+<table>
+<tr><th>操作符</th><th>用途</th><th>示例</th><th>索引影响</th></tr>
+<tr><td>IN</td><td>匹配多个值</td><td><code>WHERE dept_id IN (1, 2, 3)</code></td><td>通常走索引（等价于多个 OR）</td></tr>
+<tr><td>BETWEEN</td><td>范围查询（闭区间）</td><td><code>WHERE age BETWEEN 18 AND 30</code></td><td>走索引（等价于 >= AND <=）</td></tr>
+<tr><td>LIKE</td><td>模糊匹配</td><td><code>WHERE name LIKE '张%'</code></td><td>前缀匹配走索引，'%张' 不走</td></tr>
+<tr><td>IS NULL</td><td>判空</td><td><code>WHERE email IS NULL</code></td><td>走索引（NULL 值也在索引中）</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>LIKE 的细节：</strong>
+<ul><li><code>%</code> 匹配任意长度的任意字符（包括 0 个）</li>
+<li><code>_</code> 匹配单个任意字符</li>
+<li><code>LIKE '%abc'</code> 和 <code>LIKE '%abc%'</code> 都会导致索引失效</li>
+<li><code>LIKE 'abc%'</code> 可以走索引——因为 B+ 树知道从 'abc' 开始</li></ul>
+<strong>NULL 的三个坑：</strong>
+<ul><li><code>WHERE email = NULL</code> → 永远查不到数据，NULL 不能用 = 比较</li>
+<li><code>WHERE email != NULL</code> → 同样查不到，必须用 IS NOT NULL</li>
+<li><code>NOT IN</code> 子查询中如果有 NULL，可能导致结果为空（NULL 与任何值比较都返回 UNKNOWN）</li></ul>
+<strong>IN vs OR 的性能差异：</strong>
+<p>MySQL 内部会把 IN 优化为等值查询的列表，通常比等价的多个 OR 更快（尤其是 IN 的值较多时）。如果 IN 列表很长（成百上千个值），MySQL 可能会选择全表扫描——此时可以考虑将列表放入临时表然后 JOIN。</p>
+</div>
+
+<div class="highlight">
+<strong>面试高频：</strong>为什么 <code>= NULL</code> 查不到数据？因为 NULL 表示"未知"，两个未知值之间不能判断相等。SQL 标准规定任何与 NULL 的比较都返回 UNKNOWN（既不是 TRUE 也不是 FALSE）。
+</div>
+
+<h3>3. GROUP BY + 聚合函数怎么配合？</h3>
+
+<div class="mermaid">
+flowchart LR
+    A["原始数据"] --> B["WHERE 过滤行"]
+    B --> C["GROUP BY 分组"]
+    C --> D["聚合函数计算<br/>COUNT / SUM / AVG / MAX / MIN"]
+    D --> E["HAVING 过滤分组"]
+    E --> F["SELECT 输出"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>五大聚合函数详解：</strong>
+<ul><li><strong>COUNT(*)：</strong>统计行数（包括 NULL 行），不忽略任何行。COUNT(列名) 忽略该列的 NULL 值。COUNT(DISTINCT col) 去重计数</li>
+<li><strong>SUM(col)：</strong>对列求和，忽略 NULL 值。如果全为 NULL，返回 NULL（不是 0）</li>
+<li><strong>AVG(col)：</strong>求平均值，忽略 NULL 值。AVG = SUM / COUNT（只计非 NULL 行）</li>
+<li><strong>MAX(col) / MIN(col)：</strong>求最大/最小值，忽略 NULL。如果全为 NULL，返回 NULL</li></ul>
+<strong>GROUP BY 的几个规则：</strong>
+<ul><li>SELECT 中的非聚合列必须出现在 GROUP BY 中（ONLY_FULL_GROUP_BY 模式，MySQL 5.7+ 默认开启）</li>
+<li>GROUP BY 可以用列的序号代替列名：<code>GROUP BY 1, 2</code>（指 SELECT 中的第 1、2 列）</li>
+<li>如果 GROUP BY 的列有索引，可以利用索引的有序性避免临时表（Using temporary）</li></ul>
+<strong>COUNT(*) vs COUNT(1) vs COUNT(col)：</strong>
+<p>在 InnoDB 中，COUNT(*) 和 COUNT(1) 性能完全一样（优化器会把 COUNT(1) 优化成 COUNT(*)）。COUNT(col) 会忽略 NULL 值，如果 col 有 NOT NULL 约束则三者等价。COUNT(*) 默认走最小的二级索引（因为二级索引叶子页更小，扫描更快）。</p>
+</div>
+
+<div class="highlight">
+<strong>执行顺序：</strong>WHERE → GROUP BY → 聚合函数 → HAVING → SELECT → ORDER BY → LIMIT<br/>
+<strong>关键约束：</strong>SELECT 中的非聚合列必须出现在 GROUP BY 中（ONLY_FULL_GROUP_BY 模式下）。
+</div>
+
+<h3>4. ORDER BY 和 LIMIT 怎么用？</h3>
+
+<div class="card">
+<table>
+<tr><th>子句</th><th>语法</th><th>说明</th></tr>
+<tr><td>ORDER BY</td><td><code>ORDER BY col1 [ASC|DESC], col2 [ASC|DESC]</code></td><td>默认 ASC 升序；多列从左到右依次比较</td></tr>
+<tr><td>LIMIT</td><td><code>LIMIT m, n</code> 或 <code>LIMIT n OFFSET m</code></td><td>跳过 m 条后取 n 条</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>ORDER BY 的排序机制：</strong>
+<p>如果排序列有索引，MySQL 可以利用索引的有序性直接返回数据（Extra 中无 Using filesort）。如果排序列没有索引，MySQL 会在内存（sort_buffer）中排序，如果排序数据超过 sort_buffer_size，会使用磁盘临时文件（归并排序），Extra 中显示 Using filesort。</p>
+<strong>深分页的性能问题与优化：</strong>
+<p><code>LIMIT 1000000, 10</code> 的问题：MySQL 必须扫描前 1000010 行然后丢弃前 1000000 行。随着 offset 增大，性能线性下降。</p>
+<p><strong>解决方案一（延迟关联）：</strong>先用覆盖索引定位到起始主键，再回表取数据：<br/>
+<code>SELECT t1.* FROM user t1 INNER JOIN (SELECT id FROM user ORDER BY id LIMIT 1000000, 10) t2 ON t1.id = t2.id;</code></p>
+<p><strong>解决方案二（游标式分页）：</strong>记录上一页最后一个 id，下次查询用 <code>WHERE id > last_id ORDER BY id LIMIT 10</code>。缺点是只能逐页翻，不能跳页。</p>
+<strong>ORDER BY 的索引利用条件：</strong>
+<ul><li>排序列必须是索引的最左前缀</li>
+<li>所有列的排序方向必须一致（全 ASC 或全 DESC）——MySQL 8.0+ 支持降序索引后可混合</li>
+<li>如果既有等值条件又有排序，联合索引把等值列放前面、排序列放后面</li></ul>
+</div>
+
+<div class="highlight">
+<strong>深分页优化：</strong>延迟关联（先用覆盖索引定位主键再回表）或游标式分页（记住上次 ID 用 WHERE id > last_id 翻页）。
+</div>
+
+<h3>5. UNION 和 UNION ALL 的区别？</h3>
+
+<div class="card">
+<table>
+<tr><th></th><th>UNION</th><th>UNION ALL</th></tr>
+<tr><td>去重</td><td>自动去重（默认 DISTINCT）</td><td>不去重</td></tr>
+<tr><td>性能</td><td>较慢（需要排序+去重，可能用临时表）</td><td>较快（直接合并结果集）</td></tr>
+<tr><td>使用场景</td><td>需要合并去重的场景</td><td>明确结果无重复，或允许重复</td></tr>
+</table>
+<small style="color:var(--orange)">能用 UNION ALL 就不用 UNION——去重需要额外的排序和比较开销</small>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>UNION 的基本规则：</strong>
+<ul><li>各 SELECT 的列数必须相同</li><li>对应列的数据类型必须兼容（MySQL 会做隐式类型转换）</li><li>最终结果集的列名以第一个 SELECT 的列名为准</li><li>ORDER BY 只能出现在最后一个 SELECT 后面，对最终合并结果排序</li><li>如果想对每个 SELECT 单独排序，需要加括号并用 LIMIT</li></ul>
+<strong>UNION 去重的实现：</strong>
+<p>MySQL 对 UNION 的去重类似于做了一个 DISTINCT——通常用临时表 + 哈希或排序来实现。如果数据量很大，临时表可能溢出到磁盘。UNION ALL 不需要临时表，直接返回结果。</p>
+<strong>面试技巧：</strong>
+<p>面试中如果被问到"如何合并两个表的结果"，首选要问清楚是否要去重。很多候选人直接写 UNION，但实际场景中 UNION ALL 更常用。</p>
+</div>
+
+<div class="highlight">
+<strong>口诀：</strong>UNION 去重、UNION ALL 不去重。能确定无重复就用 UNION ALL（性能更好）。
+</div>
+
+<h3>6. INNER JOIN / LEFT JOIN / RIGHT JOIN 的区别？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "INNER JOIN"
+        A1["左表匹配行"] --- A2["右表匹配行"]
+    end
+    subgraph "LEFT JOIN"
+        B1["左表全部行<br/>(包括不匹配的)"] --- B2["右表匹配行"]
+        B1 --- B3["右表填 NULL<br/>(不匹配部分)"]
+    end
+    subgraph "RIGHT JOIN"
+        C1["右表全部行"] --- C2["左表匹配行"]
+        C1 --- C3["左表填 NULL"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>三种 JOIN 的内存模型：</strong>
+<p><strong>INNER JOIN：</strong>取两表的交集。MySQL 通常用小表（驱动表）的每一行去大表（被驱动表）中匹配，被驱动表关联列必须有索引（否则 Using join buffer，性能很差）。</p>
+<p><strong>LEFT JOIN：</strong>左表全部保留——右表匹配上就填充，匹配不上填 NULL。如果 WHERE 条件中对右表的非 NULL 列做了过滤（如 WHERE b.id IS NOT NULL），实际效果等同于 INNER JOIN。</p>
+<p><strong>RIGHT JOIN：</strong>右表全部保留。实现上 MySQL 优化器通常会把 RIGHT JOIN 转为 LEFT JOIN 来执行（交换左右表位置）。</p>
+<strong>LEFT JOIN 的经典陷阱——ON vs WHERE：</strong>
+<p><code>SELECT * FROM user u LEFT JOIN orders o ON u.id = o.user_id WHERE o.amount > 100;</code></p>
+<p>上面的 SQL 看似是"左联后再过滤"，但 WHERE 在 JOIN 之后执行——不匹配的行 o.amount 是 NULL，NULL > 100 不成立，这些行被过滤掉了。最终效果等同于 INNER JOIN。</p>
+<p>正确的写法（保留左表所有行，只对右表加条件）：<br/>
+<code>SELECT * FROM user u LEFT JOIN orders o ON u.id = o.user_id AND o.amount > 100;</code></p>
+<strong>JOIN 的驱动表选择：</strong>
+<p>MySQL 优化器通常选择小表作为驱动表（Nested Loop Join）。可以用 STRAIGHT_JOIN 强制指定驱动表。关键优化点：被驱动表的 JOIN 列必须有索引。</p>
+</div>
+
+<div class="highlight">
+<strong>核心记忆：</strong>INNER JOIN 取交集；LEFT JOIN 左表全保留（右表不匹配→NULL）；RIGHT JOIN 右表全保留。<br/>
+<strong>陷阱：</strong>LEFT JOIN 后在 WHERE 中过滤右表列 = 变成 INNER JOIN。右表条件应写在 ON 里。
+</div>
+
+<h3>7. 子查询有哪些类型？</h3>
+
+<div class="card">
+<table>
+<tr><th>类型</th><th>返回值</th><th>示例</th></tr>
+<tr class="row-expandable"><td>标量子查询</td><td>单个值（一行一列）</td><td><code>WHERE salary > (SELECT AVG(salary) FROM emp)</code></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>标量子查询只返回一个值，可以用在 SELECT、WHERE、HAVING 等任何需要单一值的地方。如果子查询返回多行，运行时会报错 <code>Subquery returns more than 1 row</code>。性能上，如果外部查询有很多行，标量子查询会被反复执行——MySQL 8.0 对相关标量子查询做了一定优化（如缓存结果），但仍建议改写为 JOIN。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>IN 子查询</td><td>多行一列（值列表）</td><td><code>WHERE dept_id IN (SELECT id FROM dept WHERE ...)</code></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>IN 子查询先执行子查询拿到结果集，再用外部查询的每一行去匹配。MySQL 5.6+ 对 IN 子查询做了半连接优化（semi-join），可以转为等效的 JOIN 来执行，性能大幅提升。如果子查询结果集很大，考虑改为 EXISTS 或 JOIN。</p>
+<p><strong>NOT IN 的 NULL 陷阱：</strong><code>WHERE id NOT IN (SELECT dept_id FROM emp)</code>——如果 emp 表的 dept_id 有 NULL，整个查询返回空！因为 <code>id NOT IN (1, 2, NULL)</code> 等价于 <code>id != 1 AND id != 2 AND id != NULL</code>，而 <code>id != NULL</code> 永远为 NULL（未知），导致整个条件为 NULL。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>EXISTS 子查询</td><td>布尔值（TRUE/FALSE）</td><td><code>WHERE EXISTS (SELECT 1 FROM orders WHERE ...)</code></td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>EXISTS 不关心子查询返回什么数据，只关心是否有行返回——所以 SELECT 后面写什么都可以，惯例写 SELECT 1 或 SELECT *。</p>
+<p>EXISTS 是逐行驱动外部表的——对外部表的每一行，执行一次子查询，命中即返回 TRUE 然后停止（短路）。所以 EXISTS 特别适合外部表小而子查询关联表大的场景（和 IN 相反）。</p>
+<p>EXISTS 常被忽略的优势：EXISTS 可以处理多列匹配（WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.a=t1.a AND t2.b=t1.b)），而 IN 只能匹配单列。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="mermaid">
+flowchart TD
+    A["需要子查询"] --> B{"子查询结果集大小？"}
+    B -->|"结果集小（几百条）"| C["用 IN 子查询<br/>MySQL 5.6+ 自动 semi-join 优化"]
+    B -->|"结果集大（几万条+）"| D{"外部表大小？"}
+    D -->|"外部表小"| E["用 EXISTS<br/>逐行驱动，短路判断"]
+    D -->|"外部表大"| F["改写为 JOIN<br/>让优化器选驱动表"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>IN vs EXISTS 的选择逻辑：</strong>
+<ul><li><strong>IN：</strong>子查询先执行（或优化为 semi-join），结果集放入内存。适合子查询结果集<strong>小</strong>的情况</li>
+<li><strong>EXISTS：</strong>外部表逐行驱动子查询，每次子查询走索引查一次。适合外部表<strong>小</strong>而子查询表<strong>大</strong>的情况</li></ul>
+<strong>子查询的优化策略（MySQL 5.6/5.7/8.0 进展）：</strong>
+<ul><li><strong>semi-join（5.6+）：</strong>把 IN 子查询转为半连接，优化器可以重排 JOIN 顺序</li>
+<li><strong>materialization（5.6+）：</strong>把子查询结果物化到临时表并加索引，然后 JOIN</li>
+<li><strong>firstmatch（5.6+）：</strong>扫描驱动表时，对被驱动表只取第一行即可（因为 IN/EXISTS 只需知道是否存在）</li>
+<li><strong>derived table merge（5.7+）：</strong>把 FROM 子句中的子查询合并到外层查询，避免物化</li></ul>
+<strong>NOT EXISTS vs NOT IN：</strong>
+<p>NOT EXISTS 几乎总是比 NOT IN 更安全。NOT IN 遇到 NULL 会返回空（经典的 NULL 陷阱），而 NOT EXISTS 不会。面试时这一条能让面试官印象深刻。</p>
+</div>
+
+<div class="highlight">
+<strong>IN vs EXISTS：</strong>IN 先算子查询再匹配（适合子查询结果小）；EXISTS 外部逐行驱动（适合外部表小、子查询表大）。<br/>
+<strong>NOT IN 陷阱：</strong>子查询结果含 NULL → 整个查询返回空。推荐用 NOT EXISTS 替代。
+</div>
+
+<h3>8. 表别名和字段别名的使用场景？</h3>
+
+<div class="card">
+<table>
+<tr><th>别名类型</th><th>语法</th><th>典型场景</th></tr>
+<tr><td>字段别名</td><td><code>SELECT col AS alias</code>（AS 可省略）</td><td>聚合函数命名、计算列重命名、列名冲突时区分</td></tr>
+<tr><td>表别名</td><td><code>FROM table AS alias</code>（AS 可省略）</td><td>多表 JOIN 时简写、自连接时区分两个表</td></tr>
+</table>
+</div>
+
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>字段别名的常见场景：</strong>
+<ul><li>聚合/计算列：<code>SELECT COUNT(*) AS total, AVG(salary) avg_sal FROM emp;</code></li>
+<li>列名冲突：两个表都有 name 列，JOIN 后用别名区分 <code>u.name AS user_name, d.name AS dept_name</code></li>
+<li>给 CASE WHEN 结果命名：<code>SELECT CASE WHEN age<18 THEN '未成年' ELSE '成年' END AS age_group</code></li></ul>
+<strong>表别名的经典场景——自连接：</strong>
+<p>员工表中有 manager_id 指向同表的 id，查询"员工名 + 上级名"：<br/>
+<code>SELECT e.name AS emp, m.name AS manager FROM employee e LEFT JOIN employee m ON e.manager_id = m.id;</code></p>
+<strong>别名的执行顺序注意：</strong>
+<p>SELECT 中定义的别名不能在 WHERE 中使用（因为 WHERE 先于 SELECT 执行）。但可以在 GROUP BY、HAVING、ORDER BY 中使用。Oracle 和 SQL Server 在这个细节上行为略有不同。</p>
+<strong>AS 关键字：</strong>
+<p>AS 可以省略（SELECT COUNT(*) cnt FROM user），但建议保留以提高可读性。注意：Oracle 中表别名不能加 AS，MySQL 中可以。</p>
+</div>
+
+<div class="highlight">
+<strong>关键：</strong>SELECT 中定义的别名不能在 WHERE 中用（WHERE 先执行），但可以在 GROUP BY、HAVING、ORDER BY 中用。<br/>
+<strong>自连接必须用表别名：</strong>同一张表出现两次，必须用别名区分（如 employee e 和 employee m）。
+</div>
+
 <div class="nav-bottom">
   <span></span>
   <a href="../02-Redis/Redis八股文.html">下一篇：Redis 八股文 →</a>
