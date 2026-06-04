@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>Linux常用命令八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #0ea5e9; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #0369a1; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+<script src="../nav.js"></script>
+<div class="main">
+<h1>Linux 常用命令八股文</h1>
+
+<!-- ============ 一、系统监控与资源查看 ============ -->
+<h2 id="one">一、系统监控与资源查看</h2>
+
+<h3 id="one-1">1. 系统整体状态</h3>
+
+<div class="card card--accent">
+<strong>top / htop</strong> — 实时进程监控
+<p><strong>关键指标解读：</strong></p>
+<ul>
+  <li><strong>load average：</strong>1min / 5min / 15min 平均负载。它的值等于处于<strong>可运行状态（R）</strong> + <strong>不可中断睡眠状态（D）</strong>的线程数平均值。load &gt; CPU 核心数 = 系统过载信号（可能 CPU 瓶颈或 IO 瓶颈）。单核 load=2 意味着平均有 1 个任务在排队等待 CPU。</li>
+  <li><strong>CPU 行：</strong>us（用户态）、sy（内核态）、id（空闲）、wa（等待 IO）—— wa 持续 &gt;10% 说明磁盘可能成为瓶颈。</li>
+  <li><strong>MEM 行：</strong>total / free / used / buff/cache。Linux 会利用空闲内存做文件缓存（buff/cache），所以"free"值很小不一定说明内存不够。</li>
+  <li><strong>htop 优势：</strong>彩色显示、鼠标操作、可直接对进程发送信号（F9 kill），支持树状进程视图。</li>
+</ul>
+</div>
+
+<div class="card">
+<strong>free -h</strong> — 内存使用概览
+<pre><code>$ free -h
+              total        used        free      shared  buff/cache   available
+Mem:           15Gi       3.2Gi       2.1Gi       256Mi        10Gi        12Gi
+Swap:         2.0Gi       0.0Gi       2.0Gi</code></pre>
+<p><strong>关键理解：</strong><code>free</code> 列是"完全未被使用的内存"，<code>available</code> 列才是"应用程序可用内存"（包括可回收的 buff/cache）。<strong>面试常问：</strong>free 很小但 available 很大——内存充裕，只是被缓存占用了；free 和 available 都很小——真正内存不足。</p>
+<p><strong>buff vs cache 区别：</strong>buff（buffer）是块设备（磁盘）的元数据缓存；cache 是文件内容的页面缓存（page cache）。应用程序读文件时会先查 page cache，命中则避免磁盘 IO。</p>
+</div>
+
+<div class="card">
+<strong>df -h / du -sh</strong> — 磁盘使用
+<pre><code>$ df -h          # 查看文件系统级别磁盘使用
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        50G   42G  5.1G  90% /
+$ du -sh /var/log/*   # 查看目录级别磁盘使用
+2.3G    /var/log/app
+512M    /var/log/nginx</code></pre>
+<p><strong>经典面试题：</strong>df 显示磁盘满了（100%），但 du 统计各目录加起来远小于总使用量？</p>
+<div class="highlight">
+<strong>答案：</strong>已删除的文件仍然被某个进程打开着（持有文件描述符）。文件被 unlink 后目录条目消失（du 看不到），但进程没关闭 fd 的话，内核不会释放数据块（df 仍然算占用）。用 <code>lsof | grep deleted</code> 找到这些文件，重启或 kill 对应进程即可释放。
+</div>
+</div>
+
+<div class="card">
+<strong>vmstat 1</strong> — 虚拟内存统计（每秒输出一次）
+<pre><code>$ vmstat 1
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 3  0      0  2.1G   512M   9.8G    0    0    12    45  120  280  5  2 93  0  0
+ 2  1      0  2.1G   512M   9.8G    0    0     0   120  150  320  8  3 88  1  0</code></pre>
+<p><strong>关键列解读：</strong></p>
+<ul>
+  <li><strong>r（runnable）：</strong>运行队列中的进程数。如果 r &gt; CPU 核心数，说明 CPU 是瓶颈。</li>
+  <li><strong>b（blocked）：</strong>处于不可中断睡眠（等待 IO）的进程数。b &gt; 0 持续说明 IO 瓶颈。</li>
+  <li><strong>si / so（swap in / out）：</strong>如果 si/so &gt; 0，系统正在换页——<strong>内存压力大</strong>的标志。频繁 swap 会导致性能急剧下降。</li>
+  <li><strong>us / sy / id / wa：</strong>用户态 / 内核态 / 空闲 / IO等待 的 CPU 时间百分比。</li>
+  <li><strong>cs（context switch）：</strong>上下文切换次数，过高可能线程数太多或锁竞争激烈。</li>
+</ul>
+</div>
+
+<div class="card">
+<strong>iostat -x 1</strong> — 磁盘 IO 统计
+<pre><code>$ iostat -x 1
+Device   r/s   w/s   rkB/s   wkB/s   await  r_await  w_await  %util
+sda     15.0  80.0   600.0  3200.0   12.50     5.00     14.00  85.0</code></pre>
+<p><strong>关键列解读：</strong></p>
+<ul>
+  <li><strong>await：</strong>IO 请求的平均等待时间（毫秒）。机械盘正常 &lt;20ms，SSD 正常 &lt;5ms。高 await 是磁盘瓶颈的直接信号。</li>
+  <li><strong>%util：</strong>设备带宽利用率。接近 100% 表示磁盘已饱和。注意：SSD 能并行处理请求，%util 100% 不一定意味着性能极限，而机械盘 100% 就是真的瓶颈。</li>
+  <li><strong>r_await / w_await：</strong>分别看读/写延迟，帮助定位是读多还是写多的场景。</li>
+</ul>
+</div>
+
+<h3 id="one-2">2. 进程管理</h3>
+
+<div class="card">
+<table>
+<tr><th>命令</th><th>用途</th><th>常用组合 / 关键参数</th></tr>
+<tr class="row-expandable"><td><strong>ps aux</strong></td><td>列出所有进程详情（BSD 风格）</td><td>ps aux | grep java</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>ps aux 各列含义：</strong>USER（进程所有者）、PID（进程ID）、%CPU、%MEM、VSZ（虚拟内存 KB）、RSS（物理内存 KB）、TTY（终端）、STAT（状态：R运行 S睡眠 D不可中断睡眠 Z僵尸 T停止）、START（启动时间）、TIME（累计CPU时间）、COMMAND（命令）。</p>
+<p><strong>ps -ef vs ps aux：</strong>ps -ef 是 Unix 风格，输出 PPID（父进程ID）和 STIME（启动时间），适合查看父子关系。ps aux 是 BSD 风格，输出 CPU 和内存百分比，适合性能分析。很多面试官会问"如何查看进程的父进程"——用 <code>ps -ef | grep PID</code> 看 PPID 列。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>lsof -p PID</strong></td><td>列出进程打开的所有文件（包括 socket、pipe）</td><td>lsof -p 1234 | wc -l</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>"too many open files" 错误的排查：</strong>lsof -p PID 可以查看一个进程打开了多少个文件描述符。Linux 默认每个进程打开文件数限制（ulimit -n）通常是 1024，对高并发服务（如 Nginx、Kafka）明显不够。生产环境通常设置为 65535 或更高。修改方式：ulimit -n 65535（临时），/etc/security/limits.conf（永久）。</p>
+<p><strong>lsof 其他用途：</strong>lsof -i :8080（查看端口占用）、lsof /var/log/app.log（查看哪些进程在写这个日志）、lsof | grep deleted（找到被删除但仍占磁盘的文件）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>netstat / ss</strong></td><td>网络连接统计</td><td>ss -tlnp | grep :8080</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>ss 为什么比 netstat 快？</strong>netstat 读取 /proc/net/tcp（文本文件），ss 通过 netlink socket 直接向内核查询数据（二进制协议），尤其在大量连接时差异显著（几千个连接时 netstat 可能需要几秒，ss 毫秒级返回）。</p>
+<p><strong>TCP 状态统计（面试常考）：</strong>netstat -an | awk '/^tcp/ {print $6}' | sort | uniq -c | sort -rn —— 输出所有 TCP 状态的连接数分布。TIME_WAIT 连接过多（数千个）说明短连接频繁创建和关闭，可以调整 net.ipv4.tcp_tw_reuse 或改用长连接。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>kill</strong></td><td>向进程发送信号</td><td>kill -9 PID（强制）/ kill -15 PID（优雅）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>kill 命令不是"杀死进程"，而是"发送信号"——</strong>默认信号是 SIGTERM（15）。常见信号：1(SIGHUP 重新加载配置)、3(SIGQUIT Java 线程转储)、9(SIGKILL 内核强制终止，不可捕获)、15(SIGTERM 通知进程自行退出，可捕获做善后清理)。</p>
+<p><strong>SIGKILL vs SIGTERM 的关键区别：</strong>SIGKILL 不经过进程，由内核直接终止——进程没机会清理资源、刷新缓冲区、关闭连接。优雅停止应该先用 SIGTERM，等待 N 秒后如果进程还没退出再用 SIGKILL。很多中间件（Nginx、Kafka）的 stop 脚本都是这个套路。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="card">
+<strong>信号类型速查表</strong>
+<table>
+<tr><th>编号</th><th>信号名</th><th>含义</th><th>能否捕获</th></tr>
+<tr><td>1</td><td>SIGHUP</td><td>终端挂起 / 重新加载配置</td><td>✅</td></tr>
+<tr><td>2</td><td>SIGINT</td><td>Ctrl+C 中断</td><td>✅</td></tr>
+<tr><td>3</td><td>SIGQUIT</td><td>Ctrl+\ 退出 + core dump（Java 线程转储）</td><td>✅</td></tr>
+<tr><td>9</td><td>SIGKILL</td><td>强制终止（内核直接 kill）</td><td>❌</td></tr>
+<tr><td>15</td><td>SIGTERM</td><td>终止（默认信号，通知进程自行退出）</td><td>✅</td></tr>
+<tr><td>17</td><td>SIGCHLD</td><td>子进程状态变化（结束/暂停）</td><td>✅</td></tr>
+<tr><td>18</td><td>SIGCONT</td><td>继续执行被停止的进程</td><td>✅</td></tr>
+<tr><td>19</td><td>SIGSTOP</td><td>暂停进程（不可捕获）</td><td>❌</td></tr>
+</table>
+</div>
+
+<!-- ============ 二、日志排查与文本处理 ============ -->
+<h2 id="two">二、日志排查与文本处理</h2>
+
+<h3 id="two-1">3. 日志查看与搜索</h3>
+
+<div class="card card--accent">
+<strong>tail -f / -F</strong> — 实时跟踪日志
+<pre><code>$ tail -f app.log       # 跟随文件增长，文件被重命名/删除后停止
+$ tail -F app.log       # 跟随文件名，文件轮转后自动重新打开（更健壮）
+$ tail -n 200 app.log   # 显示最后 200 行</code></pre>
+<div class="highlight">
+<strong>面试重点：-f 和 -F 的区别。</strong>日志轮转（logrotate）时，app.log 被重命名为 app.log.1，然后创建新的 app.log。<code>tail -f</code> 仍然握着旧文件的 inode，不会再输出新日志；<code>tail -F</code> 会检测文件被替换，自动关闭旧文件并打开新文件。生产环境看日志一定用 <code>-F</code>。
+</div>
+</div>
+
+<div class="card">
+<strong>grep</strong> — 文本搜索之王
+<table>
+<tr><th>参数</th><th>作用</th><th>示例</th></tr>
+<tr class="row-expandable"><td><strong>-i</strong></td><td>忽略大小写</td><td>grep -i "error" app.log</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>在日志排查中非常实用——Java 异常 "Exception" vs "exception" vs "EXCEPTION" 大小写可能不一致。grep -i 统一处理。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>-v</strong></td><td>反向匹配（排除）</td><td>grep -v "DEBUG" app.log</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>反向过滤常用于排除噪音——比如看 ERROR 和 WARN 但不看 DEBUG。也可以多次管道：grep "ERROR\|WARN" app.log | grep -v "heartbeat"（排除心跳日志的干扰）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>-c</strong></td><td>计数匹配行数</td><td>grep -c "ERROR" app.log</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>快速统计错误数量：<code>grep -c "ERROR" app.log</code> 输出数字。也可以结合 -v 统计非匹配行：<code>grep -vc "DEBUG" app.log</code>。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>-n</strong></td><td>显示行号</td><td>grep -n "NullPointer" app.log</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>显示行号后用 vim/less 可以快速跳转到对应行，如 <code>vim +行号 app.log</code>。结合 -H 在多文件搜索时显示文件名。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>-A / -B / -C</strong></td><td>显示上下文</td><td>grep -B 2 -A 10 "Exception" app.log</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>-A N：</strong>匹配行之后 N 行（After）。<strong>-B N：</strong>匹配行之前 N 行（Before）。<strong>-C N：</strong>前后各 N 行（Context）。排查异常时最常用的组合：<code>grep -B 2 -A 10 "Exception" app.log</code> —— 看异常发生前 2 行（请求参数）和异常后 10 行（完整堆栈）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>-E</strong></td><td>扩展正则（支持 | + ? 等）</td><td>grep -E "ERROR|WARN|FATAL" app.log</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>不用 -E 的话管道符 | 会被当作普通字符匹配。也可以用 egrep 命令（等同于 grep -E）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>-o</strong></td><td>只输出匹配部分</td><td>grep -o "userId=\d+" app.log</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>配合 -P（Perl 正则）可以提取日志中的特定字段，如 <code>grep -oP 'elapsed=\K\d+' app.log</code> 提取耗时数字用于统计。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="card">
+<strong>less</strong> — 分页查看大文件
+<pre><code>$ less -N app.log     # -N 显示行号
+/ERROR                # 搜索 "ERROR"，n 下一个匹配，N 上一个
+& 2025-05             # 只显示包含 "2025-05" 的行（过滤模式）
+G                     # 跳到文件末尾，g 跳到开头
+100g                  # 跳到第 100 行
+F                     # 进入 tail -f 模式，Ctrl+C 退出</code></pre>
+<p>less 的优势：不把整个文件加载到内存（按需读取），支持前后翻页、搜索、过滤。grep 找到行号后，用 <code>less +行号 文件名</code> 直接定位。</p>
+</div>
+
+<div class="card">
+<strong>awk</strong> — 列处理利器
+<pre><code>$ cat access.log | awk '{print $1}'                    # 打印第 1 列（IP）
+$ cat access.log | awk '{sum+=$10} END {print sum}'    # 第 10 列求和（响应时间）
+$ cat access.log | awk '{print $1, $NF}'               # 第 1 列和最后一列
+$ cat access.log | awk -F '"' '{print $6}'             # 以双引号为分隔符，打印第 6 个字段</code></pre>
+<div class="highlight">
+<strong>经典日志分析组合：</strong>cat access.log | awk '{print $1}' | sort | uniq -c | sort -rn | head -10 —— 统计访问量最多的前 10 个 IP 地址。这是银行面试必考的管道组合题。
+</div>
+<p><strong>awk 工作原理：</strong>对每一行执行 <code>{操作}</code>（主处理块），BEGIN 块在读取第一行之前执行（可定义变量、打印表头），END 块在所有行处理完后执行（打印汇总结果）。</p>
+</div>
+
+<div class="card">
+<strong>sed</strong> — 流编辑器
+<pre><code>$ sed 's/old/new/g' file.txt          # 全文替换
+$ sed -i 's/old/new/g' file.txt       # -i 直接修改文件（无需重定向）
+$ sed -n '5,10p' file.txt             # 打印第 5-10 行
+$ sed '/pattern/d' file.txt           # 删除匹配行
+$ sed -n '/START/,/END/p' file.txt    # 打印从 START 到 END 之间的所有行</code></pre>
+<p>sed 在日志分析中常用于提取特定时间段的日志或清理格式。</p>
+</div>
+
+<div class="card">
+<strong>sort / uniq</strong> — 排序和去重
+<pre><code>$ sort -n file.txt              # 按数值排序（默认字典序）
+$ sort -r file.txt              # 逆序
+$ sort -k 2 file.txt            # 按第 2 列排序
+$ sort file.txt | uniq          # 去除相邻重复行
+$ sort file.txt | uniq -c       # 统计每行的出现次数
+$ sort file.txt | uniq -d       # 只显示重复的行</code></pre>
+<div class="highlight">
+<strong>关键点：</strong>uniq 只能去除<strong>相邻</strong>重复行，所以通常先 sort 再 uniq。sort -n 和字典序的区别是面试常考点——"10" 在字典序中小于 "2"，因为按字符比较 '1' &lt; '2'，所以必须用 -n 做数值排序。
+</div>
+</div>
+
+<h3 id="two-2">4. 文件查找与操作</h3>
+
+<div class="card card--accent">
+<strong>find</strong> — 文件查找（运维最常用命令之一）
+<pre><code># 按名称查找
+$ find /app/logs -name "*.log" -mtime +7 -exec rm {} \;
+# 解析：-name 通配符匹配 | -mtime +7 修改时间超过7天 | -exec 对每个结果执行 rm
+
+# 按大小查找
+$ find . -type f -size +100M -exec ls -lh {} \;
+
+# 按类型查找
+$ find . -type f -name "*.java" | xargs grep "main"
+
+# 按权限查找
+$ find / -perm 777 -type f 2>/dev/null
+
+# 查找并排除某些目录
+$ find . -name "*.log" -not -path "./node_modules/*"</code></pre>
+<div class="highlight">
+<strong>find -exec vs xargs 的区别（面试必问）：</strong>-exec 每次找到文件就启动一次后面的命令（效率低）；xargs 把前面的输出收集起来，分批传给后面的命令（效率高，但文件名含空格时会出错——用 find -print0 | xargs -0 解决）。<strong>经典清理脚本：</strong>find /app/logs -name "*.log" -mtime +30 -delete（删除 30 天前的日志）。
+</div>
+</div>
+
+<div class="card">
+<strong>wc / tar</strong>
+<pre><code>$ wc -l file.txt         # 统计行数：10 file.txt
+$ ps aux | wc -l         # 统计进程数量
+$ cat app.log | wc -l    # 统计日志行数
+
+# tar 打包压缩
+$ tar -czf backup.tar.gz /app/data/       # -c 创建 -z gzip -f 指定文件
+$ tar -xzf backup.tar.gz -C /restore/     # -x 解压 -C 指定目标目录
+$ tar -tf backup.tar.gz                   # 查看压缩包内容列表</code></pre>
+</div>
+
+<!-- ============ CPU 排查流程图 ============ -->
+<div class="mermaid">
+flowchart TD
+    A["CPU 使用率飙升"] --> B["top 命令<br/>找到高 CPU 的 PID"]
+    B --> C["top -Hp PID<br/>找到高 CPU 的线程 TID"]
+    C --> D["printf '%x\n' TID<br/>TID 转为 16 进制"]
+    D --> E["jstack PID | grep -A 20 hex_tid<br/>定位到具体代码行"]
+    E --> F{"原因判断"}
+    F -->|"死循环 / 复杂计算"| G["查看对应代码逻辑<br/>优化算法或中断循环"]
+    F -->|"Full GC 频繁"| H["jstat -gc PID<br/>查看 GC 频率<br/>调整堆大小或排查内存泄漏"]
+    F -->|"频繁上下文切换"| I["vmstat 查看 cs 列<br/>线程数过多？<br/>锁竞争严重？"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么要把 TID 转成 16 进制？</strong>
+<p>因为 jstack 输出的线程栈信息中，线程 ID 是 16 进制格式（nid=0x...）。top -Hp 和 ps -eLf 显示的是 10 进制线程 ID，必须转成 16 进制才能在 jstack 中匹配到对应的线程栈。</p>
+<strong>银行生产环境 CPU 飙升的常见原因：</strong>
+<ul>
+  <li><strong>死循环：</strong>某个边界条件没处理好导致循环无法退出</li>
+  <li><strong>频繁 Full GC：</strong>堆空间不足，GC 线程持续运行（jstat 看 FGC 列快速增长）</li>
+  <li><strong>正则表达式回溯：</strong>用户输入匹配了有缺陷的正则导致灾难性回溯</li>
+  <li><strong>JSON/XML 大报文解析：</strong>超大报文反复解析和序列化</li>
+  <li><strong>hash 冲突：</strong>HashMap 的 key 设计不当导致大量元素落到同一个 bucket</li>
+</ul>
+</div>
+
+<!-- ============ 三、JVM 排查命令 ============ -->
+<h2 id="three">三、JVM 排查命令（银行面试核心）</h2>
+
+<h3 id="three-1">5. JDK 自带工具</h3>
+
+<div class="card card--accent">
+<table>
+<tr><th>工具</th><th>核心用途</th><th>常用命令</th></tr>
+<tr class="row-expandable"><td><strong>jps -l</strong></td><td>列出 Java 进程</td><td>jps -l | grep -i server</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>jps（Java Process Status）输出 PID 和类名（或 jar 包名）。jps -l 显示完整包名，jps -v 显示 JVM 启动参数（非常有用——可以看到 -Xms、-Xmx、-XX:+UseG1GC 等关键配置）。jps 原理是读取 /tmp/hsperfdata_用户名/ 下的文件，如果该目录被清理则 jps 无法正常工作。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>jstack PID</strong></td><td>线程转储（thread dump）</td><td>jstack PID | grep -A 10 "BLOCKED\|WAITING\|deadlock"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>jstack 是分析死锁的首选工具：</strong>输出末尾如果有 "Found 1 deadlock" 段落，说明发现了死锁。它直接列出死锁涉及的线程、各自持有的锁和等待的锁。也可以用 jstack -l PID（-l 显示锁的额外信息）。</p>
+<p><strong>解读 jstack 输出：</strong>每个线程一行标题（线程名、是否 daemon、优先级、nid=16 进制线程 ID），然后是线程状态（RUNNABLE/BLOCKED/WAITING/TIMED_WAITING）和调用栈。BLOCKED 状态大量出现说明锁竞争严重。</p>
+<p><strong>常见线程状态含义：</strong>RUNNABLE（正在运行或等待 CPU）、BLOCKED（等待获取对象锁）、WAITING（无限期等待 notify/join）、TIMED_WAITING（限时等待比如 Thread.sleep）、TERMINATED（已结束）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>jmap</strong></td><td>内存映射</td><td>jmap -heap PID / jmap -histo PID / jmap -dump:format=b,file=heap.bin PID</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>三个常用子命令：</strong></p>
+<ul>
+  <li><strong>jmap -heap PID：</strong>堆配置和使用情况概览（各代的容量、使用量、GC 算法）</li>
+  <li><strong>jmap -histo PID：</strong>类实例数量和大小的直方图（按内存占用排序），快速定位哪些类的实例占了最多内存：<code>jmap -histo PID | head -20</code></li>
+  <li><strong>jmap -histo:live PID：</strong>触发一次 Full GC 后再统计（只统计存活对象，更准确但会暂停应用）</li>
+  <li><strong>jmap -dump:format=b,file=heap.bin PID：</strong>导出堆快照用于 MAT（Eclipse Memory Analyzer）离线分析，这个命令会触发 STW</li>
+</ul>
+<p><strong>生产环境注意事项：</strong>jmap -dump 会触发 Full GC（STW），在生产环境谨慎使用。优先使用 jmap -histo 做快速分析，或者应用启动时加 -XX:+HeapDumpOnOutOfMemoryError 让应用在 OOM 时自动生成 dump。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>jstat -gc PID</strong></td><td>GC 统计监控</td><td>jstat -gc PID 1000 10（每秒输出，共 10 次）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>jstat -gc 关键列解读：</strong></p>
+<table>
+<tr><th>列</th><th>含义</th><th>关注点</th></tr>
+<tr><td>S0C / S1C</td><td>Survivor 0/1 容量</td><td>两个应交替使用</td></tr>
+<tr><td>EC / EU</td><td>Eden 容量 / 使用量</td><td>EU/EC 比例高说明很快要 Minor GC</td></tr>
+<tr><td>OC / OU</td><td>Old 容量 / 使用量</td><td><strong>OU 持续增长不放 = 内存泄漏的关键信号</strong></td></tr>
+<tr><td>MC / MU</td><td>Metaspace 容量 / 使用量</td><td>MU 持续增长 = 动态类加载过多</td></tr>
+<tr><td>YGC / YGCT</td><td>Young GC 次数 / 耗时</td><td>YGC 增长快说明新对象创建频繁</td></tr>
+<tr><td>FGC / FGCT</td><td>Full GC 次数 / 耗时</td><td><strong>FGC 频繁增长 = 严重问题！</strong></td></tr>
+</table>
+<p><strong>银行监控关键指标：</strong>FGC（Full GC）是银行系统最关注的指标之一。核心交易系统中 Full GC 频繁会导致长时间 STW（几秒甚至几十秒），直接造成交易超时、影响 SLA。监控平台通常对 FGC 设置告警阈值。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>jinfo PID</strong></td><td>JVM 配置信息</td><td>jinfo PID | grep -i "Xms\|Xmx\|GC"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>jinfo 可以查看 JVM 的所有系统属性和 VM flags。jinfo -flag &lt;flag名&gt; PID 查看某个 flag 的值（如 jinfo -flag UseG1GC PID）。jinfo -flag +PrintGCDetails PID 甚至可以动态开启某些诊断 flag（但不是所有 flag 都可动态修改）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>arthas</strong></td><td>阿里开源在线诊断工具</td><td>dashboard / thread / watch / trace / jad</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p><strong>arthas 是生产环境诊断的终极利器：</strong>不需要重启应用，动态 attach 到 JVM 上。核心命令：dashboard（实时面板，类似 top 但只显示 Java 线程）、thread -b（自动检测死锁阻塞线程）、watch（观测方法入参和返回值）、trace（跟踪方法调用链路和耗时）、jad（在线反编译 class 文件）、redefine（热替换 class 文件）。</p>
+<p><strong>arthas 在银行场景的应用：</strong>线上交易变慢，用 trace 跟踪调用链路找到瓶颈方法；某笔交易返回数据异常，用 watch 观测该方法的入参和返回值；怀疑第三方 jar 包有 bug，用 jad 反编译查看实际逻辑。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3 id="three-2">6. 常见问题排查流程</h3>
+
+<div class="card card--accent">
+<strong>场景一：CPU 飙升排查</strong>
+<pre><code># 步骤 1：找到高 CPU 进程
+top                        # 看到 java 进程 CPU 200%
+
+# 步骤 2：找到高 CPU 线程
+top -Hp 12345              # 看到线程 TID 12360 CPU 99%
+
+# 步骤 3：TID 转 16 进制
+printf "%x\n" 12360        # 输出 3048
+
+# 步骤 4：在 jstack 中定位
+jstack 12345 | grep -A 20 0x3048
+# 看到线程名和调用栈，定位到具体代码</code></pre>
+</div>
+
+<div class="card card--orange">
+<strong>场景二：内存泄漏排查</strong>
+<pre><code># 步骤 1：观察 GC 趋势
+jstat -gc 12345 2000       # 每 2 秒输出 GC 统计
+# 观察到 OU（老年代使用）持续增长，FGC 越来越频繁
+
+# 步骤 2：查看对象直方图
+jmap -histo:live 12345 | head -30
+# 看到某个自定义类有大量实例（如 100 万个 CacheEntry）
+
+# 步骤 3：生成 heap dump 离线分析
+jmap -dump:format=b,file=heap.bin 12345
+# 用 MAT / JProfiler 打开，分析泄漏引用链</code></pre>
+<div class="highlight">
+<strong>常见内存泄漏原因：</strong>静态集合（static Map/List）不断添加不释放；ThreadLocal 使用后未 remove() 导致线程池复用时残留；未关闭的流和连接；监听器注册后未注销；HashMap 的 key 没有实现 hashCode/equals 导致同一对象被重复放入。
+</div>
+</div>
+
+<div class="card card--accent">
+<strong>场景三：死锁排查</strong>
+<pre><code># jstack 直接检测
+$ jstack 12345
+# 输出末尾：
+Found one Java-level deadlock:
+============================
+"thread-1":
+  waiting to lock monitor 0x00007f... (object 0x00000007...)
+  which is held by "thread-2"
+"thread-2":
+  waiting to lock monitor 0x00007f... (object 0x00000007...)
+  which is held by "thread-1"
+
+# 或用 arthas
+$ thread -b                # 一键检测死锁并展示详情</code></pre>
+</div>
+
+<!-- ============ 内存泄漏排查流程图 ============ -->
+<div class="mermaid">
+flowchart TD
+    A["内存持续增长 / OOM"] --> B["jstat -gc PID 监控"]
+    B --> C{"OU（老年代）持续增长？"}
+    C -->|"是"| D["jmap -histo:live PID<br/>查看对象直方图"]
+    C -->|"否"| E{"MU（元空间）持续增长？"}
+    E -->|"是"| F["动态生成类过多<br/>检查 CGLIB/动态代理"]
+    E -->|"否"| G["检查堆外内存<br/>DirectByteBuffer 泄漏"]
+    D --> H{"找到大量单一类的实例？"}
+    H -->|"是"| I["jmap -dump 导出 heap dump<br/>用 MAT 分析 GC Roots 引用链"]
+    H -->|"否"| J["查看 FGC 频率<br/>jstat -gc PID 的 FGC 列"]
+    I --> K["定位持有引用的对象<br/>修复代码中的引用泄漏"]
+    J --> L{"FGC 频繁但内存不释放？"}
+    L -->|"是"| M["常驻内存对象太多<br/>加大堆内存或优化数据结构"]
+    L -->|"否"| N["排查大对象分配<br/>检查是否有巨型 XML/JSON"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么内存泄漏在银行系统特别危险？</strong>
+<p>银行核心交易系统（如支付、账务）要求 7x24 运行，不能轻易重启。内存泄漏会导致 Full GC 越来越频繁，每次 GC 暂停时间越来越长——从几毫秒发展到几秒甚至几十秒。当 GC 暂停超过交易超时时间，就会出现大面积交易失败。如果 Full GC 后内存仍然不足，最终 OOM 导致 JVM 崩溃。</p>
+<strong>OOM 自动 dump 配置：</strong>
+<ul>
+  <li>-XX:+HeapDumpOnOutOfMemoryError（OOM 时自动生成堆转储）</li>
+  <li>-XX:HeapDumpPath=/app/dump/（指定 dump 文件路径，需确保磁盘空间充足）</li>
+  <li>-XX:OnOutOfMemoryError="/app/scripts/restart.sh"（OOM 时执行脚本，自动重启）</li>
+</ul>
+</div>
+
+<!-- ============ 四、文件权限与 Shell 基础 ============ -->
+<h2 id="four">四、文件权限与 Shell 基础</h2>
+
+<h3 id="four-1">7. 权限管理</h3>
+
+<div class="card">
+<strong>chmod</strong> — 修改文件权限
+<pre><code>$ ls -l script.sh
+-rw-r--r-- 1 user group 1024 May 25 10:00 script.sh
+# 类型  owner  group  other
+# -     rw-    r--    r--
+
+$ chmod 755 script.sh     # 数字法：owner=rwx group=r-x other=r-x
+$ chmod +x script.sh      # 符号法：给所有用户加执行权限
+$ chmod u=rwx,g=rx,o=r file   # 精确设置</code></pre>
+<p><strong>权限数字记忆法：</strong>r=4, w=2, x=1。三位数字分别代表 owner、group、other。755 = rwx(7) + r-x(5) + r-x(5)。常用组合：644（文件）、755（目录/脚本）、600（私密文件如密钥）。</p>
+</div>
+
+<div class="card">
+<strong>chown / umask</strong>
+<pre><code>$ chown appuser:appgroup app.log      # 修改文件所有者和组
+$ chown -R appuser:appgroup /app/     # -R 递归修改目录下所有文件
+
+$ umask                                # 查看当前权限掩码
+0022                                   # 默认值
+# 新文件默认权限 = 666 - umask = 644 (rw-r--r--)
+# 新目录默认权限 = 777 - umask = 755 (rwxr-xr-x)</code></pre>
+</div>
+
+<h3 id="four-2">8. Shell 基础</h3>
+
+<div class="card card--accent">
+<strong>重定向与管道</strong>
+<table>
+<tr><th>符号</th><th>含义</th><th>示例</th></tr>
+<tr class="row-expandable"><td><strong>&gt;</strong></td><td>覆盖写入文件</td><td>echo "hello" &gt; file.txt</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"><p>覆盖重定向——如果文件已存在，内容会被清空后替换。在银行脚本中日志文件通常用 &gt;&gt;（追加）而非 &gt;（覆盖），防止误清空历史日志。</p></div></td></tr>
+<tr class="row-expandable"><td><strong>&gt;&gt;</strong></td><td>追加写入文件</td><td>echo "hello" &gt;&gt; file.txt</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"><p>追加到文件末尾，不覆盖已有内容。最适合日志写入场景。</p></div></td></tr>
+<tr class="row-expandable"><td><strong>2&gt;&amp;1</strong></td><td>stderr 重定向到 stdout</td><td>java -jar app.jar &gt; app.log 2&gt;&amp;1</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"><p><strong>顺序很重要！</strong>2&gt;&amp;1 必须放在 &gt; 的后面，因为重定向是从左到右处理的。如果写成 2&gt;&amp;1 &gt; app.log，stderr 会继承旧 stdout（终端），而新 stdout（app.log）不会被 stderr 使用。</p></div></td></tr>
+<tr class="row-expandable"><td><strong>&amp;&gt; /dev/null</strong></td><td>丢弃所有输出（stdout + stderr）</td><td>nohup java -jar app.jar &amp;&gt; /dev/null &amp;</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"><p>/dev/null 是 Linux 的"黑洞"设备文件，写入其中的数据会被内核直接丢弃。常用于静默执行或不需要输出的场景。等价于 &gt; /dev/null 2&gt;&amp;1。</p></div></td></tr>
+<tr class="row-expandable"><td><strong>|</strong></td><td>管道——将左边 stdout 传给右边 stdin</td><td>ps aux | grep java | wc -l</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content"><p><strong>管道只传递 stdout，不传递 stderr：</strong>如果要把 stderr 也传递给下一个命令，需要先重定向：command 2&gt;&amp;1 | grep ERROR。管道是 UNIX 哲学"小而美"的核心——每个命令只做一件事，通过管道组合完成复杂任务。</p></div></td></tr>
+</table>
+</div>
+
+<div class="card">
+<strong>后台运行与变量</strong>
+<pre><code># 后台运行
+$ nohup java -jar app.jar &gt; app.log 2&gt;&amp;1 &amp;   # nohup: 忽略 HUP 信号，终端关闭不退出
+$ java -jar app.jar &amp;                         # 后台运行，但终端关闭后进程退出
+
+# Shell 变量（注意：等号两边不能有空格！）
+$ APP_HOME=/opt/app
+$ echo $APP_HOME         # 输出 /opt/app
+$ echo ${APP_HOME}/logs  # 输出 /opt/app/logs（花括号防止歧义）
+
+# 常用组合
+$ ps aux | grep java | wc -l           # 统计 Java 进程数
+$ ss -tlnp | grep :8080               # 查端口占用
+$ find / -type f -size +100M 2&gt;/dev/null  # 查大文件（忽略权限错误）
+$ ps aux | grep java | awk '{print $2}' | xargs kill -15   # 优雅批量杀 Java 进程</code></pre>
+</div>
+
+<!-- ============ Linux 进程状态转换图 ============ -->
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> R: 进程创建（fork）
+    R --> S: 等待资源/IO/事件
+    S --> R: 资源就绪/被唤醒
+    R --> D: 发起磁盘IO（不可中断）
+    D --> R: IO完成
+    R --> T: SIGSTOP / Ctrl+Z
+    T --> R: SIGCONT / fg
+    R --> Z: 进程退出但父进程未 wait
+    Z --> [*]: 父进程 wait / 父进程退出
+    R --> [*]: SIGKILL(9) / SIGTERM(15)
+    note right of R
+        R = Running/Runnable
+        正在运行或在 CPU 队列中等待
+    end note
+    note right of S
+        S = Sleeping (Interruptible)
+        可中断睡眠——等待事件
+    end note
+    note right of D
+        D = Disk Sleep (Uninterruptible)
+        不可中断——等待磁盘IO完成
+        load average 统计包含 D 状态
+    end note
+    note right of Z
+        Z = Zombie
+        已结束但未回收的进程
+        不占用内存但占用 PID
+    end note
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>D 状态为什么设计为"不可中断"？</strong>
+<p>进程在读写磁盘时，内核把数据从磁盘读到内核缓冲区，这个过程必须完整执行完。如果允许被信号中断，数据可能处于不一致的状态（读到一半）。D 状态通常是短暂的（磁盘 IO 完成后恢复），但如果磁盘有问题（NFS 服务器挂死、坏块等），D 状态可能持续很久——这就是为什么 D 状态的进程无法被 kill -9 杀掉（内核在等待 IO 驱动的回调）。D 状态的线程数被计入 load average，所以磁盘 IO 问题也会导致 load 飙升。</p>
+<strong>Zombie 进程的危害：</strong>
+<p>僵尸进程本身不占用 CPU 和内存（只有进程表中残留一条记录），但它占用一个 PID。Linux 的 PID 数量有限（默认 32768），大量僵尸进程可能耗尽 PID 导致无法创建新进程。解决方法：使用 wait()/waitpid() 回收子进程，或把父进程的 SIGCHLD 信号处理设为 SIG_IGN（自动回收），或直接 kill 僵尸的父进程（孤儿进程由 init 回收）。</p>
+</div>
+
+<!-- ============ 命令速查总表 ============ -->
+<h2 id="five">五、命令速查总表</h2>
+
+<div class="card">
+<table>
+<tr><th>场景</th><th>命令</th><th>说明</th></tr>
+<tr class="row-expandable"><td>CPU 高排查</td><td>top → top -Hp PID → printf → jstack</td><td>4 步定位高 CPU 代码</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>完整流程：top 找高 CPU 进程 PID → top -Hp PID 找高 CPU 线程 TID → printf "%x\n" TID 转 16 进制 → jstack PID | grep -A 30 0xTID_HEX 定位代码行。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>内存泄漏排查</td><td>jstat -gc → jmap -histo → jmap -dump</td><td>GC 趋势 → 对象直方图 → heap dump + MAT</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>先用 jstat 确认 OU 持续增长；然后用 jmap -histo:live 查看哪些类实例过多；最后 jmap -dump 生成 snapshot 用 MAT 分析引用链。关键配置：-XX:+HeapDumpOnOutOfMemoryError 自动 dump。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>死锁检测</td><td>jstack PID \| grep -A 10 "deadlock"</td><td>直接显示死锁线程</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>arthas 的 thread -b 命令更直观——一键输出死锁信息。jstack 输出末尾的 "Found 1 deadlock" 段落包含完整的死锁分析。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>磁盘满了</td><td>df -h → du -sh /* → lsof \| grep deleted</td><td>定位大目录或已删除未释放文件</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>df -h 看哪个分区满 → du -sh /* 深度遍历定位大目录 → 如果 du 远小于 df，执行 lsof | grep deleted 找被删除但仍被进程持有的文件。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>端口占用</td><td>ss -tlnp \| grep :8080</td><td>查看谁占用了 8080 端口</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>ss -tlnp 只显示 LISTEN 状态的 TCP 端口。-t(tcp) -l(listening) -n(numeric,不解析服务名) -p(显示进程)。fuser -k 8080/tcp 可以杀掉占用特定端口的进程。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>查文件打开数</td><td>lsof -p PID \| wc -l</td><td>排查 "too many open files"</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>默认 ulimit -n 通常 1024，高并发服务需要调到 65535。修改 /etc/security/limits.conf：appuser soft nofile 65535，appuser hard nofile 65535。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>查 IP 访问量</td><td>awk '{print $1}' \| sort \| uniq -c \| sort -rn \| head</td><td>经典管道组合</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>cat access.log | awk '{print $1}'（取 IP 列）| sort（排序让相同 IP 相邻）| uniq -c（统计每个 IP 出现次数）| sort -rn（按数量倒序）| head -10（取前 10）。每个竖线前的输出是后一个命令的输入。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>查连接状态分布</td><td>ss -tan \| awk '{print $1}' \| sort \| uniq -c</td><td>查看 TCP 状态统计</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<p>TIME_WAIT 过多（&gt;上千个）说明短连接频繁。可调整内核参数 net.ipv4.tcp_tw_reuse = 1 复用 TIME_WAIT 连接，或从应用层改用连接池/长连接。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ============ 银行运维面试高频考点 ============ -->
+<h2 id="six">六、银行运维面试高频考点</h2>
+
+<div class="highlight">
+<strong>考点 1：df 和 du 结果不一致的原因？</strong><br/>
+已删除文件仍被进程持有（fd未释放）。用 <code>lsof | grep deleted</code> 定位，重启该进程释放磁盘空间。
+</div>
+
+<div class="highlight">
+<strong>考点 2：load average 是什么？什么值算高？</strong><br/>
+R状态 + D状态线程数的平均值（1min/5min/15min）。load &gt; CPU 核心数 = 过载信号。但要注意 D 状态是由 IO 瓶颈导致的（非 CPU 瓶颈），所以 load high + CPU idle high = IO 瓶颈。
+</div>
+
+<div class="highlight">
+<strong>考点 3：kill -9 和 kill -15 的区别？</strong><br/>
+kill -9 (SIGKILL) 由内核直接终止进程，不可捕获，进程无机会清理资源。kill -15 (SIGTERM) 通知进程自行退出，进程可捕获做善后（关闭连接、刷新缓冲、释放锁）。优雅停止：先 SIGTERM，等 N 秒后仍存活再 SIGKILL。
+</div>
+
+<div class="highlight">
+<strong>考点 4：如何查看 Java 应用的 GC 情况？</strong><br/>
+<code>jstat -gc PID 1000 10</code>，关注 FGC（Full GC 次数）和 FGCT（Full GC 累计耗时）。FGC 频繁增长说明堆配置不合理或有内存泄漏。
+</div>
+
+<div class="highlight">
+<strong>考点 5：管道和重定向的区别？</strong><br/>
+管道 (|) 连接两个命令，把前者的 stdout 传给后者的 stdin。重定向 (&gt;/&gt;&gt;) 把命令的输出写到文件。管道只传递 stdout（不传递 stderr），如果想在管道中传递 stderr，需要先 2&gt;&amp;1。
+</div>
+
+<div class="highlight">
+<strong>考点 6：服务器连接数过多怎么排查？</strong><br/>
+<code>ss -tan | awk '{print $1}' | sort | uniq -c | sort -rn</code> 查看各状态的连接数分布。ESTABLISHED 过多检查连接池配置；TIME_WAIT 过多检查是否短连接频繁创建；CLOSE_WAIT 过多说明应用没有正确 close() 连接（代码 bug）。
+</div>
+
+<div class="nav-bottom">
+  <a href="../16-消息队列/消息队列八股文.html">← 上一篇：消息队列</a>
+  <a href="../index.html">返回首页 →</a>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

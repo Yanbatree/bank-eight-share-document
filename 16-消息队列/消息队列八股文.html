@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>消息队列八股文 - 银行科技岗面试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #d946ef; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #a21caf; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+<script src="../nav.js"></script>
+<div class="main">
+<h1>消息队列八股文</h1>
+<p style="color:var(--text-secondary)">金融级消息中间件 — RocketMQ 为核心 · 异步解耦削峰 · 事务消息 · 幂等性保障</p>
+
+<!-- ==================== 一、消息队列基础 ==================== -->
+<h2 id="one-1">一、消息队列基础</h2>
+
+<h3>1. 为什么用消息队列？</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "消息队列三大核心场景"
+        A["异步处理<br/>Async Processing"]
+        B["系统解耦<br/>Decoupling"]
+        C["流量削峰<br/>Traffic Peak Shaving"]
+    end
+    A --> A1["非核心链路异步化，提升响应速度"]
+    B --> B1["生产者不关心消费者，独立演进"]
+    C --> C1["突发流量暂存队列，保护下游"]
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>为什么这三种场景是消息队列的"基因级"能力？</strong>
+<p>消息队列的设计哲学就来自这三个痛点。异步处理的本质是"不要让我等你"——主流程写完消息就返回，后台慢慢消费；解耦的本质是"我不需要知道你是谁"——生产者只对队列负责，消费者变化不影响生产者；削峰的本质是"水流再大，我只按自己的速度放水"——队列作为蓄水池缓冲流量洪峰。</p>
+<strong>没有消息队列时这三个问题怎么解决？</strong>
+<p>异步：用线程池 + Future，但缺乏持久化，进程一挂任务全丢；解耦：用 HTTP/RPC 直连，但下游挂了上游也挂，而且新增消费者要改上游代码；削峰：用本地内存队列（如 LinkedBlockingQueue），但 JVM 内存有限且进程重启全丢。消息队列把这些能力从"应用层自己实现"下沉到了"中间件层统一提供"。</p>
+</div>
+
+<div class="card">
+<strong>银行场景对应：</strong>
+<table>
+<tr><th>场景</th><th>银行案例</th><th>技术细节</th></tr>
+<tr class="row-expandable"><td><strong>异步处理</strong></td><td>对账系统异步化</td><td>交易完成后发送对账消息，对账系统异步拉取流水比对</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>对账系统的异步化链路：</strong>
+<p>核心交易系统完成一笔转账后，同步返回"转账成功"给用户（延迟 &lt; 100ms），同时向 RocketMQ 发送一条对账消息。对账系统在后台消费这条消息时，可能需要 500ms 甚至更久——它要从多个数据源（核心系统流水、支付网关记录、账户余额快照）拉数据做交叉比对。如果同步做这 500ms，用户体验不可接受。消息队列在这里扮演的是"时间解耦器"——把必须做但不急着做的事延后做。</p>
+<p>对账消息通常包含：交易流水号、交易金额、交易时间、渠道标识、对账批次号。消息体约 200-500 字节，使用 JSON 或 Protobuf 序列化。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>系统解耦</strong></td><td>实时风控通知</td><td>交易系统只发消息，风控系统独立消费</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>风控系统的解耦价值：</strong>
+<p>交易系统的核心职责是"快速、准确地完成交易"——它的 SLO 是 p99 延迟 &lt; 100ms、可用性 99.99%。风控系统的逻辑极其复杂——需要查黑名单、跑规则引擎、调设备指纹、算行为评分——单次风控决策可能耗时 200-500ms。如果交易系统同步调用风控，交易延迟就会被拖到 500ms+，SLO 直接崩掉。</p>
+<p>解耦后：交易系统发一条风控消息到 RocketMQ，然后继续处理交易。风控系统异步消费消息进行分析。对于高风险交易，风控系统可以发"拦截通知"到另一个 Topic，交易系统订阅这个 Topic 做后续处理（如冻结账户）。注意这里存在一个时序问题：交易已经完成了，风控才分析完——所以银行实际使用中会结合同步的轻量级规则（如单笔限额、日累计限额）做第一道防线。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>流量削峰</strong></td><td>秒杀/抢购活动</td><td>瞬时百万请求进入队列，后端按处理能力消费</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>削峰的核心指标——积压量（消息堆积）：</strong>
+<p>假设银行理财秒杀活动在 10:00:00 瞬间涌入 100 万购买请求，后端处理能力是 5000 TPS。没有消息队列，后端直接被冲垮（线程池满、连接池耗尽、数据库连接打满、OOM）。有消息队列：100 万条消息进入 RocketMQ，消费者以 5000/s 的速度消费，200 秒（约 3.3 分钟）后全部处理完。</p>
+<p>用户体验：前端提交后立即收到"排队中"的响应（HTTP 202 Accepted），后台消费到该消息后推送结果（App 推送/短信）。削峰的代价是延迟增加——从即时响应变成了"等几分钟"，但这个代价远小于系统崩溃导致所有人都买不了。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>2. RocketMQ vs Kafka vs RabbitMQ</h3>
+
+<div class="card">
+<table>
+<tr><th>维度</th><th>RocketMQ</th><th>Kafka</th><th>RabbitMQ</th></tr>
+<tr class="row-expandable"><td><strong>开发语言</strong></td><td>Java</td><td>Java/Scala</td><td>Erlang</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>语言选择对银行选型的实际影响：</strong>
+<p>① RocketMQ 和 Kafka 都是 Java 生态，银行技术栈以 Java 为主，源码可读、可定制、出问题能排查。② RabbitMQ 是 Erlang 写的，银行里几乎没有 Erlang 工程师——出问题只能依赖社区或商业支持，运维风险高。③ RocketMQ 的中文文档和社区（Apache 顶级项目、阿里主导）对国内银行团队极其友好——遇到问题在中文技术社区搜到的解决方案远多于 Kafka/RabbitMQ。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>吞吐量</strong></td><td>高（十万级 TPS）</td><td>极高（百万级 TPS）</td><td>中（万级 TPS）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>吞吐量差异的底层原因：</strong>
+<p>Kafka 的极高吞吐来自几个设计选择：① 顺序写入 + 零拷贝（sendfile 系统调用）——数据从磁盘到网卡不经过用户态；② 批量压缩发送（Producer 攒一批消息一起发）；③ Page Cache 友好——消费最近的数据直接从 OS 缓存返回，不读磁盘；④ 无复杂索引——Consumer 自己维护 offset，Broker 不做消息状态管理。</p>
+<p>RocketMQ 吞吐量稍低于 Kafka（约 30-50%），因为它做了更多的"可靠性保障"工作：每条消息的刷盘策略可配、支持事务消息（需额外的状态管理）、支持定时消息（需额外的时间轮调度）。RabbitMQ 吞吐量低是因为它的 Exchange-Binding-Queue 路由模型需要更多 CPU 计算，且 Erlang 虚拟机的 GC 特性不适合极高吞吐场景。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>延迟</strong></td><td>毫秒级</td><td>毫秒级</td><td>微秒级（低负载）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>RabbitMQ 低延迟的秘密与局限：</strong>
+<p>RabbitMQ 在低负载下延迟可以到微秒级，因为：① Erlang 的轻量级进程模型，消息在进程间传递极快；② 消息默认不落盘（除非开启持久化），纯内存传递。但一旦负载上来（队列积压），延迟会急剧上升——因为 RabbitMQ 的队列是进程内的，消息堆积导致内存压力加大，触发 GC 停顿。</p>
+<p>RocketMQ 和 Kafka 的延迟稳定在毫秒级，因为它们的存储模型是基于磁盘的顺序读写——无论队列积压多少，读写延迟基本恒定。银行场景追求的是"延迟可预测性"而非"最低延迟"，毫秒级足够了。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>消息可靠性</strong></td><td>极高（同步刷盘+同步复制）</td><td>高（acks=all 可保证）</td><td>高（持久化+确认）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>金融场景对可靠性的极端要求：</strong>
+<p>银行支付消息一旦丢失，意味着"用户付了钱但系统没记录"——这是 P0 级生产事故。RocketMQ 提供了最严格的可靠性保障组合：同步刷盘（SYNC_FLUSH，每条消息等待写入磁盘后才返回成功）+ 同步复制（SYNC_MASTER，等待 Slave 确认收到后才返回成功）。代价是性能大幅下降（TPS 降到千级），但"丢一条消息比慢 100ms 严重一万倍"。</p>
+<p>Kafka 的 acks=all + min.insync.replicas=N 也能实现类似级别的可靠性，但 Kafka 的设计理念偏向"高吞吐"，可靠性是"可选配置"，不是默认行为。RabbitMQ 的持久化消息 + publisher confirm 也能做到不丢消息，但 Erlang 生态的运维复杂度在国内是减分项。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>事务消息</strong></td><td>原生支持</td><td>支持（Kafka Transactions）</td><td>不原生支持</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>为什么事务消息是 RocketMQ 在金融行业的杀手锏：</strong>
+<p>分布式事务中有一个经典难题：本地 DB 操作和发送消息的原子性如何保证？场景：用户下单 → ① 订单表 INSERT（本地事务）② 发消息给库存系统扣库存。如果①成功了②失败了（网络超时），订单创建了但库存没扣，业务数据不一致。</p>
+<p>RocketMQ 的事务消息通过"半消息（Half Message）+ 事务状态回查"机制解决了这个问题。Kafka 也支持事务（Exactly-Once Semantics），但它的实现侧重于"流处理中的精确一次语义"（read-process-write），而非"DB 操作 + MQ 发送"的分布式事务场景。RabbitMQ 没有原生事务消息支持，通常用"本地消息表"模式兜底。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>顺序消息</strong></td><td>原生支持（基于 Queue 选择）</td><td>支持（分区内有序）</td><td>不保证（队列内 FIFO 但不跨消费者）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>顺序消息在银行支付场景的刚需：</strong>
+<p>订单生命周期：创建订单 → 支付成功 → 发货 → 完成。如果"支付成功"消息先于"创建订单"消息被消费，消费者在处理"支付成功"时发现订单不存在，要么报错要么创建孤儿数据。RocketMQ 的顺序消息通过 MessageQueueSelector 将同一个订单 ID 的所有消息路由到同一个 Queue，同一个 Queue 内的消息是 FIFO 的，消费者单线程消费该 Queue，保证严格有序。</p>
+<p>Kafka 通过分区键保证同一个 Key 的消息进入同一个 Partition，Partition 内有序，同样可以实现。RabbitMQ 在单队列内是 FIFO 的，但如果有多消费者竞争消费（prefetch > 1），消息处理顺序可能乱序。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>延时消息</strong></td><td>原生支持（18 个延迟级别）</td><td>不原生支持</td><td>通过插件支持</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>延时消息的银行场景：</strong>
+<p>① 支付超时关单：用户下单后 30 分钟未支付，自动取消订单。RocketMQ 延时消息发送时指定延迟级别，30 分钟后消费者才能消费到这条消息，判断是否已支付，如果未支付则关单。② 定时对账触发：每天凌晨 2 点触发对账任务（实际上可以用更高精度的定时调度）。③ 交易复核：大额交易发送延时消息，15 分钟后触发二次复核。</p>
+<p>RocketMQ 默认支持 18 个延迟级别（1s/5s/10s/30s/1m/2m/3m/4m/5m/6m/7m/8m/9m/10m/20m/30m/1h/2h）。如果需要更灵活的时间（如 33 分钟），通常用"时间轮"算法做二次调度或使用外部定时任务框架。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>社区/生态</strong></td><td>Apache 顶级项目，阿里主导</td><td>Apache 顶级，Confluent 公司</td><td>VMware 维护</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>银行选型的现实考量：</strong>
+<p>① 中文生态：RocketMQ 的文档、博客、问题解答绝大部分是中文，Kafka 以英文为主。银行团队中英文无障碍阅读的比例不高，中文生态是硬性优势。② 商业支持：国内有多个 RocketMQ 的商业化版本（阿里云 RocketMQ、华为云 DMS for RocketMQ），提供企业级 SLA 和技术支持。③ 成功案例：中国几乎所有大中型银行的交易消息系统都基于 RocketMQ 或其商业版——这不是技术选择，是行业标准。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>银行选型结论：RocketMQ</strong><br/>
+<strong>核心原因：</strong>① 事务消息解决分布式事务（支付场景刚需）；② 阿里背书 + Apache 顶级项目，稳定性经双 11 验证；③ 同步刷盘 + 同步复制满足金融级可靠性；④ 中文社区活跃，招聘市场上懂 RocketMQ 的工程师多；⑤ 国内银行有大量成功案例和最佳实践。<br/><br/>
+<strong>Kafka 在银行的定位：</strong>大数据日志采集、实时流计算、用户行为分析——不用于核心交易链路。<br/>
+<strong>RabbitMQ 在银行的定位：</strong>少量使用在内部管理系统、消息推送等非核心场景。
+</div>
+
+<!-- ==================== 二、RocketMQ 核心 ==================== -->
+<h2 id="two-1">二、RocketMQ 核心架构</h2>
+
+<h3>3. RocketMQ 架构设计</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "Producer Cluster"
+        P1["Producer 1"]
+        P2["Producer 2"]
+    end
+    subgraph "NameServer Cluster"
+        N1["NameServer 1<br/>（独立，非集群）"]
+        N2["NameServer 2<br/>（独立，非集群）"]
+    end
+    subgraph "Broker Cluster"
+        B1["Broker Master 1"]
+        B1S["Broker Slave 1"]
+        B2["Broker Master 2"]
+        B2S["Broker Slave 2"]
+    end
+    subgraph "Consumer Cluster"
+        CG1["Consumer Group A<br/>Consumer 1 / 2 / 3"]
+        CG2["Consumer Group B<br/>Consumer 1 / 2"]
+    end
+
+    P1 -->|"1. 获取路由信息"| N1
+    P2 -->|"1. 获取路由信息"| N2
+    P1 -->|"2. 发送消息"| B1
+    P2 -->|"2. 发送消息"| B2
+    B1 -.->|"主从复制"| B1S
+    B2 -.->|"主从复制"| B2S
+    B1 -->|"3. 心跳注册"| N1
+    B2 -->|"3. 心跳注册"| N2
+    CG1 -->|"4. 拉取消息"| B1
+    CG2 -->|"4. 拉取消息"| B2
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>NameServer——"路由器"而非"注册中心"：</strong>
+<p>NameServer 是整个集群的"路由表"。每个 NameServer 节点都是独立且对等的——它们之间不通信、不选举、不组成集群。Broker 向所有 NameServer 注册自己的信息（心跳 30 秒一次），Producer/Consumer 从任意一个 NameServer 获取路由表。</p>
+<p>为什么不做成 ZooKeeper/Nacos 那样的强一致集群？因为 NameServer 的数据是"最终一致性"即可——Broker 挂了，NameServer 120 秒没有心跳就剔除，Producer 路由信息稍有过时只会导致短暂发消息失败，不会丢消息（Producer 有重试机制）。这种"轻量化"设计让 RocketMQ 不依赖外部协调服务（早期 Kafka 强依赖 ZooKeeper，后来才去 ZooKeeper）。</p>
+<strong>Broker 的两重身份——消息存储 + 消息投递：</strong>
+<p>Broker 是 RocketMQ 中最重的组件。它同时承担：① 消息存储（落盘到 CommitLog）；② 索引构建（构建 ConsumeQueue 和 IndexFile）；③ 消息投递（Consumer 拉取消息或 Broker 长轮询推送）；④ 主从同步（Master 向 Slave 同步数据）；⑤ 定时消息调度；⑥ 事务消息状态管理。</p>
+<strong>Topic → MessageQueue 的并行度设计：</strong>
+<p>一个 Topic 可以划分为多个 MessageQueue（默认 4 个）。为什么需要分 Queue？① 并行写——Producer 可以轮流向不同 Queue 发消息，提升写入吞吐；② 并行读——Consumer Group 中的多个 Consumer 各自负责不同的 Queue，实现水平扩展。但 Queue 数量是固定的（创建 Topic 时指定），不能动态增加（增加后旧消息的路由规则会乱），所以需要提前规划好。</p>
+</div>
+
+<div class="highlight">
+<strong>一句话架构总结：</strong><br/>
+Producer 向 NameServer 问路 → 找到 Broker → 发消息到 Broker 的特定 Topic-Queue → Broker 持久化到 CommitLog → Consumer 从 Broker 拉取消息 → 消费成功返回 CONSUME_SUCCESS。
+</div>
+
+<h3>4. RocketMQ 消息存储</h3>
+
+<div class="mermaid">
+graph TD
+    subgraph "存储架构"
+        Topic["Topic: OrderTopic"]
+        Q0["Queue 0"]
+        Q1["Queue 1"]
+        Q2["Queue 2"]
+        Q3["Queue 3"]
+        CL["CommitLog<br/>（所有 Topic 共享）<br/>顺序追加写入<br/>每个文件固定 1GB"]
+        CQ0["ConsumeQueue 0<br/>（20字节/条：offset+size+tagHash）"]
+        CQ1["ConsumeQueue 1"]
+        CQ2["ConsumeQueue 2"]
+        CQ3["ConsumeQueue 3"]
+    end
+
+    Topic --> Q0
+    Topic --> Q1
+    Topic --> Q2
+    Topic --> Q3
+    Q0 -->|"消息写入"| CL
+    Q1 -->|"消息写入"| CL
+    Q2 -->|"消息写入"| CL
+    Q3 -->|"消息写入"| CL
+    CL -->|"构建索引"| CQ0
+    CL -->|"构建索引"| CQ1
+    CL -->|"构建索引"| CQ2
+    CL -->|"构建索引"| CQ3
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>CommitLog——为什么所有 Topic 共享一个 CommitLog？</strong>
+<p>这是 RocketMQ 和 Kafka 存储设计的核心差异。Kafka 每个 Partition 独立一个文件夹，每个文件夹里是多个分段文件。RocketMQ 所有 Topic 的所有 Queue 的消息都写入同一个 CommitLog 文件。</p>
+<p>优势：① 顺序写入——不管有多少个 Topic/Queue，磁盘上只有一条顺序写入流，磁头不需要来回寻道，写入性能接近磁盘物理极限（HDD 约 600MB/s，SSD 更高）；② 文件管理简单——只有一组 CommitLog 文件，不需要管理成千上万个 Partition 文件夹。</p>
+<p>劣势：消费时需要从 ConsumeQueue 找到 CommitLog 偏移量，然后去 CommitLog 随机读取消息内容。如果消息不命中 Page Cache，会触发一次随机读。但实际生产环境中，大部分消费是"热数据"（最近几分钟的消息），Page Cache 命中率很高。</p>
+<strong>ConsumeQueue——"消息目录"：</strong>
+<p>ConsumeQueue 每一条记录只有 20 字节：8 字节 CommitLog 偏移量 + 4 字节消息体大小 + 8 字节 Tag 的 HashCode。它不存消息内容，只存"消息在哪"的指针。Consumer 消费时，先读 ConsumeQueue（顺序读取，很快），拿到偏移量后去 CommitLog 读消息内容（随机读，依赖 Page Cache）。</p>
+<p>为什么这样设计？如果每个 Queue 都存一份完整的消息副本，磁盘空间翻 N 倍，且写入要写多次（违背了顺序写入的原则）。CommitLog + ConsumeQueue 的设计用极小的索引代价（20 字节/条）换来了磁盘的单点顺序写入。</p>
+<strong>MappedByteBuffer / mmap 零拷贝：</strong>
+<p>RocketMQ 使用 Java NIO 的 MappedByteBuffer（底层是操作系统的 mmap 系统调用）来读写 CommitLog 文件。传统 IO 路径：磁盘 → 内核缓冲区 → 用户空间缓冲区（一次拷贝）；mmap 路径：磁盘 → 内核缓冲区（映射到用户空间的虚拟地址，零拷贝）。数据不需要从内核空间拷贝到用户空间，CPU 参与更少，吞吐量更高。</p>
+<p>配合 sendfile 系统调用，消费消息时数据从磁盘的 Page Cache 直接通过 DMA 传输到网卡，完全绕过用户态（真正的零拷贝）。</p>
+</div>
+
+<div class="card">
+<strong>存储设计的核心指标：</strong>
+<table>
+<tr><th>维度</th><th>设计选择</th><th>原因</th></tr>
+<tr class="row-expandable"><td>写入方式</td><td>顺序追加写 (Append-Only)</td><td>HDD 约 600MB/s 顺序写 vs 约 1MB/s 随机写</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>顺序写 vs 随机写的物理差异：</strong>
+<p>HDD 的随机写慢是因为磁头需要移动到目标磁道（寻道时间 5-10ms）+ 等待盘片旋转到目标扇区（旋转延迟 2-4ms），一次随机 IO 可能耗时 10-15ms，1 秒只能做约 70-100 次随机 IO。顺序写磁头不需要移动，数据连续写入相邻扇区，1 秒可以做上千次 IO。</p>
+<p>SSD 虽然随机写比 HDD 快得多（约 100-500MB/s），但顺序写仍然更快（约 500MB/s-3GB/s），且没有写放大效应（Write Amplification）。RocketMQ 的设计原则——"一切为了顺序写"——让它在任何存储介质上都能发挥接近硬件的最大性能。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>CommitLog 大小</td><td>每个文件固定 1GB</td><td>方便内存映射、文件清理、快速定位</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>为什么是 1GB？不是 100MB 也不是 10GB？</strong>
+<p>① MappedByteBuffer 映射 1GB 文件需要 1GB 的虚拟地址空间，32 位 JVM 最多 4GB 虚拟地址空间不够用——所以 RocketMQ 生产环境必须用 64 位 JVM；② 1GB 文件约存储 1000 万条消息（假设每条 100 字节），对于高吞吐场景，几分钟就写满一个文件；③ 文件切换——当前文件写满 1GB 后创建新文件，旧文件按保留策略删除。1GB 粒度够细，可以精确控制磁盘使用量；④ 故障恢复——CommitLog 文件按写入顺序编号（如 00000000000000000000、00000000000001073741824），通过文件名就能算出偏移量范围。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Page Cache</td><td>依赖 OS，RocketMQ 不自己管理缓存</td><td>简化设计，让 OS 做最擅长的事</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Page Cache 的冷热分离效果：</strong>
+<p>Linux 的 Page Cache 会自动缓存最近读写过的文件页。RocketMQ 消息生产的写入会填充 Page Cache（刚写入的数据在缓存中），消息消费时如果是"追尾消费"（消费最新的消息），Page Cache 命中率接近 100%——数据就在内存中，不需要读磁盘。如果是"回溯消费"（消费几天前的消息），Page Cache 大概率不命中，需要读磁盘。</p>
+<p>这个设计利用了消息队列的访问特征——绝大多数消费是实时的（追尾），少数是回溯的（故障恢复、数据重跑）。在大部分时间，RocketMQ 的读性能和内存差不多。Kafka 也大量依赖 Page Cache，两者在这一点上思路一致。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>刷盘策略</td><td>同步刷盘 / 异步刷盘</td><td>可靠性与性能的经典权衡</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>同步刷盘（SYNC_FLUSH）的内部流程：</strong>
+<p>① Producer 发送消息 → ② Broker 将消息写入 CommitLog（内存映射区）→ ③ 调用 MappedByteBuffer.force()（底层是 msync 系统调用）强制刷盘 → ④ 等待磁盘确认写入完成 → ⑤ 返回成功给 Producer。在步骤③-④之间，消息在磁盘上，不会因为宕机丢失。</p>
+<p>代价：每次写入都要等磁盘（HDD 约 5-10ms，SSD 约 0.1-0.5ms），TPS 从十万级降到千级。异步刷盘（ASYNC_FLUSH）：消息写入 Page Cache 后立即返回，OS 后台定期（默认 500ms）刷盘。宕机会丢失最近 500ms 内的消息。银行核心交易用同步刷盘，非核心系统用异步刷盘。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>5. 核心参数配置速查</h3>
+
+<div class="highlight">
+<strong>RocketMQ 核心参数全景</strong> — 按组件分类：Producer → Broker → Consumer → Topic，以及银行场景推荐值。
+</div>
+
+<div class="card">
+<strong>一、Producer 端核心参数：</strong>
+<table>
+<tr><th style="width:28%">参数</th><th style="width:15%">默认值</th><th>含义</th><th style="width:22%">银行场景建议</th></tr>
+<tr class="row-expandable"><td><code>sendMsgTimeout</code></td><td>3000ms</td><td>发送消息超时时间</td><td>5000ms（同步刷盘耗时更长）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>超时设置与刷盘策略的联动：</strong>
+<p>异步刷盘时消息写入 Page Cache 后就返回，延迟通常 < 1ms，3000ms 绰绰有余。同步刷盘时每次要等磁盘 fsync（HDD 约 5-10ms / SSD 约 0.1-0.5ms），如果消息体较大（> 1KB），加上网络往返时间，单次发送可能耗时 20-50ms。但即使同步刷盘，3000ms 也足够——设置 5000ms 是留足余量，防止偶发的磁盘 IO 抖动导致超时误报。超时后 Producer 会触发重试。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>retryTimesWhenSendFailed</code></td><td>2</td><td>同步发送失败重试次数</td><td>3</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>重试次数与幂等的关系：</strong>
+<p>每次重试意味着同一条消息可能被 Broker 接收多次：第一次发送 → 网络超时 → Producer 以为失败 → 重试 → Broker 实际上收到了两条相同的消息。如果 Consumer 没有幂等保障，业务会被重复执行。所以"重试次数增加"的前提是"Consumer 端幂等是可靠的"。银行场景：retryTimesWhenSendFailed=3，同时 Consumer 必须有 DB 唯一索引去重。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>retryTimesWhenSendAsyncFailed</code></td><td>2</td><td>异步发送失败重试次数</td><td>0（银行不用异步发送）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>银行禁止异步发送的原因：</strong>
+<p>异步发送（sendOneway / asyncSend）发完就不管了——如果网络丢包、Broker 拒绝、序列化失败，Producer 感知不到。银行支付类消息必须同步发送并确认结果。异步发送最多用于非关键的监控日志上报，且通常改用 Kafka 而非 RocketMQ。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>compressMsgBodyOverHowmuch</code></td><td>4096 字节</td><td>消息体超过此值启用压缩</td><td>1024（银行报文偏大，提早压缩）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>消息压缩的收益与代价：</strong>
+<p>RocketMQ 使用 ZIP 压缩（Deflater），压缩比通常 3:1 到 5:1（文本/JSON 消息效果好）。银行消息体常包含账户信息、交易流水等字段（JSON），500 字节 → 压缩后约 100-150 字节。压缩节省了网络带宽和 Broker 磁盘空间，但增加了 CPU 开销（压缩 + 解压各一次）。CPU 开销通常微乎其微（几十微秒），远小于网络传输节省的时间。</p>
+<p>注意：如果消息体很小（< 512 字节），压缩率低甚至可能"负压缩"（压缩后更大），所以设置合理的阈值很重要。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>maxMessageSize</code></td><td>4MB（4194304）</td><td>单条消息最大字节数</td><td>1MB（防止大消息阻塞队列）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>大消息对系统的冲击：</strong>
+<p>RocketMQ 虽然支持最大 4MB 的消息，但大消息会严重拖慢整体吞吐量：① 写入 CommitLog 时占用更多 IO 带宽；② 占用更多 Page Cache（挤掉其他消息的缓存）；③ 网络传输耗时长（千兆网卡传 4MB 约需 32ms）；④ 如果大消息消费失败进入重试，多次传输会放大延迟。</p>
+<p>银行实践：消息体控制在 1KB 以内（只传业务 ID + 少量关键字段），大数据走对象存储（MinIO/OSS），消息体中只存数据引用 URL。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>retryAnotherBrokerWhenNotStoreOK</code></td><td>false</td><td>发送失败是否尝试其他 Broker</td><td>true</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>自动切换 Broker 的价值：</strong>
+<p>如果目标 Broker 因为磁盘满、内存不足、SLAVE 不同步等原因拒绝存储，开启此参数后 Producer 会自动转向同一 Topic 的其他 Broker 尝试发送。这在 Broker 部分故障时能自动恢复，减少人为干预。银行生产建议开启。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="card">
+<strong>二、Broker 端核心参数：</strong>
+<table>
+<tr><th style="width:28%">参数</th><th style="width:15%">默认值</th><th>含义</th><th style="width:22%">银行场景建议</th></tr>
+<tr class="row-expandable"><td><code>flushDiskType</code></td><td>ASYNC_FLUSH</td><td>刷盘策略：ASYNC_FLUSH / SYNC_FLUSH</td><td>SYNC_FLUSH（核心交易）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>银行分级使用：</strong>核心支付/交易链路用 SYNC_FLUSH（每条消息强制 fsync）；非核心（日志、监控、通知）用 ASYNC_FLUSH 以求性能。同一套 RocketMQ 集群中，不同 Topic 可以配置不同的刷盘策略（通过 Broker 配置 + Topic 级覆盖）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>syncFlushTimeout</code></td><td>5000ms</td><td>同步刷盘等待磁盘确认的超时</td><td>10000ms（SSD 用 1000ms 即可）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>这个参数的隐藏风险：</strong>
+<p>如果磁盘 IO 出现抖动（HDD 老化、RAID 卡电池耗尽、磁盘队列深度满），同步刷盘可能超过 5 秒。一旦超时，Broker 返回 FLUSH_DISK_TIMEOUT 错误，Producer 会重试（等于同一条消息再次触发同步刷盘——加重磁盘压力）。设置 10000ms 是给磁盘更多时间，但同时意味着 Producer 端的 sendMsgTimeout 也要相应调大。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>brokerRole</code></td><td>ASYNC_MASTER</td><td>主从复制模式：ASYNC / SYNC_MASTER / SLAVE</td><td>SYNC_MASTER（主）+ SLAVE（从）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>SYNC_MASTER 的代价与收益：</strong>
+<p>SYNC_MASTER 模式要求 Slave 确认收到消息后才返回成功给 Producer。这会增加一次网络往返延迟（同机房约 1-3ms），TPS 稍有下降。但收获是：Master 宕机后消息不丢（Slave 上有完整副本），可以在秒级内完成故障切换。</p>
+<p>ASYNC_MASTER 模式下 Master 不等 Slave 就返回成功——如果 Master 突然宕机且磁盘损坏，最近几秒的消息可能永久丢失（在 Master 的 Page Cache 或磁盘上但未同步到 Slave）。银行核心交易必须用 SYNC_MASTER。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>fileReservedTime</code></td><td>72 小时</td><td>CommitLog 文件保留时间</td><td>168 小时（7天，满足审计回溯）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>保留时间与磁盘容量的计算：</strong>
+<p>假设 TPS=5000，每条消息平均 500 字节（含消息头）→ 每天消息量 = 5000 × 86400 × 500 = 216GB。保留 7 天 = 约 1.5TB 磁盘（仅 CommitLog）。加上 ConsumeQueue（约 CommitLog 的 5-10%）和索引文件，总共约 1.7TB。生产环境建议预留 2-3 倍空间用于突发流量。</p>
+<p>注意：fileReservedTime 过期后的文件不一定立即删除——只在磁盘使用率超过 diskMaxUsedSpaceRatio（默认 75%）或每天凌晨 4 点的定时清理任务时才会物理删除。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>diskMaxUsedSpaceRatio</code></td><td>75%</td><td>磁盘使用率超过此值触发强制清理</td><td>70%（更早触发清理，留安全边界）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>磁盘满的连锁反应：</strong>
+<p>当 Broker 磁盘使用率超过 75%（默认）时，会强制清理过期文件。如果磁盘使用率达到 90%，Broker 拒绝写入新消息（返回 SYSTEM_BUSY），Producer 端开始报错。在银行生产环境，磁盘满 = 消息无法写入 = 交易链路中断 = P0 故障。所以设置 70% 提前清理，同时告警阈值设在 60%（触发人工扩容）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>maxMessageSize</code></td><td>4MB</td><td>Broker 端接收的最大消息（需与 Producer 一致）</td><td>1MB</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">Broker 端的 maxMessageSize 必须 ≥ Producer 端设置，否则 Broker 会拒绝接收并报错。</div></td></tr>
+<tr class="row-expandable"><td><code>useReentrantLockWhenPutMessage</code></td><td>false（自旋锁）</td><td>写入 CommitLog 时用可重入锁还是自旋锁</td><td>true（同步刷盘时避免 CPU 空转）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>自旋锁 vs 可重入锁的场景选择：</strong>
+<p>异步刷盘（默认）：消息写入 Page Cache 就返回，锁持有时间极短（微秒级），用自旋锁等待比线程切换更高效（CPU 空转几个周期 vs 线程上下文切换上千个周期）。</p>
+<p>同步刷盘：消息写入后还要等磁盘 fsync，锁持有时间变长（毫秒级）。如果还是自旋锁，等待线程会白白消耗 CPU。改为可重入锁——等待线程挂起（sleep），CPU 可以去干别的事，磁盘 IO 完成后唤醒线程。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="card">
+<strong>三、Consumer 端核心参数：</strong>
+<table>
+<tr><th style="width:28%">参数</th><th style="width:15%">默认值</th><th>含义</th><th style="width:22%">银行场景建议</th></tr>
+<tr class="row-expandable"><td><code>consumeFromWhere</code></td><td>CONSUME_FROM_LAST_OFFSET</td><td>新 Consumer Group 从哪开始消费</td><td>CONSUME_FROM_LAST_OFFSET（不回溯历史）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>三种策略的适用场景：</strong>
+<p><code>CONSUME_FROM_LAST_OFFSET</code>：从队列末尾开始消费（跳过历史消息），适合新上线的消费者。</p>
+<p><code>CONSUME_FROM_FIRST_OFFSET</code>：从队列头部开始消费（消费所有历史消息），适合数据迁移/补数据场景。</p>
+<p><code>CONSUME_FROM_TIMESTAMP</code>：从指定时间点开始消费，适合精确的历史数据回溯。</p>
+<p>银行生产默认用 LAST_OFFSET——新上线的消费者不需要处理历史消息。如果确实需要回溯，临时改为 FIRST_OFFSET 或 TIMESTAMP，消费完成后再切回 LAST_OFFSET。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>consumeThreadMin</code> / <code>consumeThreadMax</code></td><td>20 / 64</td><td>消费线程池最小/最大线程数</td><td>20 / 64（按实际情况调优）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>线程数的调优公式：</strong>
+<p>最优消费线程数 ≈ Queue 数量 × 1-2（因为每个 Queue 同一时刻只有一个线程在处理）。如果 Queue=16，大于 32 的线程数不会增加并行度（多余线程空闲）。但如果消费逻辑中有 IO 等待（DB 查询、RPC 调用），可以使用 Queue × 2-3 的线程数——当一个线程等待 IO 时，另一个线程可以处理同 Queue 的下一条消息。</p>
+<p>注意：顺序消费时单 Queue 强制单线程（MessageListenerOrderly），多线程设置无效。并发消费（MessageListenerConcurrently）才能受益于多线程。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>pullBatchSize</code></td><td>32</td><td>每次拉取最多拉多少条消息</td><td>32-64（网络延迟高时增大）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>批量拉取 vs 处理延迟的取舍：</strong>
+<p>增大 pullBatchSize：减少网络往返次数（RTT），提升吞吐量。代价：如果 Consumer 处理一条消息需要 100ms，拉取 64 条意味着从第一条消息拉取到最后一条处理完需要 64×100ms = 6.4 秒——消息处理延迟增大。</p>
+<p>调优原则：pullBatchSize × 单条处理时间 < 消息可接受的最大延迟。银行交易类消息（可接受 1-5 秒延迟）→ pullBatchSize=32；日志类消息（可接受 30 秒延迟）→ pullBatchSize=128。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>consumeMessageBatchMaxSize</code></td><td>1</td><td>一次消费调用最多处理多少条</td><td>10-32（批量消费提升吞吐）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>逐条消费 vs 批量消费：</strong>
+<p>逐条消费（=1）：consumeMessage(List<MessageExt> msgs) 每次只收到 1 条消息 → 逐一处理。每条消息处理完都要更新 offset，100 条消息 = 100 次 offset 提交。</p>
+<p>批量消费（=16）：每次收到 16 条消息，一次性处理完 15 条成功的，1 条失败的稍后重试。批量提交 offset，16 条消息 = 1 次提交。</p>
+<p>银行场景推荐 10-32——数据库批量插入/更新能显著提升吞吐。但批量消费时，消息的处理延迟 = 批大小 × 单条时间，需要权衡。银行支付类消息用逐条消费（consumeMessageBatchMaxSize=1），确保每条消息处理结果精确可控。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>messageModel</code></td><td>CLUSTERING</td><td>消费模式：集群 / 广播</td><td>CLUSTERING（银行只用集群模式）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>集群 vs 广播的区别：</strong>
+<p>CLUSTERING：同一个 Consumer Group 中的多个实例分摊 Queue，每条消息只被组内一个实例消费。这是标准的负载均衡模式。</p>
+<p>BROADCASTING：每条消息推送给组内所有实例。用于配置刷新通知——"配置变更了"这条消息需要通知所有服务实例更新配置缓存。注意广播模式下 offset 存储在消费者本地，重启后可能重复消费。</p>
+<p>银行只用 CLUSTERING——支付消息绝对不能广播（否则同一笔支付会被多个实例重复处理）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>suspendCurrentQueueTimeMillis</code></td><td>1000ms</td><td>消费失败后暂停拉取的等待时间</td><td>5000ms（给下游恢复留更多时间）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>暂停拉取的设计意图：</strong>
+<p>当消费失败（如 DB 连接池满了、下游服务 503），Consumer 返回 RECONSUME_LATER。如果不暂停，Consumer 马上又会拉取新消息，新消息大概率也失败——进入"失败-重试-再失败"的快速循环，加重下游压力。suspendCurrentQueueTimeMillis 让 Consumer 在失败后暂停一段时间，给下游恢复的时间窗口。</p>
+<p>银行场景设置 5000ms（5 秒）——偏保守但安全。如果下游是数据库且正在做故障切换（主从切换通常 30-60 秒），5 秒的暂停远不够，需要配合 Broker 端的重试延迟机制（10s→30s→1m→...）。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="card">
+<strong>四、Topic / Queue 核心参数：</strong>
+<table>
+<tr><th style="width:28%">参数</th><th style="width:15%">默认值</th><th>含义</th><th style="width:22%">银行场景建议</th></tr>
+<tr class="row-expandable"><td><code>readQueueNums</code> / <code>writeQueueNums</code></td><td>8 / 8（新版本）</td><td>Topic 的读/写队列数量</td><td>16 / 16（大流量 Topic 设 32）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>Queue 数量设置的黄金法则：</strong>
+<p>Queue 数量决定了消费并行度的上限。Queue 数量 = 峰值 TPS / 单 Consumer 处理 TPS × 1.5（余量系数）。例如：支付 Topic 峰值 5000 TPS，单 Consumer 处理能力 500 TPS → 需要 10 个 Consumer → Queue 至少 10 个 → 建议设置 16 个。</p>
+<p>注意：readQueueNums 必须 ≥ writeQueueNums（读的队列不能少于写的队列数，否则有消息在写队列中但无法被消费）。通常两者设为相等。动态扩容 Queue 数量时，只增加已有 Topic 的 writeQueueNums 和 readQueueNums——但这只对新消息生效，旧消息仍按老路由规则分布。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>perm</code></td><td>6（可读可写）</td><td>Topic 权限：2=只写, 4=只读, 6=可读写</td><td>6（生产）；4（归档只读Topic）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>perm 的运维场景：</strong>
+<p>当需要暂停某个 Topic 的生产（如迁移数据、修复 Bug），将 perm 改为 4（只读）。Consumer 可以继续消费积压的消息，但 Producer 发消息会被拒绝。等待积压清零后，再将 perm 改回 6（恢复生产）。这个操作不需要重启 Broker，通过 RocketMQ Dashboard 或命令行即可动态修改。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><code>order</code></td><td>false</td><td>是否全局顺序消息（仅一个 Queue）</td><td>false（用分区顺序代替全局顺序）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>全局顺序 Topic 的限制：</strong>order=true 时，Topic 只有一个 Queue——并行度 = 1，所有消息走一个队列、一个线程消费。TPS 被限制在单线程处理能力内（通常 1000-3000 TPS）。银行高并发支付场景绝对不要用全局顺序，用分区顺序即可——同订单 ID 路由到同 Queue，不同订单并行处理。</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>银行场景参数速记口诀：</strong><br/>
+• <strong>同步刷盘 + 同步复制</strong>（FLUSH=SYNC, ROLE=SYNC_MASTER）— 钱的事不能丢<br/>
+• <strong>重试 3 次 + 幂等兜底</strong>（retryTimes=3 + DB 唯一键）— 宁可重不可缺<br/>
+• <strong>Queue=16 + 线程=32</strong>（Queue 数 = TPS/单机TPS × 1.5）— 并行有度<br/>
+• <strong>消息体 < 1KB + 压缩</strong>（maxSize=1MB, compress=1024bytes）— 传 ID 不传全量<br/>
+• <strong>保留 7 天 + 磁盘 70% 清理</strong>（fileReservedTime=168h, diskMaxRatio=70%）— 审计可回溯
+</div>
+
+<!-- ==================== 三、消息可靠性 ==================== -->
+<h2 id="three-1">三、消息可靠性</h2>
+
+<h3>6. 消息可靠性的三个阶段</h3>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "生产阶段"
+        P["Producer"] -->|"① 发送消息"| B["Broker"]
+    end
+    subgraph "存储阶段"
+        B -->|"② 持久化存储"| Disk["CommitLog 磁盘"]
+        B -.->|"同步复制"| Slave["Slave Broker"]
+    end
+    subgraph "消费阶段"
+        C["Consumer"] -->|"③ 拉取消息"| B
+        C -->|"④ 消费成功返回"| B
+    end
+
+    P -.-|"同步刷盘 / 异步刷盘"| B
+    B -.-|"同步复制 / 异步复制"| Slave
+    C -.-|"手动提交 / 自动提交"| B
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>三个阶段的"短板效应"：</strong>
+<p>消息可靠性 = min(生产可靠性, 存储可靠性, 消费可靠性)。任何一个阶段出问题，消息都会丢。面试时最大的加分点就是能把"可靠性"拆解到这三个阶段，而不是泛泛地说"RocketMQ 可以保证可靠"。银行面试官非常看重这种结构化的分析能力。</p>
+<strong>阶段一：生产可靠性——消息发出去了吗？</strong>
+<p>Producer.send() 返回 SendResult 不等于消息真的安全了。如果用的是异步刷盘，消息只写到了 Page Cache 还没落盘；如果用的是异步复制，Slave 还没收到副本。银行级场景：同步刷盘 + 同步复制 + send 带超时重试（retryTimesWhenSendFailed=3），确保"返回成功 = 至少两个节点磁盘上都有这份消息"。</p>
+<strong>阶段二：存储可靠性——消息存住了吗？</strong>
+<p>同步刷盘保证消息在 Master 磁盘上（但 Master 磁盘本身可能损坏）；同步复制保证消息在 Slave 磁盘上也有副本（单磁盘损坏不影响）。RocketMQ 还支持 Dledger（基于 Raft 的自动故障切换）——Master 宕机后，Slave 自动选举为新 Master，消息不丢。</p>
+<strong>阶段三：消费可靠性——消息被正确处理了吗？</strong>
+<p>两个常见错误：① 自动提交 offset——Consumer 拉取消息后立即提交 offset，然后才开始处理业务逻辑。如果业务逻辑处理失败（抛异常），消息已经"标记为已消费"，不会重试——消息丢了。正确做法：手动提交，在业务逻辑执行成功后调用 consumer.commit()。② 先提交后处理——同上，正确处理顺序是：拉取 → 处理业务 → 成功 → 提交 offset。如果处理失败，不提交，等下次重试。</p>
+</div>
+
+<div class="card">
+<strong>可靠性配置速查：</strong>
+<pre><code>// 金融级可靠性配置
+flushDiskType = SYNC_FLUSH         // 同步刷盘
+brokerRole = SYNC_MASTER           // 同步复制
+retryTimesWhenSendFailed = 3       // 发送重试 3 次
+// Consumer 端：手动提交，消费成功才 commit</code></pre>
+</div>
+
+<h3>7. 消息幂等</h3>
+
+<div class="card">
+<strong>为什么幂等是银行消息系统的"生死线"？</strong><br/><br/>
+<p>一条"支付成功通知"消息被消费了两次 = 用户银行卡被扣了两次钱 = 生产事故 + 资金损失 + 监管罚款。幂等性是金融消息系统的第一需求，优先级高于性能。</p>
+<strong>幂等问题的根本原因：</strong>
+<p>消息队列保证的是"至少一次投递"（At-Least-Once），不是"精确一次"（Exactly-Once）。为什么不是 Exactly-Once？因为网络是不可靠的：Consumer 消费成功后网络断了，ACK 没回到 Broker，Broker 以为消费失败，重新投递。Consumer 端看到同一条消息两次——这是分布式系统中无法避免的"至少一次"语义。</p>
+<strong>Exactly-Once 在消息队列中的真正含义：</strong>
+<p>消息队列本身无法保证 Exactly-Once——它只能保证消息"至少被投递一次"。Exactly-Once 需要消费者配合实现——消费者在收到消息后做幂等判断，确保同一条消息无论被投递多少次，业务效果只有一次。</p>
+
+<table>
+<tr><th>幂等方案</th><th>原理</th><th>适用场景</th><th>优缺点</th></tr>
+<tr class="row-expandable"><td><strong>业务唯一键</strong></td><td>消息体带业务 ID，DB 唯一索引防重</td><td>订单支付、转账</td><td>最可靠，但对消息体有格式要求</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>业务唯一键的完整实现流程：</strong>
+<p>① 消息体包含唯一业务标识（如 orderId + eventType："ORDER_12345_PAID"）；② 消费者处理前先查 DB：SELECT 1 FROM processed_event WHERE business_key = 'ORDER_12345_PAID'；③ 如果不存在 → 执行业务逻辑（在同一个 DB 事务中同时插入 processed_event 记录）；④ 如果存在 → 跳过，返回 CONSUME_SUCCESS（不重复处理，但告诉 MQ 消费成功）。</p>
+<p><strong>关键：</strong>步骤③中的"执行业务逻辑"和"插入 processed_event"必须在同一个数据库事务中——否则可能出现业务执行了但去重记录没写入的漏洞。</p>
+<p>DB 唯一约束兜底：在 processed_event 表的 business_key 字段上建 UNIQUE INDEX。如果并发消费同一条消息，只有一个线程能 INSERT 成功，另一个线程抛 DuplicateKeyException → 捕获后直接返回成功（说明已处理过）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>Redis setnx</strong></td><td>setnx 原子操作，判断 key 不存在才执行</td><td>高频非核心业务</td><td>性能高但 Redis 故障时漏防</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>Redis setnx 方案的风险与缓解：</strong>
+<p>实现：String key = "msg_dedup:" + msgId; Boolean success = redis.setnx(key, "1", 3600); if (success) { 处理业务 }; else { 跳过 }。</p>
+<p>风险 1：Redis 挂掉或重启——所有去重 key 丢失，接下来的重复消息无法被拦截。缓解：Redis 做持久化（RDB + AOF）但无法 100% 不丢；增加 DB 去重表做最终兜底（Redis 快速拦截 99.9%，DB 兜底 0.1%）。</p>
+<p>风险 2：setnx 成功但业务处理失败——key 已经设置了，重试的消息会被误判为"已处理"。缓解：业务处理失败时主动删除 key（redis.del(key)），或设置较短的过期时间（如 60 秒，让重试消息有机会在过期后重新处理）。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>消息去重表</strong></td><td>独立去重表，msgId 做主键</td><td>中等吞吐量</td><td>通用方案，有 DB 开销</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>消息去重表的设计要点：</strong>
+<p>表结构：CREATE TABLE msg_dedup (msg_id VARCHAR(128) PRIMARY KEY, consumer_group VARCHAR(64), created_time DATETIME, INDEX idx_time(created_time))。</p>
+<p>处理流程：① 开启 DB 事务；② INSERT INTO msg_dedup VALUES(msgId, group, now())——如果主键冲突说明已处理，直接回滚事务并返回 CONSUME_SUCCESS；③ 执行真正的业务逻辑；④ 提交事务。</p>
+<p>清理策略：去重表会无限增长，需要定时清理——DELETE FROM msg_dedup WHERE created_time < DATE_SUB(NOW(), INTERVAL 7 DAY)。为什么可以 7 天后清理？因为 RocketMQ 的消息重试周期最长是 2 小时（16 次重试后进 DLQ），7 天足够覆盖所有重试场景。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>RocketMQ XID</strong></td><td>事务消息内置的去重标识</td><td>事务消息场景</td><td>仅限事务消息，非事务消息需自建</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>XID 的覆盖范围与局限：</strong>
+<p>RocketMQ 的事务消息在 Producer 发送时会自动生成一个 transactionId（XID），Broker 在事务提交/回查时会使用这个 XID 去重。但这个 XID 的去重范围仅限于 Producer → Broker 这个链路——它防止的是"同一条事务消息被提交两次"，不能防止"消费者重复消费"。</p>
+<p>消费者端的幂等仍然需要上述三种方案之一。XID 可以传给消费者作为去重 key（业务唯一键方案），但它本身并不自动提供消费端幂等。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>银行最佳实践：双重幂等保障</strong><br/>
+① <strong>快速路径：Redis setnx</strong>（拦截 99.9% 的重复，性能高）<br/>
+② <strong>兜底路径：业务唯一键 + DB 唯一索引</strong>（Redis 不可用时兜底，100% 可靠）<br/><br/>
+<strong>代码模式：</strong>先去重（Redis setnx）→ 失败？查去重表 → 不存在？执行业务（DB 事务内插入去重记录）→ 存在？跳过
+</div>
+
+<h3>8. 消息丢失场景</h3>
+
+<div class="card">
+<table>
+<tr><th>丢失阶段</th><th>场景</th><th>根因</th><th>解决方案</th></tr>
+<tr class="row-expandable"><td><strong>生产丢失</strong></td><td>Producer 发送失败、网络超时、异步刷盘后宕机</td><td>send 方法未处理异常、未重试、异步刷盘</td><td>同步发送 + 失败重试 + 同步刷盘</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>生产阶段丢失的完整故障链：</strong>
+<p>场景 1：Producer.send() 抛异常（网络断开、Broker 过载拒绝连接），代码里只打了日志没有重试——消息丢了。</p>
+<p>场景 2：异步刷盘，消息写入了 Page Cache，返回 SendResult OK。0.1 秒后 Broker 宕机，Page Cache 中的数据没来得及刷盘——消息丢了。Producer 毫不知情（它已经收到成功响应了）。</p>
+<p>场景 3：Producer 异步发送（sendOneway），不等待结果就返回。消息在网络中丢失，Producer 不知道——消息丢了。</p>
+<p>解决：同步发送（send）+ retryTimesWhenSendFailed=3 + 使用具有同步刷盘 + 同步复制的 Broker。银行场景不要用 sendOneway。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>存储丢失</strong></td><td>Master 宕机且 Slave 未同步</td><td>异步复制，Master 故障前数据未到 Slave</td><td>同步复制（SYNC_MASTER）</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>异步复制丢失数据的时间窗口：</strong>
+<p>异步复制时，Master 写入 CommitLog 后立即返回成功给 Producer，同时异步向 Slave 发送数据。如果 Master 在数据发送到 Slave 之前宕机：① Master 磁盘坏了——消息丢失（即使同步刷盘也没用）；② Master 进程崩溃——消息在磁盘上还在，但 Slave 升级为新 Master 后，未同步的消息在旧 Master 磁盘上，新 Master 上没有。</p>
+<p>同步复制（SYNC_MASTER）：Master 收到消息后，先向 Slave 发送，等待 Slave 确认写入 CommitLog 后，才返回成功给 Producer。代价：每次写入增加一次网络往返延迟（同机房约 1-3ms）。银行核心交易选择同步复制。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>消费丢失</strong></td><td>先提交 offset，后处理业务（业务失败）</td><td>自动提交 / 错误的提交顺序</td><td>手动提交，先处理后提交</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>消费丢失的经典错误模式：</strong>
+<p>错误顺序：poll() 拉取消息 → commitAsync() 异步提交 offset → processMessage() 处理业务。如果 processMessage() 抛异常，offset 已经提交了，下次拉取不会拉取到这条消息——消息永远丢了（除非手动重置 offset）。</p>
+<p>正确顺序：poll() 拉取消息 → processMessage() 处理业务 → 成功 → commitSync() 同步提交 offset。如果 processMessage() 失败 → 不提交 → Broker 稍后重新投递（重试间隔递增：10s/30s/1m/2m/3m/.../2h）。</p>
+<p>另一个隐蔽丢失：Consumer 拉取了一批消息（10 条），处理到第 5 条时进程崩溃。前 4 条已经处理完了但还没提交 offset——下次拉取会从这批的开头开始，前 4 条被重复消费。这不是"丢失"而是"重复"，需要幂等保障。</p>
+</div></td></tr>
+<tr class="row-expandable"><td><strong>磁盘损坏</strong></td><td>磁盘物理损坏导致 CommitLog 不可读</td><td>单副本的物理故障</td><td>多副本（Master-Slave）+ 定期备份</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>磁盘损坏对金融机构意味着什么：</strong>
+<p>同步刷盘 + 同步复制解决了"进程崩溃"和"网络故障"导致的丢消息，但不能解决"磁盘物理损坏"导致的丢消息。如果 Master 的磁盘完全损坏，虽然 Slave 上有副本，但如果 Slave 的磁盘也同时损坏（同机房火灾、电源浪涌），数据就永久丢失。</p>
+<p>银行级防护：① 跨机房多副本（Master 在机房 A，Slave 在机房 B，两地至少间隔 30 公里）；② 消息归档——将 CommitLog 定期备份到对象存储（OSS/MinIO）；③ 资金类消息必须落 DB（以 DB 为准，MQ 只是中间通道，最终以 DB 中的交易记录作为唯一真相来源）。</p>
+<p>面试要点：在银行场景中，"消息队列不丢消息"是不够的——还需要"即使 MQ 丢了，也能从 DB 中恢复消息"。</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ==================== 四、高级特性 ==================== -->
+<h2 id="four-1">四、高级特性</h2>
+
+<h3>9. 顺序消息</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "分区顺序消息"
+        Orders["订单消息流<br/>Order_A: 创建 → 支付 → 完成<br/>Order_B: 创建 → 支付 → 取消"]
+        Selector["MessageQueueSelector<br/>hash(orderId) % queueNum"]
+        Selector --> Q0["Queue 0"]
+        Selector --> Q1["Queue 1"]
+        Q0 -->|"FIFO"| C0["Consumer 单线程处理 Queue 0"]
+        Q1 -->|"FIFO"| C1["Consumer 单线程处理 Queue 1"]
+        C0 -->|"Order_A 严格有序"| Result0["创建→支付→完成"]
+        C1 -->|"Order_B 严格有序"| Result1["创建→支付→取消"]
+    end
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>分区顺序 vs 全局顺序——银行应该用哪个？</strong>
+<p>全局顺序：整个 Topic 只有一个 Queue，所有消息进入同一条队列→ 单 Consumer 单线程消费 → 全局绝对有序。代价：并行度 = 1，吞吐量极低，不能水平扩展。适用于极小流量的场景（如配置变更通知），银行核心交易绝对不要用——单线程处理所有交易，TPS 被限制在千级，完全无法满足银行交易量。</p>
+<p>分区顺序：同一个业务 ID（如 orderId）的消息路由到同一个 Queue → 同一个 Queue 内消息 FIFO → 单 Consumer 单线程消费该 Queue → 该订单的消息有序。不同订单的消息分布在不同 Queue → 多个 Consumer 并行消费 → 高吞吐。银行的资金交易、订单处理都用这种模式。</p>
+<strong>顺序消息的实现要点：</strong>
+<p>① Producer 端：send(msg, new MessageQueueSelector() { select(queues, msg, orderId) { return queues.get(Math.abs(orderId.hashCode()) % queues.size()); } })——同一个 orderId 永远落到同一个 Queue。</p>
+<p>② Consumer 端：registerMessageListener(new MessageListenerOrderly())——Orderly 模式的监听器保证同一时刻同一个 Queue 只有一个线程在处理。注意：即使有多个 Consumer 实例，同一个 Queue 也只会被分配给一个 Consumer。</p>
+<p>③ 重试机制：如果处理某条消息失败，Orderly 监听器会暂停该 Queue 的消费，等待重试成功后才继续消费后续消息。这意味着该 Queue 被"阻塞"——该订单的后续消息都要等这条重试成功。因此重试逻辑要尽可能快。</p>
+</div>
+
+<div class="card">
+<strong>顺序消息的代价与权衡：</strong>
+<table>
+<tr><th>代价</th><th>说明</th><th>缓解方案</th></tr>
+<tr class="row-expandable"><td>热点 Queue</td><td>某订单消息量巨大，Queue 负载不均</td><td>优化分区键选择，避免热点 ID</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>热点 Queue 的银行案例：</strong>
+<p>假设用"账户 ID"做分区键——大客户的账户每天有数万笔交易，全部进入同一个 Queue，该 Queue 的处理速度成为瓶颈。而普通账户的 Queue 几乎是空闲的。这就是分区不均衡问题。</p>
+<p>解决方案：使用更细粒度的分区键（如 "账户ID + 日期"）让同一个账户不同日期的交易分布到不同 Queue。缺点是同一账户跨日期的消息不再有序——但这通常是可以接受的，因为"昨天的交易"和"今天的交易"之间没有严格的顺序依赖。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>单线程消费</td><td>一个 Queue 同一时刻只有一个线程消费</td><td>减少 Queue 内处理延迟（异步化子步骤）</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>单线程不是"整个 Consumer 只有一个线程"：</strong>
+<p>如果 Consumer 分配到了 4 个 Queue，它有 4 个线程分别处理这 4 个 Queue。每个线程独立消费自己的 Queue。单线程指的是"同一个 Queue 的消费是单线程的"，不是"整个 Consumer 单线程"。所以分区顺序仍然可以实现并行——只要 Queue 数量足够多。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>阻塞重试</td><td>一条消息重试时，整个 Queue 暂停</td><td>重试逻辑尽快返回，避免长时间阻塞</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>阻塞重试的设计取舍：</strong>
+<p>为什么 Orderly 模式下重试要阻塞 Queue？因为如果跳过失败消息继续处理后续消息，顺序就被破坏了——"支付成功"先于"创建订单"被处理。阻塞是为了保证严格有序。</p>
+<p>工程实践：在重试逻辑中加入"最大阻塞时间"——如果重试超过 N 次或超过 M 秒仍然失败，将失败消息发送到"异常处理队列"（另一个 Topic），主队列继续消费。异常处理队列的消息由人工排查后再决定是重试还是丢弃或补偿。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>10. 事务消息</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant P as Producer
+    participant B as RocketMQ Broker
+    participant DB as 本地数据库
+    participant C as Consumer（不可见半消息）
+
+    Note over P,C: ① 发送半消息（Half Message）
+    P->>B: sendMessageInTransaction(msg)
+    B-->>P: 半消息发送成功（Consumer 不可见）
+    Note over B,C: 此时消费者看不到这条消息
+
+    Note over P,DB: ② 执行本地事务
+    P->>DB: 执行业务 SQL（如 INSERT 订单）
+    alt 本地事务成功
+        DB-->>P: 提交成功
+        P->>B: commitMessageInTransaction()
+        B-->>P: 提交成功
+        Note over B,C: 消费者现在可以消费这条消息
+    else 本地事务失败
+        DB-->>P: 提交失败（回滚）
+        P->>B: rollbackMessageInTransaction()
+        B-->>P: 回滚成功
+        Note over B: 半消息被删除
+    end
+
+    Note over P,B: ③ 事务回查（Check Back）
+    B->>P: checkLocalTransaction(msg)
+    P->>DB: 查询本地事务状态
+    DB-->>P: 事务状态（已提交/已回滚/未知）
+    P->>B: commit / rollback / unknown
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>半消息（Half Message）——事务消息的核心机制：</strong>
+<p>半消息是一种特殊状态的消息：它已经被 Broker 接收并持久化（在 CommitLog 中标记为"半消息"状态），但对 Consumer 不可见。Consumer 拉取消息时，Broker 会过滤掉所有半消息。只有当 Producer 发送了 commit 指令后，半消息才变为"正常消息"，Consumer 才能消费到。</p>
+<p>为什么需要半消息？因为"先发消息→再执行本地事务"和"先执行本地事务→再发消息"都有问题。先发消息：如果本地事务失败，消息已经发了（消费者已经处理了），回滚不了。先执行本地事务：如果发消息失败，本地事务没法回滚（已经提交了）。半消息把这两个步骤"分开但不拆散"——消息先到 Broker 但不生效，等本地事务确认后再决定生效或删除。</p>
+<strong>事务回查（Check Back）——兜底机制：</strong>
+<p>Producer 发送 commit/rollback 之后，可能因为网络问题 Broker 没收到。Broker 等待一定时间（默认 60 秒）后，如果事务状态仍然是"未知"，就会向 Producer 发起回查请求（checkLocalTransaction）。Producer 需要实现 checkLocalTransaction 接口——通过查询本地数据库中的事务记录，确定事务的实际状态（提交了还是回滚了），然后返回 COMMIT_MESSAGE 或 ROLLBACK_MESSAGE。</p>
+<p>关键：checkLocalTransaction 必须是幂等的——Broker 可能因为网络原因多次发起回查，同一个事务不能因为多次回查而产生不同结果。通常的实现是查 DB 中事务记录表：SELECT status FROM transaction_record WHERE tx_id = ?，只要 DB 的状态确定，回查结果就确定。</p>
+<strong>本地事务表模式——事务消息的 SQL 实现版：</strong>
+<p>在没有 RocketMQ 事务消息的场景（如使用 RabbitMQ），可以用"本地事务表"实现类似效果：① 在本地数据库中创建一张 message_outbox 表；② 业务 SQL 和 INSERT INTO message_outbox 在同一个数据库事务中提交；③ 后台定时任务扫描 message_outbox 表，将"待发送"状态的消息发送到 MQ；④ 发送成功后更新状态为"已发送"。</p>
+<p>这个方案（Outbox Pattern）的可靠性极高——消息和业务数据在同一个 DB 事务中，要么都成功要么都失败。代价是增加了一个定时扫描任务，消息投递有延迟（取决于扫描间隔，通常 1-5 秒）。银行的很多系统会用 Outbox Pattern + RocketMQ 事务消息双层保障。</p>
+</div>
+
+<div class="highlight">
+<strong>事务消息 —— 面试必考题</strong><br/>
+<p><strong>核心场景：</strong>用户下单 → 扣库存（两个独立的服务）。如何保证"订单创建 + 库存扣减"的一致性？</p>
+<strong>标准回答框架：</strong><br/>
+① 订单服务使用事务消息：半消息 → 创建订单（本地事务）→ commit/rollback<br/>
+② 库存服务消费消息：扣减库存（注意幂等，防止重复扣减）<br/>
+③ 如果扣减库存失败：库存服务发送"库存扣减失败"事件 → 订单服务消费后取消订单（补偿事务）<br/><br/>
+<strong>关键认知：</strong>RocketMQ 事务消息解决的是"本地事务 + 消息发送"的原子性——不是分布式事务的完整解决方案。跨服务的最终一致性还需要消费者端的幂等 + 补偿机制来保证。
+</div>
+
+<h3>11. 消息堆积处理</h3>
+
+<div class="mermaid">
+flowchart TD
+    Accum["消息堆积"] --> Cause1["消费者处理慢"]
+    Accum --> Cause2["消费者宕机/下线"]
+    Accum --> Cause3["流量突增（秒杀/营销）"]
+    Cause1 --> Sol1["水平扩容消费者<br/>（不超过 Queue 数量）"]
+    Cause2 --> Sol2["监控告警 + 自动重启"]
+    Cause3 --> Sol3["紧急扩容：转发到新 Topic<br/>更多 Queue → 更多消费者"]
+    Sol1 --> Monitor["监控指标：消息堆积量 Diff<br/>消费延迟时间"]
+    Sol3 --> Monitor
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>消息堆积的监控指标：</strong>
+<p>① Diff（消息堆积量）= Broker 上的消息总数 - Consumer 已消费的消息总数。RocketMQ 的 Dashboard 可以看到每个 Consumer Group 的 Diff 值。② Delay（消费延迟）= 消息从存储到被消费的时间差。如果一条消息在 Broker 上躺了 5 分钟才被消费，Delay = 300 秒。</p>
+<p>告警阈值：Diff > 10 万条或 Delay > 60 秒 → 告警；Diff > 100 万条或 Delay > 300 秒 → P1 告警（需立即处理）。</p>
+<strong>水平扩容的限制——为什么不能超过 Queue 数量？</strong>
+<p>RocketMQ 的负载均衡机制：一个 Queue 同一时刻只能被同一个 Consumer Group 中的一个 Consumer 实例消费。如果有 4 个 Queue，最多只能有 4 个 Consumer 实例同时工作——第 5 个 Consumer 实例是空闲的（没有 Queue 分配给它）。</p>
+<p>所以扩容的正确顺序是：① 先增加 Topic 的 Queue 数量（需要 Broker 重启或动态扩容）；② 再增加 Consumer 实例。注意：Queue 数量增加后，旧消息和新消息的路由规则不同——旧消息可能不在新 Queue 上，需要做好兼容处理。</p>
+<strong>紧急降级方案——消息转发：</strong>
+<p>当 Diff 已经达到百万级别，正常消费速度不够时：① 创建一个新的 Topic（如 OrderTopic_Urgent），配置 32 个 Queue；② 启动 32 个 Consumer 实例订阅新 Topic；③ 用一个中转程序从旧 Topic 消费消息，写入新 Topic（只转发，不处理）；④ 32 个消费者并行处理，32 倍速度追赶积压。这是应急方案，不是日常方案——转发本身有延迟和资源消耗。</p>
+</div>
+
+<div class="card">
+<strong>处理消息堆积的最佳实践：</strong>
+<table>
+<tr><th>方案</th><th>适用场景</th><th>注意事项</th></tr>
+<tr class="row-expandable"><td>水平扩容</td><td>日常扩容</td><td>不超过 Queue 数，Queue 数也要扩容</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Queue 数量的设置原则：</strong>
+<p>Queue 数量 = 峰值 TPS / 单 Consumer 处理 TPS。比如峰值 10000 TPS，单 Consumer 处理能力 2000 TPS，需要 5 个 Consumer，Queue 至少 5 个（建议 8-16 个留余量）。但不是越多越好——Queue 数量过多（几百个）会带来元数据开销，影响 Broker 性能。建议单个 Topic 的 Queue 数在 4-32 之间。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>批量消费</td><td>Consumer 处理延迟高但不是瓶颈</td><td>每条消息都要独立幂等检查</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>批量消费 vs 逐条消费的性能差异：</strong>
+<p>逐条消费：每条消息拉取一次、反序列化一次、处理一次、提交一次 offset——4 次网络 IO 或系统调用。批量消费：一次拉取 32 条消息，一次性处理完后统一提交 offset——从 128 次操作降到 4 次。</p>
+<p>注意：批量消费时，如果批量中的某一条处理失败，整批都需要重试——需要在消费逻辑中做好"部分成功"的处理：记录每一条的处理结果，成功的标记为成功，失败的单独重试。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>优化消费逻辑</td><td>消费本身是瓶颈</td><td>DB 查询优化、异步化、去除非必要逻辑</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>消费逻辑的常见性能杀手：</strong>
+<p>① 逐条查 DB：每条消息都单独查一次数据库——100 条消息 = 100 次 DB 查询。改成批量查询（WHERE id IN (...)）→ 1 次 DB 查询。② 同步 RPC 调用：消费消息后同步调用其他服务——拖慢消费速度。改成异步调用或换方向（让其他服务也消费同样的消息）。③ 复杂的序列化/反序列化：JSON 解析成为 CPU 热点。换成 Protobuf 或 MessagePack。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>紧急转发</td><td>百万级积压的应急方案</td><td>临时方案，事后需清理和复盘</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>紧急转发的操作流程：</strong>
+<p>① 通过 RocketMQ 管理后台创建新 Topic（如 PaymentTopic_Fast），设置更多 Queue（如 64 个）；② 部署一批专门转发 Consumer——从旧 Topic 拉取消息，不做处理直接发送到新 Topic；③ 在新 Topic 上部署正常处理 Consumer（64 个实例并行消费）；④ 监控 Diff 下降情况，积压清零后切换回原 Topic；⑤ 清理临时 Topic 和 Consumer。</p>
+<p>注意：转发过程中消息体可能被截断或改写，确保转发逻辑不做任何消息体修改。同时注意消息顺序——紧急转发通常会破坏分区顺序（新 Topic 的 Queue 映射和旧 Topic 不同），如果有顺序要求，需要额外处理。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>12. 死信队列</h3>
+
+<div class="mermaid">
+flowchart TD
+    NormalMsg["正常消息"] --> Consume["Consumer 消费"]
+    Consume -->|"成功"| Success["返回 CONSUME_SUCCESS<br/>Offset 提交"]
+    Consume -->|"失败"| Retry["进入重试队列<br/>延迟递增：10s→30s→1m→...→2h"]
+    Retry -->|"重试消费成功"| Success
+    Retry -->|"重试 N 次仍然失败<br/>（默认 16 次）"| DLQ["死信队列 %DLQ%ConsumerGroup"]
+    DLQ --> Manual["人工介入<br/>查看原因 → 修复 → 重新发送"]
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>死信队列的设计哲学——"承认失败"：</strong>
+<p>消息队列的正常逻辑是"无限重试直到成功"。但现实中有些失败不是瞬时的——比如消息格式错误、依赖的数据库连不上（持续几小时）、消费者代码有 Bug。无限重试只会消耗资源并堵塞正常的消息流。死信队列说："这条消息我重试了 16 次都没成功，我认为它有问题，放一边等人工来看。"</p>
+<p>这不是"放弃", 而是"分层处理"——系统自动处理可自动恢复的失败，把顽固失败交给人工，让人来决定是修复后重试还是丢弃并补偿。</p>
+<strong>RocketMQ 的重试机制细节：</strong>
+<p>① 消费失败后返回 RECONSUME_LATER；② Broker 将消息放入 RETRY 队列（%RETRY%ConsumerGroup），按延迟级别重新投递；③ 默认重试 16 次，延迟序列：10s、30s、1m、2m、3m、4m、5m、6m、7m、8m、9m、10m、20m、30m、1h、2h；④ 16 次后仍然失败，消息进入 DLQ（%DLQ%ConsumerGroup）。</p>
+<p>延迟递增设计的原因：如果消费失败是因为短暂的服务不可用（如数据库连接池满了），10 秒后大概率恢复；如果是因为持久性故障（如代码 Bug），重试 100 次也没用。递增延迟给了短暂故障恢复的时间，同时避免对持久故障做无意义的密集重试。</p>
+<strong>银行场景的死信处理 SOP（标准操作流程）：</strong>
+<p>① 监控死信队列的消息数量——一旦有消息进入 DLQ，立即告警；② 运营人员登录 RocketMQ Dashboard，查看死信消息的内容和消费失败的异常堆栈；③ 分类处理：消息格式错误 → 联系上游修复格式并重新发送；业务数据异常（如订单状态不一致）→ 手工修正数据后重新消费；消费者代码 Bug → 修复代码，升级消费者，重新消费；④ 重新消费——从死信队列中重新发送到原 Topic（RocketMQ Dashboard 支持一键重发）；⑤ 记录故障并复盘——死信消息 = 系统出现了预期外的异常，需要复盘根因。</p>
+</div>
+
+<div class="card">
+<strong>死信队列配置：</strong>
+<pre><code>// Consumer 配置重试次数
+consumer.setMaxReconsumeTimes(16);  // 默认 16 次，银行场景建议 3-5 次
+// 死信队列名称固定格式
+// %DLQ% + ConsumerGroup 名称
+// 例如：%DLQ%PaymentConsumerGroup</code></pre>
+<strong>面试要点：</strong>能被问出"死信队列里怎么重新消费？"说明面试官在实际生产环境中处理过故障。标准答案：在 RocketMQ Dashboard 中查看死信消息，确认问题已修复后，使用"重新发送"功能将死信消息重新投递到原 Topic。注意死信消息重新投递后，消息 ID 会改变（因为是一条"新"消息），如果消费端依赖原始 MsgId 做幂等，需要做适配。
+</div>
+
+<!-- ==================== 五、银行实战 ==================== -->
+<h2 id="five-1">五、银行实战经验总结</h2>
+
+<h3>13. 银行消息系统架构设计原则</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "银行消息系统分层架构"
+        L1["接入层<br/>交易系统 → MQ Producer<br/>同步刷盘 + 同步复制"]
+        L2["消息层<br/>RocketMQ 集群<br/>两地主备（同城双活）"]
+        L3["消费层<br/>Consumer 集群<br/>幂等 + 手动提交 + 顺序消费"]
+        L4["保障层<br/>监控告警 + 死信处理<br/>消息追踪 + 审计日志"]
+    end
+    L1 --> L2 --> L3 --> L4
+</div>
+<div class="detail-toggle">展开详解</div>
+<div class="detail-panel">
+<strong>银行消息系统的核心原则——"宁可慢，不能错，更不能丢"：</strong>
+<p>互联网公司的消息系统追求"高吞吐、低延迟"——延迟多 10ms 可能影响用户刷视频的体验。银行追求"强一致、可追溯"——丢失一条支付消息的后果远严重于延迟多了 1 秒。这决定了银行在刷盘策略、复制策略、消费确认策略上全部选择最严格的配置。</p>
+<strong>接入层——生产者端的银行规范：</strong>
+<p>① 同步发送（不允许 sendOneway 或异步发送）；② 重试 3 次，每次超时 3000ms；③ 发送级别配置为同步刷盘 + 同步复制；④ 消息体使用 Protobuf 而非 JSON（减少体积，加速序列化，类型安全）；⑤ 发送前先在本地 DB 记录发送意图（Outbox Pattern + 事务消息双重保障）。</p>
+<strong>消息层——RocketMQ 集群的银行部署拓扑：</strong>
+<p>① 双机房部署（同城主备）：机房 A 部署 Master + 半个 NameServer；机房 B 部署 Slave + 半个 NameServer。② 网络延迟 < 2ms（同城光纤直连）。③ 同步复制：Master 的每条消息同步复制到 Slave。④ 故障切换：Master 宕机 → 自动或手动切换 Slave 为 Master（Dledger 自动切换，或运维手动切换）。</p>
+<strong>消费层——消费者端的银行规范：</strong>
+<p>① 手动提交 offset（处理成功后才提交）；② 每条消息做幂等检查（业务唯一键 + DB 唯一索引）；③ 分区顺序消费（同订单的消息进入同 Queue，单线程消费）；④ 消费异常记录到异常表（方便人工排查和补偿）；⑤ 消费速率监控和限流（保护下游数据库，防止消费过快打挂 DB）。</p>
+</div>
+
+<div class="highlight">
+<strong>面试万能公式——"消息可靠性三段论"</strong><br/><br/>
+<strong>生产阶段：</strong>同步发送 + 重试 3 次 + 同步刷盘 + 同步复制<br/>
+<strong>存储阶段：</strong>多副本 + 跨机房 + 定期归档<br/>
+<strong>消费阶段：</strong>手动提交 + 幂等（业务唯一键 + DB 唯一索引）+ 顺序消费<br/><br/>
+这个三段论覆盖了银行面试官对"消息可靠性"的 90% 考点。
+</div>
+
+<h3>14. 分布式事务的最终一致性</h3>
+
+<div class="card">
+<strong>金融行业分布式事务的"不可能三角"——CAP 定理下的选择：</strong>
+<p>CAP 定理说：一致性（Consistency）、可用性（Availability）、分区容错性（Partition Tolerance）最多同时满足两个。在分布式系统中，网络分区（P）是客观存在的（交换机故障、光纤切断），所以必须在 C 和 A 之间选。银行的选择是：<strong>牺牲强一致性，追求最终一致性 + 可用性</strong>。</p>
+<p>为什么选 A 而不是 C？因为银行系统不能停——支付系统停 1 分钟都是 P0 事故。强一致性（C）需要分布式锁/两阶段提交（2PC），一旦协调者宕机，整个系统阻塞。最终一致性允许短暂的不一致窗口（"订单创建了但库存还没扣"），但通过消息队列 + 补偿机制最终达到一致。</p>
+
+<strong>RocketMQ 事务消息 + 补偿 = 最终一致性方案：</strong>
+<pre><code>// 步骤 1：订单服务
+try {
+    // 半消息发送给 RocketMQ
+    transactionMQProducer.sendMessageInTransaction(msg, order);
+    // 本地事务：创建订单
+    orderService.createOrder(order);
+    // commit 消息
+    // 如果这一步失败，Broker 会回查 checkLocalTransaction
+} catch (Exception e) {
+    // rollback 消息
+}
+
+// 步骤 2：库存服务（消费消息）
+// Consumer 消费到订单创建消息
+try {
+    // 幂等检查
+    if (dedupService.isProcessed(msgId)) return CONSUME_SUCCESS;
+    // 扣减库存
+    boolean success = inventoryService.deduct(orderId, quantity);
+    if (success) {
+        dedupService.markProcessed(msgId);
+        return CONSUME_SUCCESS;
+    } else {
+        // 库存不足，发送补偿事件
+        compensationService.sendCompensation(orderId, "库存不足");
+        return CONSUME_SUCCESS; // 消息本身消费成功，补偿逻辑异步处理
+    }
+} catch (Exception e) {
+    return RECONSUME_LATER; // 重试
+}
+
+// 步骤 3：补偿服务（消费补偿事件）
+// 订单服务消费到补偿事件 → 取消订单（或标记为异常）</code></pre>
+<strong>这个方案的三个关键保障：</strong>
+<p>① 事务消息保证"订单创建"和"消息发送"的原子性；② 幂等保证库存不会被重复扣减；③ 补偿机制保证失败时可以回滚（取消订单）。三者缺一不可——事务消息只解决第一步，幂等解决重复消费，补偿解决最终一致性。</p>
+</div>
+
+<h3>15. 面试常见追问</h3>
+
+<div class="card">
+<table>
+<tr><th>追问</th><th>标准回答思路</th></tr>
+<tr class="row-expandable"><td>"消息队列挂了怎么办？"</td><td>集群 + 多副本 + 故障自动切换 + 生产者本地缓存降级</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>消息队列故障的分级应对：</strong>
+<p>Level 1（单 Broker 故障）：Dledger 自动切换，Slave 升为 Master，对生产者/消费者透明（可能有几秒的不可用窗口）。</p>
+<p>Level 2（整个集群故障）：① 生产者降级——消息暂存到本地 DB 或 Redis（消息暂存表），后台定时任务扫描并重试发送；② 消费者降级——触发告警，通知运维恢复集群，消费者等待恢复后从上次 Offset 继续消费。</p>
+<p>Level 3（机房级故障）：切换到灾备机房的消息集群。灾备集群的数据可能不是最新（异步复制时的数据延迟），需要评估数据丢失范围和补偿方案。触发灾备切换的条件：主集群不可用超过 5 分钟。</p>
+<p>面试关键：展示你的思考是分级的——不是"MQ 挂了就挂了"，而是"MQ 挂了怎么办，而且挂的严重程度不同应对方案不同"。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>"RocketMQ 为什么比 Kafka 更适合金融场景？"</td><td>事务消息 + 金融级可靠性（同步刷盘/复制）+ 延时消息 + 中文生态</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>用表格做对比（面试时 30 秒说完）：</strong>
+<p>① 事务消息：RocketMQ 原生支持半消息+回查，Kafka 的事务模型更偏向流处理；② 金融级可靠性：RocketMQ 同步刷盘+同步复制是内置的一等公民功能，Kafka 需要复杂配置；③ 延时消息：RocketMQ 原生 18 级延迟，金融场景（支付超时关单、定时对账）是高频需求；④ 国内生态：中文文档、阿里商业支持、银行同行案例。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>"消息队列和数据库事务怎么协调？"</td><td>事务消息（RocketMQ）或 Outbox Pattern（本地消息表）+ 定时扫描</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>两种方案的选型标准：</strong>
+<p>如果用的是 RocketMQ：直接用事务消息（半消息+回查），代码量少，可靠性高。</p>
+<p>如果用的是 RabbitMQ/Kafka 或公司不允许引入 RocketMQ：用 Outbox Pattern——在同一个 DB 事务中同时插入业务数据和消息发件箱记录，后台定时任务扫描发件箱表发送消息。这是应用层的解决方案，不依赖中间件的事务能力，但代码量大且消息投递有延迟。</p>
+<p>银行场景二者结合使用：Outbox 表保障"消息一定被写到了某处"，事务消息保障"写到了 MQ 且被正确提交"。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>"如何保证消息不丢失也不重复？"</td><td>不丢失：同步刷盘+同步复制+手动提交；不重复：幂等（业务唯一键+DB 唯一索引）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>不丢失和不重复是两件独立的事：</strong>
+<p>不丢失解决的是"消息在传输和存储的任一环节有没有凭空消失"。三段论：生产阶段（同步+重试）、存储阶段（多副本+同步复制）、消费阶段（手动提交）。</p>
+<p>不重复解决的是"同一条消息被消费了多次，业务效果是否一致"。核心是幂等——业务唯一键 + DB 唯一索引。这跟消息队列本身没关系——是消费者端的业务逻辑保障。</p>
+<p>面试官想听的：这两个问题不能混为一谈——一个是中间件层的可靠性，一个是业务层的正确性。展示你清楚这两个问题的边界。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>"千万级消息积压怎么处理？"</td><td>紧急扩容：修复消费者问题 + 新建 Topic（更多 Queue）+ 并行消费</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>千万级积压的处理 SOP：</strong>
+<p>① 紧急止血：先排查并修复消费者问题（代码 Bug、DB 慢查询、下游服务挂了）——不修好根因，扩容也只是加速制造错误。</p>
+<p>② 临时降级：如果消费者问题短时间修不好，先将消费逻辑精简（跳过非核心检查），快速消费掉积压。</p>
+<p>③ 并行追赶：新建临时 Topic，Queue 数量 = 旧 Topic 的 4-8 倍，用转发程序将旧 Topic 的消息转发到新 Topic，在新 Topic 上部署大量 Consumer（数量 = Queue 数）并行消费。</p>
+<p>④ 赶上后切回：积压清零后恢复原架构，复盘根因，加监控告警。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>"RocketMQ 的事务消息的 check 机制怎么实现的？"</td><td>Broker 定时扫描未确认的半消息 → 回调 Producer 的 checkLocalTransaction 方法</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>事务回查的完整机制：</strong>
+<p>① Broker 维护一个"半消息队列"——所有发送了但没有 commit/rollback 的半消息；② 定时任务（默认每 60 秒）扫描半消息队列，对于超过 transactionTimeout（默认 6 秒）仍未确认的消息，向 Producer 发起回查请求；③ Producer 必须实现 TransactionListener 接口的 checkLocalTransaction 方法——通过查询本地数据库判断事务的实际状态，返回 COMMIT_MESSAGE / ROLLBACK_MESSAGE / UNKNOW；④ 如果返回 UNKNOW，Broker 稍后会再次回查（不确认就反复问）；⑤ 回查最多持续 transactionCheckMax 次（默认 15 次），超过后 Broker 将该半消息丢弃。</p>
+<p>checkLocalTransaction 的实现必须是幂等的——因为 Broker 可能多次回查同一条消息。工业标准实现：在本地数据库中有一张 transaction_log 表，check 时查询该表的状态。</p>
+</div></td></tr>
+</table>
+</div>
+
+<div class="nav-bottom">
+  <a href="../15-操作系统/操作系统八股文.html">← 上一篇：操作系统</a>
+  <a href="../17-Linux常用命令/Linux常用命令八股文.html">下一篇：Linux 常用命令 →</a>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>

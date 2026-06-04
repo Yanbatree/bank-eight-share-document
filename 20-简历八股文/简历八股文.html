@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>简历八股文 - 项目深度追问宝典</title>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #14b8a6; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #0f766e; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>简历八股文 · 项目深度追问宝典</h1>
+<p style="color:var(--text-secondary)">简历上每个技术点都可能被追问三层 — 从"你用了什么"到"为什么这样选"到"如果条件变了怎么办"</p>
+
+<div class="highlight">
+<strong>本页覆盖简历中两个核心项目的所有关键知识点：</strong><br/>
+<strong>项目一：</strong>A股智能投资顾问系统 — RAG、LangGraph、MCP、ReAct、向量检索、混合搜索<br/>
+<strong>项目二：</strong>智能生活点评圈 — 秒杀、缓存策略、分布式锁、GEO、布隆过滤器、Redis 高可用
+</div>
+
+<!-- ==================== 一、RAG 检索增强生成 ==================== -->
+<h2 id="one-1">一、RAG 检索增强生成</h2>
+
+<h3>Q1: 你的 RAG 完整流程是怎样的？每一步的设计考量是什么？</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["用户查询: '这只股票怎么样?'"] --> B["查询优化<br/>LLM改写 + NER实体识别"]
+    B --> C["向量检索<br/>BGE-large-zh → Chroma<br/>查询→向量→相似度检索"]
+    B --> D["BM25 关键词检索<br/>分词→词频→倒排索引"]
+    C --> E["RRF 融合排序<br/>Reciprocal Rank Fusion"]
+    D --> E
+    E --> F["BGE-reranker 重排序<br/>Cross-Encoder精排"]
+    F --> G["混合截断<br/>Top-K + 相似度阈值"]
+    G --> H["父子文档索引<br/>子文档召回 → 返回父文档"]
+    H --> I["注入 Prompt<br/>构建分析报告上下文"]
+    I --> J["LLM 生成分析报告"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>RAG 的本质——"给 LLM 查资料"：</strong>
+<p>LLM 的知识截止于训练数据，且存在幻觉问题（编造不存在的事实）。RAG 的思路是：用户提问 → 从知识库检索相关资料 → 将资料注入 Prompt → LLM 基于这些资料生成回答。这相当于让 LLM "开卷考试"而不是"闭卷瞎编"。</p>
+<strong>金融场景为什么特别需要 RAG？</strong>
+<p>① 股票价格、财报数据是实时变化的（LLM 的训练数据是静态的）；② 金融分析需要精确的数字（"贵州茅台 2024 Q3 营收 388 亿"），不能靠 LLM 记忆（极易编造）；③ 分析师报告有专业格式和深度要求（需要注入分析师的专业方法论而非泛泛而谈）。</p>
+<strong>你简历中每一步为什么这样设计：</strong>
+<p><strong>查询优化在最前面：</strong>因为用户的自然语言查询通常是模糊的。"这只股票怎么样"→ LLM 改写成"请分析股票 XXX 的基本面、技术面和近期新闻"→ 更有利于检索。同时 NER 提取出"股票代码"这个关键实体，可以直接作为检索 filter。</p>
+<p><strong>双路检索（向量+BM25）融合：</strong>向量检索擅长语义匹配（"市盈率"≈ "PE ratio"），但可能漏掉精确的关键词匹配。BM25 擅长精确词匹配但不懂语义。两者互补——RRF 融合排序让两路的结果综合排名。</p>
+<p><strong>BGE-reranker 作为最后一道防线：</strong>经过两路检索和融合后，还需要一个更精确的重排序模型来判断文档和查询的真正相关性。Cross-Encoder（与 Bi-Encoder 不同）把查询和文档拼接后一起编码，能捕捉到更细粒度的相关信号。</p>
+</div>
+
+<h3>Q2: 查询优化中 LLM 改写和 NER 实体识别具体怎么做的？准确率从 60% 提升到 85% 是怎么度量的？</h3>
+
+<div class="card">
+<strong>LLM 改写 —— 把口语变规范：</strong>
+<table>
+<tr><th>原始查询</th><th>LLM 改写后</th><th>改写目的</th></tr>
+<tr><td>"这只股票怎么样"</td><td>"请分析股票 600519（贵州茅台）的基本面（营收、利润、ROE）、技术面（均线、MACD）和估值（市盈率、市净率）"</td><td>补全分析维度 + 补全股票代码</td></tr>
+<tr><td>"最近涨得挺猛能买吗"</td><td>"请分析该股票近期走势的技术指标和市场情绪，评估当前是否适合买入"</td><td>规范化表达 + 明确输出意图</td></tr>
+<tr><td>"跟银行比起来便宜吗"</td><td>"请对比该股票与银行板块的估值水平（市盈率、市净率、股息率）"</td><td>补充对比对象 + 明确估值指标</td></tr>
+</table>
+<strong>NER 实体识别流程：</strong>
+<pre><code>输入: "贵州茅台现在市盈率多少？"
+NER 提取:
+  - 股票名称: 贵州茅台 → 映射到代码 600519
+  - 分析维度: 市盈率 → 映射到 PE_TTM, PE_行业分位
+  - 时间意图: "现在" → 最新一期财报数据</code></pre>
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>NER 在金融场景的特殊设计：</strong>
+<p>通用 NER（如人名、地名、组织名）不够用——需要识别"股票代码、财务指标、时间范围、分析维度"等金融专有实体。实现方式：① 构建金融实体词典（A股 5000+ 股票名称→代码映射、200+ 常见财务指标中英文对照）；② 用少量标注数据微调 BERT-NER 模型（或基于 LLM 的 Few-shot NER）；③ 规则兜底（正则匹配 6 位数字 = 股票代码，匹配"率/比/额"结尾 = 财务指标）。</p>
+<p><strong>准确率 60%→85% 的度量方式：</strong></p>
+<p>构建测试集：100 条真实用户查询（含口语化、模糊、缺少关键实体等问题），人工标注每个查询应检索到的"正确文档列表"。检索准确率 = 检索结果中正确文档数量 / 应检索到的正确文档总量。60% 的基线来自直接用原始查询做向量检索（很多模糊查询找不到正确文档）；85% 的提升来自：① LLM 改写补齐信息（+10%）② NER 实体识别精准过滤（+8%）③ 双路检索融合提升召回（+7%）。</p>
+</div>
+
+<h3>Q3: 父子文档索引策略具体怎么实现的？为什么子文档召回却返回父文档？</h3>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "索引阶段（写入时）"
+        Parent["父文档<br/>完整分析报告<br/>（3000字，含基本面+技术面+估值）"] --> Chunk1["子文档1<br/>基本面段落<br/>（500字）"]
+        Parent --> Chunk2["子文档2<br/>技术面段落<br/>（500字）"]
+        Parent --> Chunk3["子文档3<br/>估值段落<br/>（500字）"]
+    end
+
+    subgraph "检索阶段（查询时）"
+        Query["用户查询: 'PE多少？'"] --> Embed["BGE向量化"]
+        Embed --> Match["匹配到子文档3<br/>（估值段落）"]
+        Match --> Return["返回父文档<br/>（完整分析报告）"]
+    end
+
+    Chunk1 --> Embed
+    Chunk2 --> Embed
+    Chunk3 --> Embed
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>问题的本质——"检索粒度困境"：</strong>
+<p>如果把整篇分析报告（3000 字）作为一个向量存储：检索精度太低——用户问"PE 多少"，3000 字的文档中可能只有一段 200 字的段落和 PE 相关，但整个文档的向量是被其他 2800 字"稀释"的，检索相似度不高。</p>
+<p>如果每段（500 字）独立存为一个向量：检索精度高了（PE 查询能精准命中估值段落），但返回给 LLM 的只有 500 字——缺少上下文（没有基本面背景、没有行业对比、没有投资建议），LLM 给出的回答质量差。</p>
+<p><strong>父子文档 = 取两者之长：</strong>① 子文档负责精准匹配（较小的文本块 → 向量更"纯粹" → 相似度匹配更准确）；② 父文档负责完整上下文（检索命中了子文档 → 返回其所属的完整父文档 → LLM 有充足的上下文）。</p>
+<strong>实现细节：</strong>
+<p>在 Chroma 中：每条记录存子文档的向量（embedding），metadata 中记录 parent_doc_id。检索时：query → 向量相似度 → 返回 top-k 子文档 → 根据 metadata.parent_doc_id 找到各自的父文档 → 去重后返回完整父文档列表。</p>
+<p><strong>面试追加问：</strong>"文本块大小怎么定？"500 字是一个经验值——太小（100 字）导致语义不完整（"PE 是 25 倍"这句话如果单独存，无法知道是哪只股票的 PE），太大（2000 字）又回到稀释问题。实际选择需要根据文档结构（是否有自然段落边界）、嵌入模型的 token 限制（BGE 最大 512 tokens）、下游 LLM 的上下文窗口综合决定。</p>
+</div>
+
+<h3>Q4: BM25 与向量检索融合 — RRF 算法是怎么工作的？</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "双路检索"
+        V["向量检索<br/>语义匹配<br/>Top-20: [d1,d3,d5,d2,d8,...]"]
+        B["BM25 检索<br/>关键词匹配<br/>Top-20: [d2,d1,d7,d4,d3,...]"]
+    end
+    subgraph "RRF 融合排序"
+        F["对每条文档计算 RRF 分数:<br/>score(d) = Σ 1/(k + rank_i)"]
+        F --> R["最终排序:<br/>d1(最高),d2,d3,d5,d7,..."]
+    end
+    V --> F
+    B --> F
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>RRF（Reciprocal Rank Fusion）公式与直觉：</strong>
+<p><code>RRF_score(d) = Σ 1 / (k + rank_i(d))</code>，其中 k 是常数（通常 60），rank_i 是文档 d 在第 i 个检索器中的排名。</p>
+<p>直觉：排名越靠前（rank 越小），1/(k+rank) 越大，对总分的贡献越大。如果文档 d1 在向量检索中排第 1，在 BM25 中排第 2：RRF = 1/(60+1) + 1/(60+2) ≈ 0.0164 + 0.0161 = 0.0325。如果文档 d5 在向量检索中排第 3，在 BM25 中排第 10：RRF = 1/63 + 1/70 ≈ 0.0159 + 0.0143 = 0.0302。d1 > d5，d1 排在前面。</p>
+<p>为什么 k=60？k 的作用是平滑——防止排第 1 和排第 2 之间的差距过大（1/1 vs 1/2 ≈ 1 vs 0.5，差距 2 倍）。k=60 后变成 1/61 vs 1/62 ≈ 0.0164 vs 0.0161，差距很小，排名带来的影响更平滑。</p>
+<strong>为什么不用简单的线性加权？</strong>
+<p>线性加权需要先对两路检索的分数做归一化（向量相似度通常是 [-1,1] 的余弦值，BM25 分数是无界的）。归一化本身就有信息损失——不同查询下分数的分布不同，很难找到通用的归一化方法。RRF 不需要归一化——它只关心排名，不关心原始分数——天然适合异构检索器的融合。</p>
+<strong>面试追加问：</strong>
+<p>"BM25 和向量检索各有什么盲区？" BM25 的盲区是同义词/近义词（"市盈率"和"PE"在 BM25 中是两个完全不同的词，匹配不到）；向量检索的盲区是生僻术语或数字精确匹配（"2024Q3 营收 388 亿"中，"388"这个数字向量化后可能无法精确匹配）。两者融合能覆盖各自盲区。</p>
+</div>
+
+<h3>Q5: BGE-reranker 重排序 + 混合截断 — 为什么需要二次排序？混合截断怎么截？</h3>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "粗排（Bi-Encoder）"
+        Q["查询"] --> QE["独立编码 → 向量"]
+        Docs["10000篇文档"] --> DE["独立编码 → 向量"]
+        QE --> Cos["余弦相似度"]
+        DE --> Cos
+        Cos --> Top50["Top-50"]
+    end
+    subgraph "精排（Cross-Encoder）"
+        Top50 --> Pair["(查询, 文档) 拼接编码"]
+        Pair --> Score["相关性分数 0~1"]
+        Score --> Top10["Top-10"]
+    end
+    subgraph "混合截断"
+        Top10 --> Filter1["Top-K = 5"]
+        Top10 --> Filter2["相似度阈值 = 0.6"]
+        Filter1 --> Final["最终 3-5 篇"]
+        Filter2 --> Final
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Bi-Encoder（粗排）vs Cross-Encoder（精排）：</strong>
+<p>Bi-Encoder（如 BGE-large-zh）：查询和文档各自独立编码成向量 → 用向量距离（余弦相似度）计算相关性。速度快（文档向量可预计算并存库），但精度受限于"查询和文档只在最后的向量空间交互"。</p>
+<p>Cross-Encoder（如 BGE-reranker）：将查询和文档拼接成一对，一起送入模型（"[CLS] 查询 [SEP] 文档 [SEP]"）→ 输出一个 0~1 的相关性分数。精度高（能捕捉查询词和文档词之间的细粒度交互），但速度慢——每对（查询,文档）都要单独推理一次，不能预计算。所以只对粗排后的 Top-50 做精排，而不是对全部 10000 篇文档做精排。</p>
+<p><strong>混合截断的两个维度：</strong></p>
+<p>① <strong>Top-K 截断</strong>：只取重排序后的前 K 篇（K=5）。K 太小 → 可能遗漏相关信息；K 太大 → Prompt 过长（超出 LLM 上下文或稀释注意力）。K 的选择取决于下游 LLM 的上下文窗口大小和金融分析报告需要的资料丰富度。</p>
+<p>② <strong>相似度阈值截断</strong>（0.6）：即使排在前 K 名，如果 reranker 分数 < 0.6，说明该文档和查询的实际相关性很弱——不注入 Prompt（宁可少给资料，不给无关资料分散 LLM 注意力）。0.6 是经验阈值——低于 0.6 的文档被人工标注为"不相关"的概率 > 90%。</p>
+<p>两者取交集：既要在 Top-K 内，又要过相似度阈值，确保最终注入 Prompt 的文档"少而精"。</p>
+</div>
+
+<!-- ==================== 二、LangGraph + MCP + ReAct ==================== -->
+<h2 id="two-1">二、LangGraph 多智能体 + MCP + ReAct</h2>
+
+<h3>Q6: LangGraph 和 LangChain 的关系是什么？为什么用 LangGraph 而不是直接用 LangChain Chain？</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "LangChain Chain — 线性不可回溯"
+        C1["节点A"] --> C2["节点B"] --> C3["节点C"] --> C4["节点D"]
+    end
+    subgraph "LangGraph Graph — 有状态有循环"
+        G1["START"] --> G2["基本面分析"]
+        G2 --> G3{"汇总节点<br/>信息足够?"}
+        G3 -->|"信息不足"| G2
+        G3 -->|"信息足够"| G4["生成报告"]
+        G4 --> G5["END"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>LangChain Chain 的局限性：</strong>
+<p>Chain 是预先定义好的线性流程——A → B → C → D，一条路走到底。如果 B 节点执行后发现需要回到 A 重新获取信息，Chain 做不到（没有循环和条件分支）。对于简单的 RAG（检索 → 注入 Prompt → 生成），Chain 是够用的。但多智能体协作需要"哪个 Agent 先执行、执行完后条件判断是否继续或切换 Agent"的复杂控制流。</p>
+<p><strong>LangGraph 的核心优势——有状态的图：</strong></p>
+<p>① <strong>循环（Cycles）</strong>：定义了节点（Node）和边（Edge），支持条件边和循环边。Agent 执行后可以判断"信息不足，回去再执行一次"。</p>
+<p>② <strong>状态管理（State）</strong>：图维护一个共享的 State 对象（TypedDict），所有节点读写这个 State。节点 A（基本面 Agent）分析完后把结果写入 state["fundamental_report"]，节点 C（汇总 Agent）从 State 中读取所有子 Agent 的报告。</p>
+<p>③ <strong>并行执行</strong>：从汇总节点分出 4 条并行边到 4 个分析 Agent（基本面、技术面、估值、新闻），4 个 Agent 并行执行后汇聚到汇总节点。</p>
+<p>④ <strong>人机交互（Human-in-the-Loop）</strong>：可以挂起图执行、等待人工审批后继续。金融分析场景中可以用来"分析报告生成后 → 人工审核 → 通过后发布"。</p>
+<strong>你项目中 LangGraph 的具体使用：</strong>
+<p>定义 State：{query, stock_code, reports: {fundamental, technical, valuation, news}, final_report}。图结构：START → 并行分发到 4 个 Agent → 每个 Agent 执行 ReAct 循环（调用 MCP 工具获取数据 → 分析 → 生成报告片段） → 汇总 Agent 整合 4 份报告 → END。并行分发的实现是用 LangGraph 的 Send API（每个分支独立执行、互不阻塞）。</p>
+</div>
+
+<h3>Q7: 四个分析智能体是如何并行工作的？如果某个 Agent 超时或失败怎么处理？</h3>
+
+<div class="mermaid">
+flowchart TD
+    Coordinator["协调节点<br/>解析用户查询"] --> F["基本面Agent<br/>ReAct: 查财报→分析ROE/营收"]
+    Coordinator --> T["技术面Agent<br/>ReAct: 查K线→分析均线/MACD"]
+    Coordinator --> V["估值Agent<br/>ReAct: 查PE/PB→对比行业"]
+    Coordinator --> N["新闻Agent<br/>ReAct: 查舆情→情感分析"]
+
+    F --> Merge["汇总节点<br/>整合4份报告<br/>去重+冲突检测+生成终稿"]
+    T --> Merge
+    V --> Merge
+    N --> Merge
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>并行分发的实现方式：</strong>
+<p>LangGraph 中通过 Send API 将子任务分发到不同节点并行执行。伪代码：<code>return [Send("fundamental_agent", state), Send("technical_agent", state), Send("valuation_agent", state), Send("news_agent", state)]</code>。4 个 Agent 各自独立运行，各自有自己的 ReAct 循环（思考→调用工具→观察→思考→...），彼此之间不通信。</p>
+<strong>超时和失败处理策略：</strong>
+<p>① <strong>超时处理</strong>：每个 Agent 设置最长执行时间（如 30 秒）。超时后该 Agent 返回部分结果（已获取到的数据 + 标记"分析未完成"）。汇总节点在整合时标注"XX 维度分析超时，结论基于部分数据"。</p>
+<p>② <strong>工具调用失败</strong>：MCP 工具可能因为 API 限流、网络故障等原因返回错误。ReAct 循环中捕获工具调用异常 → 如果是瞬时错误，重试（最多 3 次）；如果是持久错误（如股票代码不存在），跳过该工具、标注"数据不可用"。</p>
+<p>③ <strong>Agent 崩溃</strong>：最坏情况——某个 Agent 完全失败。汇总节点设置等待超时（如 45 秒）→ 超时后不再等待失败的 Agent → 基于剩余 Agent 的报告生成最终分析，并在报告中注明缺失维度。</p>
+<p><strong>面试加分点：</strong>这种"部分失败仍能给出结论"的设计叫 Graceful Degradation（优雅降级）——在分布式系统中是很重要的容错思想。</p>
+</div>
+
+<h3>Q8: MCP 协议是什么？和传统的 API 调用有什么区别？</h3>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "传统方式 — 每个工具独立接入"
+        LLM1["LLM"] --> API1["股票API<br/>格式A"]
+        LLM1 --> API2["财报API<br/>格式B"]
+        LLM1 --> API3["新闻API<br/>格式C"]
+    end
+    subgraph "MCP 方式 — 统一协议"
+        LLM2["LLM<br/>(MCP Client)"] -->|"标准化协议"| MCP["MCP Server"]
+        MCP --> Tool1["股票工具"]
+        MCP --> Tool2["财报工具"]
+        MCP --> Tool3["新闻工具"]
+        MCP --> Tool4["宏观数据工具"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>MCP（Model Context Protocol）的核心思想——"AI 的 USB 协议"：</strong>
+<p>MCP 由 Anthropic 提出，定义了 LLM 和外部工具/数据源之间的标准通信协议。它的目标是解决"每接一个新工具就要写一套新代码"的碎片化问题——就像 USB 统一了电脑和外设的连接标准一样，MCP 统一了 AI 和工具的连接标准。</p>
+<p><strong>MCP 的三大组件：</strong></p>
+<p>① <strong>Client（客户端）</strong>：你的 LLM 应用（LangGraph Agent）。发起请求、接收响应。</p>
+<p>② <strong>Server（服务端）</strong>：封装了具体工具/数据的服务器。对外暴露标准化的接口。</p>
+<p>③ <strong>Transport（传输层）</strong>：stdio（本地进程通信）或 HTTP+SSE（远程服务通信）。你的项目用的是 HTTP+SSE 模式——MCP Server 作为独立服务部署，Agent 通过网络调用。</p>
+<p><strong>和传统 API 调用的关键区别：</strong></p>
+<table>
+<tr><th>维度</th><th>传统 API</th><th>MCP</th></tr>
+<tr><td>接口定义</td><td>每个工具格式不同（REST/GraphQL/gRPC）</td><td>统一的 JSON-RPC 格式</td></tr>
+<tr><td>工具发现</td><td>需要查文档、手写函数签名</td><td>Client 自动 list_tools 获取所有可用工具及参数 schema</td></tr>
+<tr><td>资源访问</td><td>需要分别处理认证、格式解析</td><td>统一的 resources/list + resources/read</td></tr>
+<tr><td>Prompt 模板</td><td>硬编码在代码中</td><td>Server 可以暴露 prompts（如"分析股票的提示词模板"）</td></tr>
+</table>
+<strong>面试追问：</strong>"你集成了哪些 MCP 工具？"股票行情工具（实时股价、K线数据）→ 财务报表工具（三张表 + 财务比率）→ 宏观经济工具（GDP、CPI、PMI 等）→ 新闻舆情工具（公司公告 + 财经新闻 + 情感分析）。每个工具是一个独立的 MCP Server，Agent 通过统一协议调用，无需关心底层数据源的差异。
+</div>
+
+<h3>Q9: ReAct 框架的原理是什么？Agent 怎么知道"该调用哪个工具"？</h3>
+
+<div class="mermaid">
+flowchart TD
+    S["用户查询"] --> T1["Thought: 我需要先查询这只股票的PE数据"]
+    T1 --> A1["Action: 调用 get_financial_data(tool=PE, stock=600519)"]
+    A1 --> O1["Observation: PE_TTM = 25.3, 行业均值 = 28.7"]
+    O1 --> T2["Thought: PE低于行业均值，但还需看营收增长"]
+    T2 --> A2["Action: 调用 get_financial_data(tool=revenue_growth)"]
+    A2 --> O2["Observation: 营收增长率 15.2%"]
+    O2 --> T3["Thought: 数据足够，可以给出结论"]
+    T3 --> A3["Action: 生成最终回答"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>ReAct = Reasoning（推理） + Acting（行动）：</strong>
+<p>ReAct 的核心循环是 <strong>Thought → Action → Observation → Thought → ...</strong>。每个循环：① 思考（Thought）——当前已知什么、还缺什么信息、下一步该做什么；② 行动（Action）——调用一个具体的工具或直接生成回答；③ 观察（Observation）——接收工具返回的结果。</p>
+<strong>"怎么知道该调用哪个工具？" — Function Calling 机制：</strong>
+<p>你注册的每个 MCP 工具都有函数签名（名称、描述、参数 schema）。LLM 通过 system prompt 被告知所有可用工具的列表。当 LLM 判断"需要外部数据"时，它不直接输出文本，而是输出一个"函数调用"的 JSON（包含工具名和参数）。Agent 框架（LangGraph）拦截这个 JSON，实际调用 MCP 工具，把结果作为 Observation 返回给 LLM。</p>
+<strong>ReAct 的终止条件：</strong>
+<p>① LLM 认为信息足够、直接生成回答（Action = Final Answer）；② 达到最大循环次数（如 10 轮），强制终止并用已收集到的信息生成回答；③ 工具调用连续失败（如连续 3 次失败），终止并告知用户"数据获取失败"。</p>
+<strong>面试追问：</strong>"ReAct 和 CoT（Chain-of-Thought）有什么区别？"CoT 只管"一步步思考"，不调用外部工具——所有推理基于 LLM 内部知识。ReAct 在思考的基础上加入了"调用外部工具获取实际数据"——这解决了 LLM 内部知识不准确/过时的问题。ReAct = CoT + Tool Use。
+</div>
+
+<h3>Q10: Chroma 向量数据库的选型考量？为什么不选 Milvus/Pinecone/FAISS？</h3>
+
+<div class="card">
+<table>
+<tr><th>方案</th><th>Chroma</th><th>FAISS</th><th>Milvus</th><th>Pinecone</th></tr>
+<tr class="row-expandable"><td>类型</td><td>嵌入式数据库</td><td>向量检索库</td><td>分布式向量数据库</td><td>云托管服务</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">
+<strong>嵌入式 vs 分布式 vs 云托管的选择逻辑：</strong>
+<p>Chroma 可以直接嵌入 Python 进程运行（pip install chromadb 一行搞定），不需要单独部署服务。对于项目初期数据量不大（几万条文档）的场景，嵌入式方案运维成本最低。FAISS 也是嵌入式但只是检索库——不提供持久化、元数据管理等功能，需要自己做。Milvus 功能强大但需要独立部署（依赖 etcd、MinIO 等组件），适合数据量达到百万级以上的生产环境。Pinecone 是托管服务——零运维但需要花钱且数据在云端，金融数据可能有合规顾虑。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>部署复杂度</td><td>极低（pip install）</td><td>低（pip install）</td><td>高（K8s 集群）</td><td>零（云服务）</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">对于项目阶段（开发+测试），嵌入式的 Chroma 最合适——不需要为向量数据库单独申请服务器资源，可以直接嵌入 Agent 进程中运行。</div></td></tr>
+<tr class="row-expandable"><td>持久化</td><td>原生支持</td><td>需自己实现</td><td>原生支持</td><td>原生支持</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">FAISS 只是内存中的向量索引——进程重启数据全丢，需要自己实现持久化（定期 save + 启动时 load）。Chroma 自动将数据持久化到磁盘（默认 SQLite + Parquet），进程重启后数据还在。</div></td></tr>
+<tr class="row-expandable"><td>元数据过滤</td><td>支持</td><td>不支持</td><td>支持</td><td>支持</td></tr>
+<tr class="detail-tr"><td colspan="5"><div class="detail-content">你的项目需要按"股票代码"、"分析维度"、"时间范围"等元数据过滤检索范围。Chroma 支持 WHERE 子句过滤（如 where={"stock_code": "600519"}），FAISS 原生不支持（需要自己在外层做过滤）。</div></td></tr>
+</table>
+<strong>Chroma 的底层引擎选择：</strong>
+<p>Chroma 底层可以切换向量索引引擎：默认是 HNSW（层次化可导航小世界图——速度快、近似最近邻，适合中小规模），通过插件可以切换为 hnswlib 或 faiss 引擎。你的项目用默认引擎就够——几万条文档，HNSW 检索延迟 < 10ms。</p>
+</div>
+
+<!-- ==================== 三、Redis 秒杀 ==================== -->
+<h2 id="three-1">三、Redis 秒杀系统</h2>
+
+<h3>Q11: 秒杀系统的整体架构是怎样的？库存扣减为什么用 Lua 脚本？</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant U as 用户
+    participant S as 秒杀服务
+    participant R as Redis
+    participant DB as MySQL
+
+    U->>S: 点击"抢券"
+    S->>R: Lua 脚本:<br/>① 判断库存 > 0<br/>② 判断未重复下单<br/>③ 扣减库存<br/>④ 记录已下单
+    alt 抢券成功
+        R-->>S: 返回扣减成功
+        S->>DB: 异步写入订单
+        S->>U: "恭喜，抢券成功！"
+    else 库存不足
+        R-->>S: 返回库存不足
+        S->>U: "已抢光"
+    else 重复下单
+        R-->>S: 返回已下单
+        S->>U: "每人限领一张"
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么用 Lua 脚本而不是在 Java 代码中判断库存再扣减？</strong>
+<p>在 Java 代码中：① Redis 查库存 → ② if (库存 > 0) → ③ Redis 扣库存 → ④ Redis 记录用户已下单。步骤①和②和③之间存在时间窗口——两个请求同时查到库存=1，都判断"库存>0"，都去扣减，结果库存变成 -1（超卖）。</p>
+<p>Lua 脚本在 Redis 中是原子执行的——整个脚本作为一个整体，不会被其他命令插队。<strong>Redis 单线程执行命令，Lua 脚本内的多个操作不会被其他客户端打断</strong>。所以"判断库存→判断重复→扣减库存→记录已下单"这四个操作变成不可分割的原子操作。</p>
+<p><strong>Lua 脚本示例：</strong></p>
+<pre><code>-- KEYS[1] = stock_key, KEYS[2] = order_key, ARGV[1] = user_id
+local stock = tonumber(redis.call('get', KEYS[1]))
+if stock == nil or stock <= 0 then
+    return -1  -- 库存不足
+end
+local exists = redis.call('sismember', KEYS[2], ARGV[1])
+if exists == 1 then
+    return -2  -- 已下单
+end
+redis.call('decr', KEYS[1])
+redis.call('sadd', KEYS[2], ARGV[1])
+return 1  -- 成功</code></pre>
+</div>
+
+<h3>Q12: 超卖问题你是怎么排查和解决的？</h3>
+
+<div class="card">
+<strong>超卖的根本原因链：</strong>
+<table>
+<tr><th>根因</th><th>表现</th><th>解决方案</th></tr>
+<tr class="row-expandable"><td>Redis 扣减与 DB 更新不是原子操作</td><td>Redis 扣了 10 个库存，DB 只更新了 9 个（第 10 个请求在 DB 更新前成功了但 DB 事务失败）</td><td>以 Redis 为准，DB 异步写入 + 对账补偿</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>以 Redis 为准的设计思路：</strong>
+<p>秒杀的核心瓶颈在 Redis（高并发读写的入口），Redis 是单线程的、原子性的。以 Redis 中的库存扣减结果作为"抢券成功"的唯一判断标准——Redis 扣成功了 = 抢券成功。DB 只作为"订单持久化存储"，异步写入（通过 MQ 或线程池）。如果 DB 写入失败（极少见），通过定时对账（Redis 中的成功记录 vs DB 中的订单记录）做补偿——要么重试写入，要么标记异常。</p>
+<p>另一种方案——DB 乐观锁：UPDATE coupon SET stock = stock - 1 WHERE id = ? AND stock > 0。DB 在行锁层面保证不超卖（stock > 0 的条件 + 行锁），但 DB 的并发写入能力远低于 Redis（MySQL 单行更新 TPS 约 1000-3000），秒杀场景扛不住高并发。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>Java 代码中查库存和扣库存是两步操作</td><td>并发线程同时查到 stock=5，都扣减，stock→3（实际扣了 2 次）</td><td>Lua 脚本封装为原子操作</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Lua 脚本解决的不只是 Redis 层面的原子性：</strong>
+<p>即使全部操作都在 Redis 中，如果不用 Lua 脚本而是分步执行（Java 发 4 条 Redis 命令），依然存在并发问题——虽然每条 Redis 命令是原子的，但命令之间的时间窗口不是原子的。Lua 脚本的"原子性"保证脚本中的多个命令在同一个 Redis 事件循环中不被打断执行。</p>
+</div></td></tr>
+<tr class="row-expandable"><td>分布式锁粒度不够</td><td>锁了"整个优惠券"而不是"库存+用户"的组合</td><td>细粒度锁：锁 coupon_id + user_id 组合</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>锁的粒度设计：</strong>
+<p>"一人一单"的并发控制需要的是：同一用户的同一优惠券只能下单一次。如果锁的 key 只是 coupon_id，那么用户 A 和用户 B 之间也会互斥——不必要。正确的锁 key 是 coupon_id + user_id——不同用户之间不互斥，只有同一用户对同一券的并发请求才互斥。Lua 脚本中的 sismember 检查就是做这件事——用 Set 结构记录 coupon_id:user_set，O(1) 判断用户是否已下单。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>Q13: Redis + Lua 实现"一人一单"规则的具体细节？</h3>
+
+<div class="card">
+<strong>一人一单的完整 Lua 脚本：</strong>
+<pre><code>-- 一人一单完整原子脚本
+-- KEYS[1]: stock_key       -- "seckill:stock:coupon_123"
+-- KEYS[2]: user_set_key    -- "seckill:users:coupon_123"
+-- ARGV[1]: user_id
+
+-- 步骤1: 检查是否已下单
+local already = redis.call('SISMEMBER', KEYS[2], ARGV[1])
+if already == 1 then
+    return {-2, stock_left, "您已抢过该优惠券"}
+end
+
+-- 步骤2: 检查库存
+local stock = tonumber(redis.call('GET', KEYS[1]) or "0")
+if stock <= 0 then
+    return {-1, 0, "优惠券已抢光"}
+end
+
+-- 步骤3: 扣库存 + 记用户
+redis.call('DECR', KEYS[1])
+redis.call('SADD', KEYS[2], ARGV[1])
+
+-- 步骤4: 返回剩余库存
+local left = tonumber(redis.call('GET', KEYS[1]))
+return {1, left, "抢券成功"}</code></pre>
+<strong>为什么用 Set (SISMEMBER/SADD) 而不是 String？</strong>
+<p>Set 的 SISMEMBER 是 O(1) 操作，SADD 也是 O(1)。如果用 String 类型记录每个用户（user_id_1 → 1, user_id_2 → 1），每个用户一个 Key，100 万用户 = 100 万个 Key，内存占用大且难以做并发判断（需要先 GET user_key 再 SET——又是两步，又不是原子的）。而一个 Set 存所有已下单用户，SISMEMBER 和 SADD 在一个 Lua 脚本中原子执行。</p>
+</div>
+
+<!-- ==================== 四、Redis 缓存策略 ==================== -->
+<h2 id="four-1">四、Redis 缓存策略</h2>
+
+<h3>Q14: Cache Aside 模式的具体流程？"先更新 DB 再删缓存"为什么不是"先删缓存再更新 DB"？</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant S as Service
+    participant R as Redis
+    participant D as DB
+
+    Note over C,D: 读操作
+    C->>S: 查询
+    S->>R: 查缓存
+    alt 缓存命中
+        R-->>S: 返回数据
+        S-->>C: 返回
+    else 缓存未命中
+        R-->>S: NULL
+        S->>D: 查数据库
+        D-->>S: 返回数据
+        S->>R: 写缓存 + 设过期时间
+        S-->>C: 返回
+    end
+
+    Note over C,D: 写操作
+    C->>S: 更新数据
+    S->>D: ① 先更新数据库
+    D-->>S: 更新成功
+    S->>R: ② 删除缓存
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>"先删缓存再更新 DB"的并发问题——为什么这个顺序错了：</strong>
+<p>时间线：T1 请求 A 删除缓存 → T2 请求 B 查缓存 miss → T3 请求 B 查 DB（读到旧值）→ T4 请求 B 写缓存（旧值写入缓存）→ T5 请求 A 更新 DB（新值写入 DB）。结果：DB 里是新值，缓存里是旧值（且不会自动过期前一直是旧值）。这是个经典的并发竞争条件——写操作删了缓存，但读操作在写操作完成 DB 更新之前又把旧值写回了缓存。</p>
+<p><strong>"先更新 DB 再删缓存"为什么更好：</strong></p>
+<p>时间线：T1 请求 A 更新 DB → T2 请求 B 查缓存（可能命中旧值）→ T3 请求 A 删除缓存 → T4 请求 C 查缓存 miss → T5 请求 C 查 DB（读到新值）→ T6 请求 C 写缓存（新值）。在 T2-T3 之间可能有一个极短的窗口（毫秒级）读到旧值，但不会出现"缓存里永久是旧值"的情况。而且这个窗口的概率极低（需要读请求恰好卡在"DB 已更新但缓存还没删"的瞬间）。</p>
+<p><strong>延迟双删是什么？</strong></p>
+<p>为了进一步缩小不一致窗口：先删缓存 → 更新 DB → 等待一段时间（如 500ms）→ 再删一次缓存。第二次删除是为了清理"在更新 DB 期间，其他读请求写入缓存的旧值"。你的简历中提到了"延迟双删+缓存超时策略"——延迟双删缩小不一致窗口，缓存超时（如 30 分钟）作为最终兜底——即使出现了极端情况，30 分钟后旧缓存自动过期。</p>
+</div>
+
+<h3>Q15: 缓存击穿你是怎么解决的？互斥锁 + 逻辑过期方案各解决了什么问题？</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["热点 Key 过期"] --> B{"互斥锁方案"}
+    A --> C{"逻辑过期方案"}
+
+    B --> B1["线程1: 获取锁 → 查DB → 写缓存 → 释放锁"]
+    B --> B2["线程2-N: 获取锁失败 → 等待 → 重试"]
+    B1 --> B3["优: 实现简单<br/>劣: 第一个线程阻塞等待DB"]
+
+    C --> C1["线程1: 获取锁 → 开新线程异步查DB"]
+    C --> C2["线程1-N: 获取锁失败 → 返回旧缓存值"]
+    C1 --> C3["优: 不阻塞请求<br/>劣: 返回的可能是过期数据"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>缓存击穿 vs 缓存穿透 vs 缓存雪崩（面试高频）：</strong>
+<p>① <strong>击穿</strong>：某个热点 Key 过期 → 大量请求同时打到 DB。是"一个 Key"的问题。</p>
+<p>② <strong>穿透</strong>：查询不存在的数据 → 缓存和 DB 都没有 → 每次请求都穿到 DB。是"不存在的数据"的问题。</p>
+<p>③ <strong>雪崩</strong>：大量 Key 同时过期 → 大量请求同时打到 DB。是"大量 Key"的问题。</p>
+<strong>互斥锁方案（SETNX）：</strong>
+<p>第一个线程发现缓存过期 → SETNX 获取锁 → 查 DB 重建缓存 → 释放锁。后续线程 SETNX 失败 → 短暂等待（sleep 50ms）→ 重试查缓存（此时缓存已被第一个线程重建）。缺点：第一个线程查 DB 期间，所有请求在等待（虽然不是打到 DB，但增加了响应延迟）。</p>
+<p><strong>逻辑过期方案（不设置 Redis TTL）：</strong>
+<p>缓存的 Value 中包含一个 expire_time 字段（逻辑过期时间，如 now + 30min）。Redis 不设 TTL。读请求：检查 expire_time → 如果未过期，直接返回 → 如果已逻辑过期，SETNX 获取锁 + 开新线程异步查 DB 重建缓存 + 当前请求返回旧缓存值（而非等待）。优点：不阻塞用户请求。缺点：返回的数据可能是"过期"的（但对大多数业务可接受）。</p>
+<p><strong>你怎么选？</strong>商户详情——用逻辑过期（用户看到 30 秒前的数据不影响体验，但响应要快）；优惠券库存——用互斥锁（库存数据必须精确，不能返回旧值）。</p>
+</div>
+
+<h3>Q16: 缓存穿透 — 布隆过滤器怎么工作的？误判率怎么控制？</h3>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "布隆过滤器写入"
+        W1["ID: 100"] --> H1["Hash1 → bit 3"]
+        W1 --> H2["Hash2 → bit 8"]
+        W1 --> H3["Hash3 → bit 15"]
+        H1 --> BM["位数组: ...001..1..1..."]
+        H2 --> BM
+        H3 --> BM
+    end
+
+    subgraph "布隆过滤器查询"
+        Q1["ID: 100"] --> HQ1["Hash1 → bit 3 = 1 ✓"]
+        Q1 --> HQ2["Hash2 → bit 8 = 1 ✓"]
+        Q1 --> HQ3["Hash3 → bit 15 = 1 ✓"]
+        HQ1 --> Result1["所有位=1 → '可能存在'"]
+        HQ2 --> Result1
+        HQ3 --> Result1
+
+        Q2["ID: 999"] --> HQ4["Hash1 → bit 3 = 1 ✓"]
+        Q2 --> HQ5["Hash2 → bit 20 = 0 ✗"]
+        HQ4 --> Result2["有任一位=0 → '一定不存在'"]
+        HQ5 --> Result2
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>布隆过滤器的两个核心结论：</strong>
+<p>① 如果布隆过滤器说"不存在"→ <strong>100% 一定不存在</strong>（No False Negative）</p>
+<p>② 如果布隆过滤器说"可能存在"→ <strong>可能真的存在，也可能是误判</strong>（有 False Positive）</p>
+<p>为什么有误判？位数组是共享的——不同的 ID 哈希后可能映射到同一个 bit。ID=100 设置了 bit 3=1，ID=200 设置了 bit 3=1（同一个 bit）。查询 ID=999 时，bit 3 碰巧=1，但 bit 20=0，所以判定"一定不存在"。但如果所有 Hash 位碰巧都被其他 ID 设置了=1，就会误判"可能存在"。</p>
+<p><strong>误判率公式：</strong>p ≈ (1 - e^(-k*n/m))^k，其中 k=哈希函数个数、n=元素个数、m=位数组大小。增加 m（更多 bit）→ 降低误判；增加 k（更多哈希函数）→ 先用降后升（k 太小覆盖不够，k 太大填充太密）。</p>
+<p><strong>你的项目怎么做：</strong>初始化时把所有商户 ID 加入布隆过滤器（n=10万商户，m=100万 bit ≈ 125KB，k=3，误判率≈1%）。查询时：布隆过滤器说"不存在"→ 直接返回 404（不查 DB）→ 解决穿透。布隆过滤器说"可能存在"→ 正常走缓存→DB 流程。如果布隆过滤器误判（不存在的 ID 被判定为"可能存在"），还有一层兜底——缓存空值（缓存中存 "ID=无效商户" → "null"，过期时间 5 分钟）。</p>
+</div>
+
+<h3>Q17: 延迟双删 + 缓存超时策略 — 如果双删中第二次删除失败了怎么办？</h3>
+
+<div class="card">
+<strong>延迟双删的完整流程 + 兜底方案：</strong>
+<pre><code>// 步骤1: 先删除缓存
+redis.del("shop:123");
+
+// 步骤2: 更新数据库
+db.update("UPDATE shop SET name=? WHERE id=123", newName);
+
+// 步骤3: 延迟 500ms（等待其他读请求可能写入的旧缓存）
+Thread.sleep(500);
+
+// 步骤4: 第二次删除缓存
+boolean deleted = redis.del("shop:123");
+
+// 步骤5: 如果第二次删除失败 → MQ 异步重试
+if (!deleted) {
+    mq.send("cache_delete_retry", "shop:123"); // 放入消息队列
+}
+
+// MQ 消费者: 重试删除（最多 3 次）
+@RabbitListener(queues = "cache_delete_retry")
+public void retryDelete(String key) {
+    for (int i = 0; i < 3; i++) {
+        if (redis.del(key)) return; // 删除成功，结束
+        Thread.sleep(100 * (i + 1)); // 递增等待
+    }
+    alertService.alert("缓存删除失败: " + key); // 3 次都失败 → 告警
+}
+
+// 最终兜底: 缓存超时（30 分钟后无论如何都会过期）
+redis.expire("shop:123", 1800);</code></pre>
+<strong>三层保障的层次设计：</strong>
+<p>① 延迟双删：处理 99.9% 的情况（第二次删除通常都成功）；② MQ 重试：处理第二次删除失败的情况（网络抖动等瞬时故障）；③ 缓存超时：如果连 MQ 重试都失败了（MQ 挂了、消费者宕机等极端情况），30 分钟后缓存自动过期——这是终极兜底。</p>
+<p><strong>面试亮点：</strong>这种"主方案 + 重试 + 兜底"的三层设计体现了对分布式系统不可靠性的认知——没有完美的解决方案，只有分层的防御措施。</p>
+</div>
+
+<!-- ==================== 五、Redis 分布式锁 ==================== -->
+<h2 id="five-1">五、Redis 分布式锁</h2>
+
+<h3>Q18: SETNX + UUID + Lua 脚本实现分布式锁的完整方案？为什么不用 Redisson？</h3>
+
+<div class="card">
+<strong>自研分布式锁的完整流程：</strong>
+<pre><code>// ============ 加锁 ============
+String lockKey = "lock:coupon:" + couponId;
+String lockValue = UUID.randomUUID().toString(); // 唯一标识
+boolean locked = redisTemplate.opsForValue()
+    .setIfAbsent(lockKey, lockValue, 30, TimeUnit.SECONDS); // SETNX + 过期时间
+if (!locked) {
+    throw new BusyException("系统繁忙，请稍后再试");
+}
+try {
+    // 执行业务逻辑
+    checkAndDeductStock(couponId, userId);
+} finally {
+    // ============ 释放锁（Lua 原子脚本）============
+    String lua = "if redis.call('get', KEYS[1]) == ARGV[1] then " +
+                 "    return redis.call('del', KEYS[1]) " +
+                 "else return 0 end";
+    redisTemplate.execute(new DefaultRedisScript<>(lua, Long.class),
+        Collections.singletonList(lockKey), lockValue);
+}</code></pre>
+<strong>每个设计点的原因：</strong>
+<table>
+<tr><th>设计点</th><th>为什么这样做</th></tr>
+<tr class="row-expandable"><td>lockValue = UUID</td><td>区分锁的持有者——释放锁时只删自己的锁，不删别人的锁</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>"不设 UUID 会怎样？"</strong><p>线程 A 获取锁（30 秒过期）→ 执行业务逻辑花了 35 秒（锁已自动过期）→ 线程 B 在 31 秒时获取了同一把锁 → 线程 A 在 35 秒时执行完毕，执行 redis.del(lockKey) → 把线程 B 的锁删掉了 → 线程 C 在 36 秒时获取了锁 → 线程 B 和线程 C 同时持有锁 → 分布式锁完全失效。</p><p>有了 UUID：线程 A 释放锁时判断 if redis.get(lockKey) == myUUID → 发现锁的值已经被线程 B 改为了 B 的 UUID → 不删除 → 线程 B 的锁安全。</p></div></td></tr>
+<tr class="row-expandable"><td>Lua 脚本释放锁</td><td>GET + DEL 两步操作必须是原子的（否则 GET 后、DEL 前可能过期，又删了别人的锁）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>不用 Lua 脚本的风险：</strong><p>Java 代码：if (redis.get(key).equals(myUUID)) { redis.del(key); } —— get 和 del 之间有时间窗口：get 返回 myUUID ✓ → 刚好此时锁自动过期 → 线程 B 获取了锁（设置了 B 的 UUID）→ del 执行，删掉的又是线程 B 的锁。Lua 脚本中 get 和 del 是原子的，不存在这个窗口。</p></div></td></tr>
+<tr class="row-expandable"><td>过期时间 30 秒</td><td>防止死锁（客户端崩溃后锁永不释放）</td></tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">如果业务逻辑可能超过 30 秒（如大事务），需要"看门狗"机制——在锁即将过期时自动续期。Redisson 的 RLock 内置了看门狗（每 10 秒续期到 30 秒），你的自研方案没实现续期——所以 30 秒过期时间必须大于业务逻辑的最长执行时间。</div></td></tr>
+</table>
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>为什么不用 Redisson？</strong>
+<p>① <strong>学习方法论</strong>：自己实现能深入理解分布式锁的原理（SETNX、UUID 校验、Lua 原子释放、过期续期等），面试时能回答得更深；② <strong>轻量依赖</strong>：项目规模不大，引入 Redisson（额外的 jar、配置、看门狗机制等）过度；③ <strong>面试展示</strong>：简历上写"基于 SETNX + UUID + Lua 脚本实现"比写"使用 Redisson"更能展示对 Redis 分布式锁原理的理解。但也要准备好回答"如果项目上了生产怎么办"——答案是"生产环境建议用 Redisson 取代自研锁，它提供了看门狗续期、可重入、公平锁等生产级特性"。</p>
+</div>
+
+<h3>Q19: 分布式锁在秒杀中的具体作用是？单机锁为什么失效？</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "单机锁失效场景"
+        U1["用户A"] --> S1["服务实例1<br/>synchronized(this) ✓"]
+        U2["用户A（重复请求）"] --> S2["服务实例2<br/>synchronized(this) ✓"]
+        S1 -.->|"两把不同的锁<br/>各自锁各自"| S2
+    end
+
+    subgraph "分布式锁正确场景"
+        U3["用户A"] --> S3["服务实例1<br/>SETNX lock:coupon:A ✓"]
+        U4["用户A（重复请求）"] --> S4["服务实例2<br/>SETNX lock:coupon:A ✗"]
+        S3 & S4 --> Redis["Redis 全局唯一锁"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>单机锁（synchronized/ReentrantLock）为什么在分布式环境失效：</strong>
+<p>synchronized 锁的是 JVM 内的对象——服务实例 1 的 JVM 内存中有一个 lock 对象，服务实例 2 的 JVM 内存中有另一个 lock 对象。它们是两个不同的对象，互不影响。用户 A 的两个请求被负载均衡分发到两个实例 → 两个实例各自判断"没锁"→ 各自执行业务 → "一人一单"规则被绕过。</p>
+<p><strong>分布式锁解决的是跨 JVM 的互斥：</strong></p>
+<p>Redis 作为所有服务实例共享的外部存储——SETNX lockKey value 是全局唯一的。无论请求落在哪个实例，最终对同一个 lockKey 的 SETNX 只有一个能成功，实现了跨 JVM 的互斥。</p>
+<p><strong>面试追问：</strong>"ZooKeeper 的分布式锁和 Redis 有什么区别？"ZK 通过临时顺序节点 + Watch 机制实现公平锁（排队获取），适合对顺序有要求的场景。Redis 通过 SETNX 实现非公平锁（谁先 SETNX 成功谁获取），性能更高但可能出现"饿死"（某个线程一直抢不到）。你的秒杀场景——所有请求平等竞争券，不需要公平性，Redis 锁足够。</p>
+</div>
+
+<!-- ==================== 六、Redis GEO 与数据结构 ==================== -->
+<h2 id="six-1">六、Redis GEO 与数据结构</h2>
+
+<h3>Q20: Redis GEO 的底层实现是什么？GEORADIUS 命令的性能如何？</h3>
+
+<div class="mermaid">
+flowchart TD
+    subgraph "ZSet 编码经纬度"
+        Geo["GEOADD shops 121.47 31.23 shop:1"] --> Encode["Geohash 算法<br/>经纬度 → 52位整数<br/>（Base32编码）"]
+        Encode --> ZSet["ZSet 存储<br/>score = Geohash值<br/>member = shop:1"]
+    end
+    subgraph "GEORADIUS 查询流程"
+        Query["GEORADIUS shops 121.47 31.23 5 km"] --> Calc["① 计算中心点 Geohash"]
+        Calc --> Range["② 算出覆盖的 Geohash 范围<br/>（中心 ± 半径对应范围）"]
+        Range --> ZRange["③ ZRANGEBYSCORE<br/>获取范围内所有商户ID"]
+        ZRange --> Filter["④ 精确计算距离<br/>Haversine公式<br/>过滤掉范围边缘的误召回"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>Geohash 的编码原理——"二分地图"：</strong>
+<p>把地图不断二分：经度范围 [-180, 180] → 二分（[-180,0] 和 [0,180]）→ 121.47 在右边 → 第一位 = 1。继续二分 [0,180] → [0,90] 和 [90,180] → 121.47 在右边 → 第二位 = 1。以此类推，经度和纬度各得到一串二进制，交替合并后得到 Geohash 值。</p>
+<p>Geohash 的核心性质：<strong>前缀匹配 = 空间邻近</strong>。两个位置的 Geohash 前缀相同位数越多，距离越近。这个性质使得"附近搜索"可以转化为"前缀搜索"或"范围搜索"——ZSet 的 ZRANGEBYSCORE 天然支持范围查询。</p>
+<p><strong>GEORADIUS 的步骤分解：</strong></p>
+<p>① 计算中心点的 Geohash 值；② 根据半径（5km）反算 Geohash 覆盖范围——这个范围的经纬度差是多少；③ 在 ZSet 中用 ZRANGEBYSCORE 获取 score 落在这个范围内的成员（这步利用了 ZSet 的跳表索引，O(logN + M)）；④ 用 Haversine 公式对第③步的结果做精确距离过滤——因为 Geohash 范围查询是矩形近似，边缘的商户可能超出了 5km 圆半径。</p>
+<p><strong>性能分析：</strong>ZRANGEBYSCORE 是 O(logN + M)，N=总商户数，M=范围内的商户数。如果北京有 10 万商户，5km 范围返回 200 个商户 → 约 200 次 Haversine 计算 → 总延迟 < 5ms。百万级商户也没问题——ZSet 的跳表索引能快速定位到目标范围。</p>
+<p><strong>面试追问：</strong>"如果商户数上亿呢？"GEORADIUS 仍然可用（跳表 O(logN) 定位），但 M（范围内的商户数）可能变大。实际优化：① Geohash 的分层精度——大范围用短前缀（粗粒度），小范围用长前缀（细粒度）；② 业务层面分城市 shard（北京的商户在一个 Redis 实例，上海的在另一个）。</p>
+</div>
+
+<h3>Q21: Redis Set 的 SINTER 共同关注 — 大数据量下性能如何？</h3>
+
+<div class="card">
+<strong>SINTER 的时间复杂度与性能边界：</strong>
+<table>
+<tr><th>操作</th><th>时间复杂度</th><th>10万关注</th><th>100万关注</th></tr>
+<tr class="row-expandable"><td>SADD</td><td>O(1)</td><td>&lt; 1ms</td><td>&lt; 1ms</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">SADD 是 O(1) 的哈希表插入——Redis 的 Set 底层是哈希表（小集合用 intset 紧凑编码）。</div></td></tr>
+<tr class="row-expandable"><td>SISMEMBER</td><td>O(1)</td><td>&lt; 1ms</td><td>&lt; 1ms</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">SISMEMBER 判断用户 B 是否关注了用户 A——在 100 万关注列表中瞬间判断。</div></td></tr>
+<tr class="row-expandable"><td>SINTER</td><td>O(N*M) 最坏</td><td>~50ms</td><td>可能阻塞 Redis</td></tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>SINTER 的性能陷阱：</strong>
+<p>SINTER 的实际复杂度取决于两个集合中较小者的元素数量。Redis 的做法——遍历较小的集合，对每个元素在较大集合中做 SISMEMBER（O(1)）。所以如果最小集合有 N 个元素，SINTER 就是 O(N)。</p>
+<p>10 万关注 → 遍历 10 万元素 × O(1) = ~50ms（可接受但偏慢）。100 万关注 → ~500ms（Redis 是单线程的，这 500ms 期间其他命令全部排队等待——相当于 Redis "卡住"了半秒）。</p>
+<p>解决方案：① 对于百万级关注，改用 SCARD 先判断两集合大小，用较小集合做遍历；② 将共同关注计算异步化——定时任务（如每小时）计算并缓存结果；③ 如果关注数极大（如 1000 万），改用图的邻接表存储，用离线计算（Spark/Map-Reduce）做共同关注。</p>
+</div></td></tr>
+</table>
+<strong>你的项目为什么选 Set：</strong>
+<p>生活服务平台的用户关注通常不会超过几千人（用户不会关注几千个商户/其他用户），SINTER 在几千级别 < 1ms，完全没有性能问题。面试时要说明"我知道 Set 不适合万级以上的 SINTER，但当前场景数据规模 N<1000，性能没问题。如果规模增长，方案是..."——展示你理解技术的边界。</p>
+</div>
+
+<!-- ==================== 七、Redis 高可用 ==================== -->
+<h2 id="seven-1">七、Redis 高可用架构</h2>
+
+<h3>Q22: Redis 主从复制的原理？全量同步和增量同步的区别？</h3>
+
+<div class="mermaid">
+sequenceDiagram
+    participant M as Master
+    participant S as Slave
+
+    Note over M,S: 首次连接 → 全量同步
+    S->>M: PSYNC ? -1
+    M->>M: 执行 BGSAVE<br/>生成 RDB 快照
+    M->>S: 发送 RDB 文件
+    S->>S: 清空旧数据<br/>加载 RDB
+    M->>S: 发送 RDB 期间的写命令<br/>（replication buffer）
+
+    Note over M,S: 后续 → 增量同步
+    M->>M: 每条写命令写入<br/>replication buffer
+    M->>S: 实时同步写命令
+    S->>S: 执行相同写命令
+
+    Note over M,S: 断线重连 → 增量同步（如果条件满足）
+    S->>M: PSYNC replid offset
+    M->>M: 检查 repl_backlog<br/>中是否有 offset 之后的数据
+    alt backlog 中有
+        M->>S: 发送 offset 之后的数据
+    else backlog 中已覆盖
+        M->>S: 触发全量同步
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>全量同步（Full Resynchronization）的触发条件：</strong>
+<p>① Slave 首次连接 Master；② Slave 断线太久，Master 的 repl_backlog 已经覆盖了 Slave 断线前的位置（积压缓冲区大小有限，默认 1MB，最新版本默认 10MB）。</p>
+<p>BGSAVE 过程中 Master 仍在接收写命令——这些命令存在 replication buffer 中。BGSAVE 完成后，RDB + replication buffer 一起发给 Slave。Slave 先加载 RDB 快照（恢复到某个时间点），再执行 replication buffer 中的增量命令（追到最新状态）。</p>
+<p><strong>增量同步（Incremental Replication）的条件：</strong></p>
+<p>Master 维护一个环形缓冲区 repl_backlog（默认 10MB）。Slave 断线重连时，带上 replid + offset 发起 PSYNC。Master 检查 offset 是否还在 backlog 中（即 offset 是否 > backlog 中最旧的数据位置）。如果还在 → 从 offset 位置开始发送增量数据（少量数据快速追上）；如果已不在了 → 触发全量同步。</p>
+<strong>你的项目配置考量：</strong>
+<p>主从复制配置在银行/金融相关场景的主要目的是——① 读负载分担（从库分担读请求）；② 数据冗余（主库宕机时从库有完整副本）。你项目中的"主从复制保证数据可靠性"指的是②——即使主库进程崩溃/重启，从库上的数据不丢失，可以通过哨兵提升为新的主库。</p>
+</div>
+
+<h3>Q23: 哨兵（Sentinel）的故障转移是怎么工作的？主观下线和客观下线的区别？</h3>
+
+<div class="mermaid">
+flowchart TD
+    A["Master 宕机"] --> B["每个 Sentinel 检测到 Master 无响应<br/>标记为 SDOWN（主观下线）"]
+    B --> C["Sentinel 互相询问<br/>'你觉得 Master 挂了吗？'"]
+    C --> D{"quorum 个 Sentinel<br/>都认为 Master 挂了？"}
+    D -->|"是"| E["标记为 ODOWN（客观下线）"]
+    D -->|"否"| B
+    E --> F["Sentinel 之间选举 Leader"]
+    F --> G["Leader Sentinel 选择新的 Master"]
+    G --> H["Leader 通知所有 Slave<br/>'新 Master 是 XXX'"]
+    H --> I["Slave 开始从新 Master 复制"]
+    I --> J["Leader 更新配置<br/>通知客户端新 Master 地址"]
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>SDOWN vs ODOWN——"一个人觉得"vs"大家觉得"：</strong>
+<p>SDOWN（Subjective Down）：单个 Sentinel 在一定时间内（down-after-milliseconds，默认 30 秒）PING Master 没有收到有效回复 → 这个 Sentinel 自己认为 Master 下线了。但这可能是 Sentinel 自己的网络问题（它和 Master 之间的网络断了，但其他 Sentinel 还能连上 Master）。</p>
+<p>ODOWN（Objective Down）：SDOWN 后，该 Sentinel 向其他 Sentinel 发起询问（is-master-down-by-addr）。如果 ≥ quorum 个 Sentinel 都回复"我也觉得它挂了"→ 标记为 ODOWN → 启动故障转移。quorum 在你的 3 Sentinel + 1 主 2 从 的配置中通常设为 2。</p>
+<p><strong>哨兵选新 Master 的优先级：</strong></p>
+<p>① 排除不健康的 Slave（断线超过 down-after-milliseconds * 10 的过滤掉）；② 选 slave-priority 最低的（默认 100，可手动设置，数字越小优先级越高）；③ 相同优先级时选复制偏移量（offset）最大的（数据最新的）；④ 相同偏移量时选 runId 最小的（字典序）。</p>
+<p><strong>你的项目中的作用：</strong>秒杀活动期间主库如果宕机，哨兵在 30 秒内完成故障转移（选新主 + 通知从库 + 通知客户端），保证秒杀服务继续可用。30 秒的手动恢复 vs 自动故障转移——这是"高可用"和"手动高可用"的区别。</p>
+</div>
+
+<h3>Q24: Redis AOF 持久化 — everysec 策略怎么在性能和安全之间做平衡？</h3>
+
+<div class="mermaid">
+flowchart LR
+    subgraph "三种 AOF 刷盘策略"
+        A["ALWAYS"] --> A1["每条写命令 fsync"]
+        A1 --> A2["最安全：最多丢 1 条"]
+        A1 --> A3["最慢：每次写都要等磁盘"]
+
+        B["EVERYSEC"] --> B1["每秒 fsync 一次"]
+        B1 --> B2["最多丢 1 秒数据"]
+        B1 --> B3["性能好：批量刷盘"]
+
+        C["NO"] --> C1["不主动 fsync<br/>交给 OS"]
+        C1 --> C2["可能丢 30 秒"]
+        C1 --> C3["性能最好：不主动刷"]
+    end
+</div>
+<div class="detail-toggle">▶ 展开详解</div>
+<div class="detail-panel">
+<strong>everysec 的实现原理：</strong>
+<p>Redis 主线程正常处理命令，将写命令追加到 AOF 缓冲区。后台子线程每秒执行一次 fsync（将 AOF 缓冲区内容写入磁盘并强制刷新）。主线程不阻塞——命令追加到缓冲区就返回，fsync 由子线程执行。</p>
+<p>如果 fsync 正在进行（上一次 fsync 还没完成），主线程会检查：距离上次成功 fsync 是否 > 2 秒？如果是 → 主线程阻塞等待 fsync 完成（防止太久不刷盘，数据丢失窗口太大）；如果不是 → 主线程继续，不阻塞（允许放行，最多丢 1 秒数据）。</p>
+<p>所以 everysec 的"数据最多丢 1 秒"是一个近似说法——严格来说最少丢 0 秒（正好在 fsync 之后宕机），最多丢 2 秒（fsync 正在执行时宕机 + 触发 2 秒阻塞的极端情况）。</p>
+<p><strong>怎么选？</strong>秒杀订单数据需要可靠性（丢了 = 用户付了钱但没记录），用 everysec（最多丢 1 秒内的订单数据，对秒杀来说可接受——用户会立即重试）。同时配置 RDB 作为全量备份的补充（每天凌晨一次 RDB 快照 + 每小时的增量 AOF）。</p>
+</div>
+
+<!-- ==================== 八、面试终极总结 ==================== -->
+<h2 id="eight-1">八、简历深度追问 · 终极总结</h2>
+
+<div class="card">
+<strong>面试官提问的四层深度——每个技术点都可能被问到这些层次：</strong>
+<table>
+<tr><th>层次</th><th>问法</th><th>你需要展示</th></tr>
+<tr class="row-expandable"><td>L1 · 用了什么</td><td>"你这个项目里 RAG 是怎么实现的？"</td><td>流程概述、技术栈、模块划分</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">回答公式：一句话定义 + 核心组件 + 在项目中的具体应用。如："RAG 是检索增强生成——先检索相关文档再注入 Prompt。我这个项目用了 Chroma 向量库 + BGE 嵌入模型 + BM25 混合检索 + reranker 重排序，整体准确率从 60% 提升到 85%。"</div></td></tr>
+<tr class="row-expandable"><td>L2 · 为什么这样选</td><td>"为什么用 Chroma 而不是 Milvus？"</td><td>选型对比、场景适配、权衡意识</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">回答公式：列举 2-3 个备选方案 + 各自的优劣势 + 为什么在当前场景下你的选择最合理。关键要展示"不是随便选的，是基于具体约束做的选择"。</div></td></tr>
+<tr class="row-expandable"><td>L3 · 遇到了什么问题</td><td>"你提到了检索准确率 60% 到 85%，具体是怎么做的？"</td><td>问题定位、根因分析、方案设计、效果度量</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">回答公式：STAR 法则——"用户查询口语化（如'这只股票怎么样'）→ 向量检索直接 match 命中率只有 60% → LLM 改写 + NER 实体识别 → 改写后的规范查询 + 实体过滤提升命中率 → 测试集 100 条人工标注数据验证，准确率 60%→85%。"一定要有"度量"——不能只说"变好了"。</div></td></tr>
+<tr class="row-expandable"><td>L4 · 如果条件变了</td><td>"如果数据量从 10 万变成 1000 万，你的方案还适用吗？"</td><td>技术边界认知、扩展方案、架构前瞻</td></tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">回答公式：区分"当前阶段的设计"和"未来扩展的方向"。"当前用 Chroma 嵌入模式，10 万条文档延迟 < 10ms，足够了。如果到千万级：① 切换底层索引为 FAISS（IVF+PQ 压缩）；② 升级为 Milvus 集群做分布式向量检索；③ 按股票行业做分片存储。"这是在说"我知道我的方案的边界在哪里，也想到了边界之外的方案"。</div></td></tr>
+</table>
+</div>
+
+<div class="highlight">
+<strong>面试前必背的 10 个核心问题（按简历页顺序）：</strong><br/>
+1. 你的 RAG 流程是什么？每一步解决什么问题？<br/>
+2. 父子文档索引策略具体怎么实现？为什么不让子文档各自带完整上下文？<br/>
+3. BM25 和向量检索各自擅长什么？为什么融合后比单一方案好？<br/>
+4. ReAct 的循环什么时候终止？Agent 怎么知道该调用哪个工具？<br/>
+5. LangGraph 的并行分发怎么实现？某个 Agent 挂了怎么处理？<br/>
+6. 秒杀库存扣减为什么用 Lua 脚本？不用会怎样（超卖的具体时间线）？<br/>
+7. 缓存击穿、穿透、雪崩的区别？你各自用的什么方案？<br/>
+8. SETNX + UUID + Lua 为什么是这三个的组合？少了 UUID 会怎样？少了 Lua 会怎样？<br/>
+9. GEORADIUS 底层怎么实现？时间复杂度是多少？<br/>
+10. 你选 Chroma 不选 Milvus 的理由？如果数据量增长 100 倍怎么迁移？<br/><br/>
+<strong>这 10 个问题覆盖了简历上 90% 的技术追问场景。每个都按 L1→L2→L3→L4 四层准备。</strong>
+</div>
+
+</div><!-- .main -->
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
+</body>
+</html>
