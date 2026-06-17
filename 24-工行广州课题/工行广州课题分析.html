@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>工行广州软开课题分析 - 招商银行面试准备</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #f59e0b; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #92400e; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>工行软开广州 2026 暑期实习课题分析</h1>
+<p style="color:var(--text-secondary)">A股AI投资顾问项目对照分析 — 哪些课题最接近你的项目经验</p>
+
+<!-- ==================== 课题总览 ==================== -->
+<h2 id="overview">广州7个课题总览</h2>
+
+<div class="card">
+<table>
+<tr><th>序号</th><th>课题名称</th><th>与A股项目关联度</th><th>关联说明</th></tr>
+<tr><td>11</td><td>基于AI的规格驱动研发实践</td><td>⭐⭐</td><td>LLM应用开发通用，但方向偏测试/代码生成</td></tr>
+<tr><td>12</td><td>面向个人财富管理的客户行为洞察与智能推荐研究</td><td>⭐⭐⭐⭐⭐</td><td>投资推荐+LLM，与A股诊股选股核心思路一致</td></tr>
+<tr><td>13</td><td>基于Harness/Claw/Skill框架的智能财富顾问助手</td><td>⭐⭐⭐⭐⭐</td><td>财富顾问Agent，与A股项目Agent架构高度同构</td></tr>
+<tr><td>14</td><td>金智引擎——贵金属业务智能体</td><td>⭐⭐⭐⭐</td><td>Agent+RAG+BI金融场景，架构设计和A股项目类似</td></tr>
+<tr><td>15</td><td>基于大模型与智能体的Hive数据湖智能开发系统</td><td>⭐⭐</td><td>偏数据开发工具，与投资方向不同</td></tr>
+<tr><td>16</td><td>商户个性化订单查询智能体</td><td>⭐</td><td>偏商户运营，与投资方向差异大</td></tr>
+<tr><td>17</td><td>私人银行家业智能助手建设</td><td>⭐⭐⭐</td><td>Agent意图识别，但偏家族信托业务流程</td></tr>
+</table>
+</div>
+
+<!-- ==================== 核心对标图 ==================== -->
+<h2 id="bridge-map">A股项目 ↔ 广州课题 能力对标</h2>
+
+<div class="mermaid">
+graph TB
+    subgraph 你的A股项目
+        P1["ReAct Agent<br/>LangChain+LangGraph"]
+        P2["4并行Agent<br/>基本面/技术面/估值/情绪"]
+        P3["5数据源融合<br/>行情/K线/公告/新闻/舆情"]
+        P4["5层幻觉防御<br/>时间注入→工具→Prompt→锚点→代码"]
+        P5["2层查询理解<br/>正则+LLM NER"]
+        P6["网络容错<br/>Session绕过代理+重试"]
+    end
+
+    subgraph 课题12["课题12: 客户行为洞察与推荐"]
+        T12A["客户行为分析<br/>多渠道数据融合"]
+        T12B["智能推荐<br/>产品匹配算法"]
+        T12C["意图识别<br/>购买意向/流失预警"]
+        T12D["动态标签<br/>实时特征工程"]
+    end
+
+    subgraph 课题13["课题13: 智能财富顾问助手"]
+        T13A["Harness/Claw框架<br/>Agent工作流编排"]
+        T13B["插件标准化<br/>可复用模组封装"]
+        T13C["理财资讯解析<br/>多源数据聚合"]
+        T13D["个性化配置<br/>产品推荐引擎"]
+    end
+
+    subgraph 课题14["课题14: 金智引擎"]
+        T14A["Agent+RAG+BI<br/>对话式全景洞察"]
+        T14B["归因推理<br/>金价波动→决策"]
+        T14C["自动化执行<br/>库存/营销动作"]
+        T14D["数据可视化<br/>拖拽式大屏"]
+    end
+
+    P1 -->|Agent架构| T13A
+    P1 -->|Agent架构| T14A
+    P2 -->|多维度分析| T12A
+    P2 -->|并行模式| T14A
+    P3 -->|数据融合| T12A & T13C
+    P5 -->|意图识别| T12C
+    P4 -->|可信输出| T14B
+</div>
+
+<!-- ==================== 课题12 深度分析 ==================== -->
+<h2 id="topic12">课题12：面向个人财富管理的客户行为洞察与智能推荐研究（⭐最推荐）</h2>
+
+<h3>课题原文</h3>
+<div class="highlight">
+面向银行个人财富管理业务（存款、理财、基金、保险等），目标是利用大模型技术提升客户行为理解能力与投资建议质量。
+</div>
+
+<h3>与A股项目的能力迁移</h3>
+<div class="card">
+<table>
+<tr><th>你的A股项目能力</th><th>如何迁移到本课题</th><th>面试可说的话</th></tr>
+
+<tr class="row-expandable">
+<td>ReAct Agent 自主决策</td>
+<td>从"AI诊股"扩展到"AI理财顾问"——Agent根据客户画像主动检索产品库、分析风险偏好、生成配置建议</td>
+<td>"我在A股项目中验证了Agent主动调工具比被动读数据更可靠，这个经验可以直接应用到理财推荐场景"</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>具体迁移方案：</strong>
+<p>A股项目本质是"给定股票→多维度分析→推荐买入/持有/卖出"，本课题是"给定客户→多维度分析→推荐理财产品"。</p>
+<p>两者输入输出不同，但<strong>Agent调度工具的架构完全相同</strong>：</p>
+<p>1. A股：LLM调 get_realtime_quote / get_financials / get_news → 综合分析</p>
+<p>2. 理财：LLM调 get_customer_profile / get_risk_assessment / get_product_list → 推荐产品</p>
+<p>你已有的 ReAct 实现经验（工具定义、Prompt设计、结果汇总）可以直接复用。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>5数据源融合</td>
+<td>从"行情+公告+新闻"扩展到"客户画像+交易流水+产品库+市场行情+风险测评"</td>
+<td>"我在A股项目处理过5个异构数据源的融合，客户行为分析需要的渠道数据更多但模式类似"</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>数据融合经验迁移：</strong>
+<p>你在A股项目已解决的核心问题在本课题同样存在：</p>
+<p>1. <strong>数据源异构</strong>：新浪(JSON API) vs 东方财富(HTML解析) vs 巨潮(PDF公告) → 理财场景：客户画像(结构化DB) vs 行为日志(时序) vs 产品信息(半结构化)</p>
+<p>2. <strong>容错降级</strong>：任一数据源失败不影响整体 → 理财场景：某个渠道数据缺失仍可给出建议</p>
+<p>3. <strong>数据时间对齐</strong>：不同数据源的时效性管理 → 客户行为的T+0/T+1问题</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>2层查询理解</td>
+<td>从"股票名称/代码识别"扩展到"客户理财意图识别"</td>
+<td>"我的查询理解模块处理口语化输入65%靠正则、35%靠LLM，理财意图识别同理"</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>意图识别经验迁移：</strong>
+<p>A股项目：用户说"BYD怎么样"→正则匹配+LLM NER→识别为股票002594→诊股</p>
+<p>理财场景：用户说"我有一笔闲钱想保值"→LLM意图分类→识别为"保守型理财咨询"</p>
+<p>你在A股项目建立的<strong>快匹(正则)+慢匹(LLM)</strong>两层架构完全适用，只需换领域词典。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>幻觉防御</td>
+<td>从"防止LLM编造股价"扩展到"防止LLM编造产品收益率/风险等级"</td>
+<td>"5层幻觉防御体系是通用的——代码注入Header的方法同样可以约束LLM只能用检索到的产品信息"</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>金融场景幻觉防御的通用性：</strong>
+<p>金融场景的共同约束：<strong>任何数字、产品信息、风险提示都不能编造。</strong></p>
+<p>A股项目用代码注入Header（System Prompt末尾追加"以下数据由工具实时获取：..."）作为终极防线——这个思路完全适用于理财推荐场景。</p>
+<p>在理财推荐中，Header可以注入："以下产品信息来自行内产品库，回答时必须引用产品代码，不得编造收益率"。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>面试加分点</h3>
+<div class="highlight">
+这个课题最能让你的A股项目经验"发光"。面试时可以这样说：
+<br/><br/>
+<em>"我之前做的A股AI投资顾问和这个课题本质上是一个技术范式——都是Agent+多源数据+智能推荐——只是领域从股票换到了理财。我在A股项目中踩过的坑（幻觉防御、数据融合、Agent调度）在这个课题中同样会遇到，但因为我已有完整的解决方案，可以更快上手。"</em>
+</div>
+
+<!-- ==================== 课题13 深度分析 ==================== -->
+<h2 id="topic13">课题13：基于Harness/Claw/Skill框架的智能财富顾问助手（⭐最匹配）</h2>
+
+<h3>课题原文</h3>
+<div class="highlight">
+基于Harness/Claw/Skill框架，封装标准化可复用插件模组，构建标准化财富顾问工作流，打造财富顾问全自动化助手，全方位提供理财资讯解析与理财产品个性化配置建议，高效赋能财富顾问。
+</div>
+
+<h3>为什么这个课题和你的A股项目"长得最像"</h3>
+
+<div class="mermaid">
+graph LR
+    subgraph 你的A股项目架构
+        U1["用户输入股票"] --> M1["主Agent<br/>LangGraph编排"]
+        M1 --> A1["基本面Agent<br/>PE/PB/ROE分析"]
+        M1 --> A2["技术面Agent<br/>K线/均线/量价"]
+        M1 --> A3["估值Agent<br/>DCF/行业对比"]
+        M1 --> A4["情绪Agent<br/>新闻/舆情分析"]
+        A1 & A2 & A3 & A4 --> S1["Summary Agent<br/>综合报告生成"]
+    end
+
+    subgraph 课题13架构
+        U2["用户理财需求"] --> M2["主Agent<br/>Harness/Claw编排"]
+        M2 --> B1["资讯解析插件<br/>市场解读/政策分析"]
+        M2 --> B2["产品推荐插件<br/>基金/理财/保险匹配"]
+        M2 --> B3["风险评估插件<br/>KYC/适当性管理"]
+        M2 --> B4["配置生成插件<br/>组合优化/再平衡"]
+        B1 & B2 & B3 & B4 --> S2["财富顾问报告<br/>个性化配置建议"]
+    end
+</div>
+
+<h3>深度对比分析</h3>
+<div class="card">
+<table>
+<tr><th>架构维度</th><th>你的A股项目</th><th>课题13财富顾问</th><th>迁移难度</th></tr>
+
+<tr class="row-expandable">
+<td>Agent编排方式</td>
+<td>LangGraph StateGraph，4个并行Agent + 1个汇总Agent</td>
+<td>Harness/Claw/Skill框架，标准化插件化编排</td>
+<td>低——编排思想相同，框架换一下而已</td>
+</tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>LangGraph vs Harness/Claw对比：</strong>
+<p>LangGraph用Python代码定义节点和边（StateGraph），Harness/Claw偏向声明式配置+YAML定义工作流。但核心概念一致：</p>
+<p>- Agent = 一个有特定能力的工具调用者</p>
+<p>- 编排 = 定义Agent之间的调用顺序和数据传递</p>
+<p>- 插件 = 可复用的工具封装（就是你项目中的 get_realtime_quote 这类函数）</p>
+<p>你已掌握的 LangChain Agent → 迁移到 Harness/Claw 只需理解配置语法差异。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>多Agent并行</td>
+<td>asyncio.gather 4个Agent并行，总耗时=最慢那个</td>
+<td>工作流并行节点，同样的并行思维</td>
+<td>极低——并行模式通用</td>
+</tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>并行Agent的通用经验：</strong>
+<p>你在A股项目中验证了一个关键设计决策：<strong>分析类Agent应该是真正并行（不是流水线），因为各维度独立。</strong></p>
+<p>4个Agent（基本面/技术面/估值/情绪）互不依赖 → 可以并行。</p>
+<p>理财场景同样：资讯解析/产品推荐/风险评估/配置生成各自独立 → 可以并行。</p>
+<p>面试时这是一个强论点：你已经有真实的多Agent并行实践经验。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>工具/插件设计</td>
+<td>每个数据源封装为一个LangChain Tool</td>
+<td>标准化插件接口（Skill）封装</td>
+<td>低——工具抽象方式相同</td>
+</tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>工具设计经验：</strong>
+<p>A股项目中每个工具都有：函数名、参数schema、返回格式、错误处理。这和Harness/Claw的插件规范完全对应。</p>
+<p>你已有的设计经验：</p>
+<p>- 工具粒度：一个数据源一个工具（不要一个工具做太多事）</p>
+<p>- 输入校验：参数合法性检查（股票代码格式验证）</p>
+<p>- 错误返回：工具失败时返回结构化错误信息而非抛异常</p>
+<p>这些在课题13中直接复用。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>结果汇总</td>
+<td>Summary Agent融合4份分析为一份报告</td>
+<td>汇总Agent整合各插件输出为配置建议</td>
+<td>极低——汇总模式相同</td>
+</tr>
+<tr class="detail-tr"><td colspan="4"><div class="detail-content">
+<strong>汇总Agent的设计经验：</strong>
+<p>你在A股项目中已经实践了"先分散分析，再集中汇总"的模式。关键设计决策：</p>
+<p>1. 汇总Agent的Prompt包含每份分析的核心结论（不是全文，节省token）</p>
+<p>2. 要求汇总Agent标注每项建议的数据来源（可追溯）</p>
+<p>3. 冲突处理：当不同Agent给出矛盾结论时，汇总Agent需要解释分歧原因</p>
+<p>这些经验完全适用于财富顾问的配置建议汇总。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>面试加分点</h3>
+<div class="highlight">
+<em>"这个课题的技术架构和我的A股项目几乎是同构的——都是多Agent并行分析+汇总。区别只在于我的项目用LangGraph，这个课题用Harness/Claw，但编排逻辑、并行策略、工具设计模式可以直接迁移。我甚至可以把A股项目中的4个Agent作为一个对照案例来解释我对多Agent架构的理解。"</em>
+</div>
+
+<!-- ==================== 课题14 深度分析 ==================== -->
+<h2 id="topic14">课题14：金智引擎——贵金属业务智能体（⭐也值得考虑）</h2>
+
+<h3>课题原文</h3>
+<div class="highlight">
+金智引擎——贵金属业务智能体面向总分行负责人、网点销售经理、营销策划人员，提供对话式全景洞察舱、归因推理智析器、营销执行智能体核心功能，使用大模型智能体技术、RAG技术、数据仓库技术、BI技术，完成意图识别、逻辑推理与自动化执行，将抽象的市场波动转化为可执行的决策行动。
+</div>
+
+<h3>与你A股项目的交集</h3>
+<div class="card">
+<table>
+<tr><th>A股项目经验</th><th>金智引擎中的对应</th><th>你的优势</th></tr>
+<tr class="row-expandable">
+<td>市场数据分析（行情/涨跌幅/量价）</td>
+<td>金价波动分析（价格变化→库存调整→营销策略）</td>
+<td>你已有金融时序数据的分析经验</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>贵金属 vs A股的金融数据分析共性：</strong>
+<p>1. 两者都是<strong>价格驱动+事件驱动</strong>的分析模式</p>
+<p>2. 贵金属关注：国际金价、美元指数、地缘政治事件</p>
+<p>3. A股关注：大盘指数、行业轮动、财报/政策事件</p>
+<p>你在A股项目中对5个数据源的融合处理经验（实时行情+历史K线+公告+新闻+舆情）可以直接套用到贵金属场景。</p>
+<p>特别有趣的是：你的A股项目中"新闻情绪分析Agent"所做的工作（从新闻文本中提取市场情绪），和贵金属场景下"从金价波动推导营销策略"的归因分析有相似的NLP技术路径。</p>
+</div></td></tr>
+<tr class="row-expandable">
+<td>ReAct Agent</td>
+<td>意图识别→工具调用→推理→执行</td>
+<td>你已验证Agent比被动Prompt更可靠</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>金智引擎的Agent架构分析：</strong>
+<p>课题描述中提到了三个核心功能模块，刚好对应Agent的三个层次：</p>
+<p>1. <strong>对话式全景洞察舱</strong> → 感知层：Agent接收自然语言查询，调用BI/数仓工具获取全景数据</p>
+<p>2. <strong>归因推理智析器</strong> → 推理层：Agent分析金价变化的原因，推断对库存/营销的影响</p>
+<p>3. <strong>营销执行智能体</strong> → 执行层：Agent根据推理结果，自动触发营销动作</p>
+<p>这和你的A股项目中的"查询理解→分析Agent→汇总报告"是同一套Agent思维模式的完整升级版（增加了自动执行）。</p>
+</div></td></tr>
+<tr class="row-expandable">
+<td>5层幻觉防御</td>
+<td>BI数据+金融数据的可信输出</td>
+<td>金融场景的幻觉防御是通用的刚需</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>贵金属场景的幻觉风险更高：</strong>
+<p>贵金属价格实时波动，LLM训练数据中的金价可能是几个月前的。如果幻觉输出错误金价，业务影响更大（可能触发错误的库存调整）。</p>
+<p>你在A股项目中的5层防御（特别是代码注入Header强制实时数据）在这里更加重要。面试时可以强调这个洞察。</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>这个课题的额外价值</h3>
+<div class="highlight">
+<strong>相比课题12/13，课题14多了"BI可视化大屏"和"自动化执行"两个维度</strong>，能补全你的技能树：你目前做的是"分析+报告"，这个课题延伸到了"决策+执行"，是一个更完整的Agent闭环。
+</div>
+
+<!-- ==================== 广州其他课题速览 ==================== -->
+<h2 id="topic-others">其他4个课题速览</h2>
+
+<div class="card">
+<table>
+<tr><th>课题</th><th>一句话概括</th><th>与你的关联</th></tr>
+<tr>
+  <td>11. 基于AI的规格驱动研发实践</td>
+  <td>用LLM把产品需求文档自动转为代码/测试用例</td>
+  <td>偏研发工具链方向，LLM应用开发经验可用但领域不同</td>
+</tr>
+<tr>
+  <td>15. Hive数据湖智能开发系统</td>
+  <td>LLM+Agent辅助HQL编写、建模、测试数据生成</td>
+  <td>偏数据工程方向，你的Agent经验可用但需补充大数据知识</td>
+</tr>
+<tr>
+  <td>16. 商户个性化订单查询智能体</td>
+  <td>自然语言交互的商户订单查询系统</td>
+  <td>偏运营工具，技术难度较低，作为备选但亮点不足</td>
+</tr>
+<tr>
+  <td>17. 私人银行家业智能助手</td>
+  <td>Agent辅助私银协议签订、家族信托需求收集</td>
+  <td>意图识别+自然语言交互经验可用，但偏业务流程自动化</td>
+</tr>
+</table>
+</div>
+
+<!-- ==================== 面试策略 ==================== -->
+<h2 id="interview-strategy">面试策略：如何把你的A股项目"卖"给面试官</h2>
+
+<h3>核心策略：项目经验对照展示</h3>
+
+<div class="mermaid">
+graph TB
+    Q["面试官问：你对广州哪个课题感兴趣？"] --> R["你的回答框架"]
+
+    R --> S1["1. 选课题12或13<br/><small>（最匹配你的A股项目）</small>"]
+    S1 --> S2["2. 简述课题理解<br/><small>（1分钟说清要做什么）</small>"]
+    S2 --> S3["3. 对标展示<br/><small>（我的A股项目有直接可迁移的经验）</small>"]
+    S3 --> S4["4. 具体对照<br/><small>（Agent架构/并行/幻觉防御/数据融合—3个点）</small>"]
+    S4 --> S5["5. 差异化亮点<br/><small>（我额外能带来什么？）</small>"]
+</div>
+
+<h3>回答模板（可直接背）</h3>
+<div class="highlight">
+<strong>"面试官你好，我对课题13——智能财富顾问助手最感兴趣。原因是我的毕设/项目正好做了一个A股AI投资顾问系统，技术架构和这个课题高度同构。</strong><br/><br/>
+<strong>我的项目用了LangGraph编排4个并行Agent分别做基本面、技术面、估值和情绪分析，然后汇总生成投资建议。课题13要做的是用Harness/Claw编排多个插件，做理财资讯解析和产品推荐——本质上都是多Agent并行分析+汇总的模式。</strong><br/><br/>
+<strong>我在项目中还踩过几个关键坑，这些经验可以直接迁移：</strong><br/>
+<strong>一是幻觉防御——我发现LLM会用自己的训练记忆覆盖实时数据，后来通过5层渐进防御体系解决，金融理财场景对数据准确性要求一样高，这个方案可以直接用。</strong><br/>
+<strong>二是多数据源融合——我处理过5个异构数据源的并行采集和容错降级，理财推荐需要的多源数据融合模式是一样的。</strong><br/>
+<strong>三是并行策略——我验证了分析类Agent应该真正并行而非流水线，总耗时等于最慢Agent而非4个之和，这个架构决策在财富顾问场景同样成立。</strong><br/><br/>
+<strong>我相信因为有这些实践经验，我可以更快地在课题中上手并做出有价值的东西。"</strong>
+</div>
+
+<h3>针对不同课题的差异化话术</h3>
+<div class="card">
+<table>
+<tr><th>选择课题</th><th>差异化亮点话术</th></tr>
+<tr class="row-expandable">
+<td>课题12（客户行为洞察）</td>
+<td>"我的A股项目处理的是股票数据，这个课题处理的是客户行为数据——数据类型不同，但分析范式一样：都是从多源异构数据中提取特征、用Agent进行多维度分析、生成推荐建议"</td>
+</tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>加分延伸：</strong>
+<p>可以补充："我在A股项目中做的查询理解模块——用户说'BYD怎么样'能被正确解析——这个能力对应到客户行为分析，就是理解客户说'我有一笔闲钱想保值'的真正意图。我可以用同样的2层匹配策略（正则快匹+LLM慢匹）来处理。"</p>
+</div></td></tr>
+<tr class="row-expandable">
+<td>课题13（财富顾问助手）</td>
+<td>"我的项目和课题13的架构相似度最高——都是多Agent并行编排。我的4个分析Agent直接对应课题13的4类插件。区别只在于框架从LangGraph换成Harness/Claw，但编排思想不变"</td>
+</tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>加分延伸：</strong>
+<p>可以补充："我注意到课题13强调'插件标准化可复用'，这和我在A股项目中封装数据源工具的思路完全一致。我每个工具都有统一的输入输出接口，可以灵活替换数据源而不影响Agent逻辑——这正是插件化的核心价值。"</p>
+</div></td></tr>
+<tr class="row-expandable">
+<td>课题14（金智引擎）</td>
+<td>"金智引擎从'分析'升级到了'分析+执行'的完整闭环。我的A股项目目前做到分析报告输出，但我一直想延伸到自动交易建议执行——这个课题正好让我补全这个能力"</td>
+</tr>
+<tr class="detail-tr"><td colspan="2"><div class="detail-content">
+<strong>加分延伸：</strong>
+<p>可以补充："贵金属价格分析和A股分析有很多共同的技术点——实时价格监控、事件驱动分析、多维度评分。我在A股项目中开发的K线分析、新闻情绪分析等模块，其技术思路可以直接用于金价走势分析。"</p>
+</div></td></tr>
+</table>
+</div>
+
+<!-- ==================== 导航 ==================== -->
+<div class="nav-bottom">
+  <span></span>
+</div>
+
+</div><!-- .main -->
+
+</body>
+</html>

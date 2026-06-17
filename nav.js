@@ -30,6 +30,7 @@
     { href: '20-简历八股文/简历八股文.html',          label: '简历八股文',   accent: '#14b8a6' },
     { href: '22-数据结构/数据结构八股文.html',          label: '数据结构',     accent: '#f97316' },
     { href: '23-工行西安课题/工行西安课题分析.html',    label: '工行西安课题', accent: '#84cc16' },
+    { href: '24-工行广州课题/工行广州课题分析.html',    label: '工行广州课题', accent: '#f59e0b' },
   ];
 
   // Normalize Windows backslashes in pathname
