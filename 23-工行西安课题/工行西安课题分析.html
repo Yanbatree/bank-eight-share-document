@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="../manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090d1a">
+<link rel="apple-touch-icon" href="../icon.svg">
+<title>工行西安软开课题分析 - 招商银行面试准备</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link rel="stylesheet" href="../styles.css">
+<style>
+  :root { --page-accent: #84cc16; }
+  h1 { color: var(--page-accent); border-bottom-color: color-mix(in srgb, var(--page-accent) 35%, transparent); }
+  h1::after { background: var(--page-accent); }
+  thead th { background: #4d7c0f; }
+  h2 { border-left-color: var(--page-accent); background: linear-gradient(90deg, color-mix(in srgb, var(--page-accent) 10%, transparent), transparent); }
+  .highlight { border-left-color: var(--page-accent); background: color-mix(in srgb, var(--page-accent) 12%, transparent); }
+</style>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.register('../sw.js');}</script>
+</head>
+<body>
+
+<script src="../nav.js"></script>
+
+<div class="main">
+
+<h1>工行软开西安 2026 暑期实习课题分析</h1>
+
+<!-- ==================== 概述 ==================== -->
+<h2 id="overview">课题总览</h2>
+
+<div class="highlight">
+<strong>工行软开2026暑期实习共有43个课题，分布在全国7个研发基地。</strong>其中<strong>西安基地有4个课题</strong>，均为AI/智能化方向，涉及的共同技术栈包括：大语言模型（LLM）、智能体（Agent）、RAG检索增强生成、提示词工程（Prompt Engineering）等。
+</div>
+
+<div class="card">
+<table>
+<tr><th>序号</th><th>课题名称</th><th>核心技术方向</th><th>难度</th></tr>
+<tr><td>1</td><td>办公领域智能中枢系统</td><td>LLM + Agent + 任务编排 + RAG</td><td>中高</td></tr>
+<tr><td>2</td><td>基于大模型的银行客户行为轨迹分析与意图智能识别研究</td><td>LLM + 微调 + RAG + 数据分析</td><td>中高</td></tr>
+<tr><td>3</td><td>智眸·自助终端的AI健康管家</td><td>端侧大模型 + 多模态（视觉+日志）+ 故障诊断</td><td>高</td></tr>
+<tr><td>4</td><td>web自动化测试探索与实践</td><td>Playwright + Qwen模型 + 自动化测试</td><td>中</td></tr>
+</table>
+</div>
+
+<!-- ==================== 总体技术图谱 ==================== -->
+<h2 id="tech-map">四大课题共同技术图谱</h2>
+
+<div class="mermaid">
+graph TB
+    subgraph 共同基础能力
+        A["大语言模型 LLM<br/>（Qwen/GPT系列）"]
+        B["Prompt Engineering<br/>提示词工程"]
+        C["RAG 检索增强生成<br/>向量数据库 + 语义检索"]
+        D["Agent 智能体<br/>ReAct / 任务规划"]
+        E["数据处理<br/>清洗/标注/特征工程"]
+    end
+
+    subgraph 课题1["课题1: 办公智能中枢"]
+        T1A["意图识别"]
+        T1B["任务拆分与编排"]
+        T1C["长期记忆/上下文管理"]
+        T1D["子智能体调度"]
+        T1E["企业系统对接 OA/邮件"]
+    end
+
+    subgraph 课题2["课题2: 客户行为分析"]
+        T2A["模型微调 Fine-tuning"]
+        T2B["客户动态标签生成"]
+        T2C["关键服务路径分析"]
+        T2D["精准营销推荐"]
+    end
+
+    subgraph 课题3["课题3: 自助终端AI管家"]
+        T3A["端侧模型部署 Edge AI"]
+        T3B["多模态分析 视觉+日志"]
+        T3C["设备健康状态评估"]
+        T3D["自动故障分析报告"]
+    end
+
+    subgraph 课题4["课题4: Web自动化测试"]
+        T4A["Playwright 浏览器自动化"]
+        T4B["录制+AI智能解析"]
+        T4C["零代码测试用例生成"]
+        T4D["GIF可视化回放"]
+    end
+
+    A --> T1A & T2A & T3A & T4B
+    B --> T1A & T2A & T4B
+    C --> T1D & T2A & T3D
+    D --> T1B & T1D
+    E --> T2A & T2B & T4C
+</div>
+
+<!-- ==================== 课题一 ==================== -->
+<h2 id="topic1">课题一：办公领域智能中枢系统</h2>
+
+<h3>1.1 课题概述</h3>
+<div class="highlight">
+构建基于<strong>大语言模型（LLM）和智能体（Agent）技术</strong>的办公智能中枢。通过意图识别、任务拆分与编排、长期记忆、子智能体等能力，解决传统办公系统"任务理解低效、多任务协同困难、知识复用不足"三大痛点。对接OA、邮件等企业系统，实现跨平台自动化协同，最终形成可复用的办公知识库。
+</div>
+
+<h3>1.2 核心技术架构</h3>
+<div class="mermaid">
+graph LR
+    U["用户<br/>自然语言输入"] --> I["意图识别模块<br/><small>LLM语义理解</small>"]
+    I --> P["任务规划引擎<br/><small>复杂任务拆分为子任务</small>"]
+    P --> O["任务编排器<br/><small>DAG/有限状态机编排</small>"]
+    O --> A1["子Agent: 会议安排"]
+    O --> A2["子Agent: 知识查询"]
+    O --> A3["子Agent: 文档处理"]
+    O --> A4["子Agent: 邮件处理"]
+    A1 & A2 & A3 & A4 --> M["长期记忆模块<br/><small>向量数据库存储历史交互</small>"]
+    M --> R["个性化推荐"]
+    A1 & A2 & A3 & A4 --> KB["办公知识库<br/><small>RAG检索增强</small>"]
+</div>
+
+<h3>1.3 关键技术点深度解析</h3>
+<div class="card">
+<table>
+<tr><th>技术点</th><th>详细说明</th><th>面试可能追问</th></tr>
+
+<tr class="row-expandable">
+<td>意图识别</td>
+<td>LLM对用户自然语言输入进行语义理解，识别用户真实意图，区分"会议安排"、"文档查询"、"邮件起草"等不同场景</td>
+<td>多意图冲突如何处理？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>多意图识别与冲突处理：</strong>
+<p>当用户输入包含多个意图时（如"帮我查一下上周的会议纪要，然后发邮件给参会人"），需要：</p>
+<p>1. 先用LLM做意图分类（classification），识别出"查纪要"和"发邮件"两个意图</p>
+<p>2. 判断意图之间的依赖关系（DAG编排）——先查纪要，再发邮件</p>
+<p>3. 如果两个意图互斥（如"取消会议"和"修改会议时间"同时出现），需要发起澄清式追问</p>
+<p>4. 实现方式：在Prompt中要求LLM输出结构化JSON，包含intents数组和dependency图</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>任务拆分与编排</td>
+<td>将复杂任务分解为原子性子任务，通过DAG（有向无环图）或状态机进行编排调度</td>
+<td>如何保证子任务间的数据传递？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>任务拆分与编排机制：</strong>
+<p>1. 使用ReAct（Reasoning + Acting）模式：LLM先推理，再调用工具执行</p>
+<p>2. 任务拆分通过Few-shot Prompt让LLM输出子任务列表和依赖关系</p>
+<p>3. 编排引擎实现：每个子任务有明确的输入/输出schema，通过上下文管理器传递数据</p>
+<p>4. 失败重试：子任务失败时，编排器记录中间态，支持断点续传</p>
+<p>5. 类似LangChain的Chain/Agent机制，或直接使用OpenAI的Function Calling + 多轮对话</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>长期记忆</td>
+<td>基于向量数据库存储用户历史交互，实现"记住用户偏好、历史上下文"的能力</td>
+<td>向量数据库选型？如何处理记忆衰减？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>长期记忆实现方案：</strong>
+<p>1. <strong>短期记忆</strong>：对话上下文窗口内的历史消息（受token限制）</p>
+<p>2. <strong>长期记忆</strong>：将历史对话embedding后存入向量数据库（如Milvus/Chroma/Qdrant），检索时按相似度召回最相关的历史交互</p>
+<p>3. <strong>记忆衰减策略</strong>：按时间加权（越近权重越高）、按重要性加权（用户明确标记的重要信息高分）</p>
+<p>4. <strong>记忆压缩</strong>：定期用LLM对历史对话做总结摘要，替代原始对话存储</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>子智能体调度</td>
+<td>不同业务场景由专门的子Agent处理，主Agent负责任务路由和结果汇总</td>
+<td>多Agent之间如何通信？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>多Agent协作模式：</strong>
+<p>1. <strong>主从模式</strong>：主Agent负责任务分发，子Agent专注特定领域（如会议Agent、邮件Agent）</p>
+<p>2. <strong>通信方式</strong>：通过标准化JSON消息传递，或共享上下文（SharedContext）</p>
+<p>3. <strong>与OA/邮件系统的对接</strong>：通过API接口调用企业系统，Agent生成调用参数</p>
+<p>4. <strong>结果汇总</strong>：主Agent收集各子Agent输出，做最终的自然语言整合</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>1.4 面试准备要点</h3>
+<div class="highlight">
+<strong>核心考察能力：</strong>LLM应用开发、Agent设计模式、RAG架构、企业级系统集成
+<br/><br/>
+<strong>建议准备方向：</strong>
+<ol>
+  <li>深入理解ReAct/Plan-and-Execute等Agent设计模式</li>
+  <li>掌握LangChain/LlamaIndex等Agent框架的基本使用</li>
+  <li>理解RAG的完整链路：文档解析→切片→Embedding→向量检索→LLM生成</li>
+  <li>能说清楚多Agent协同的架构设计和通信方式</li>
+</ol>
+</div>
+
+<!-- ==================== 课题二 ==================== -->
+<h2 id="topic2">课题二：基于大模型的银行客户行为轨迹分析与意图智能识别研究</h2>
+
+<h3>2.1 课题概述</h3>
+<div class="highlight">
+基于客户在银行各渠道（手机银行、网银、柜面、客服）的<strong>浏览、咨询、交易、投诉等动态行为数据</strong>，融合大数据处理与AI技术（提示词工程、模型微调、RAG），构建<strong>客户行为分析智能体</strong>。该智能体可生成客户动态标签、关键服务路径及精准营销建议，实现对客户的精准洞察。
+</div>
+
+<h3>2.2 核心技术链路</h3>
+<div class="mermaid">
+graph TB
+    subgraph 数据层
+        D1["手机银行行为数据"]
+        D2["网银浏览/交易数据"]
+        D3["柜面服务记录"]
+        D4["客服对话记录"]
+        D5["投诉/反馈数据"]
+    end
+
+    subgraph 处理层
+        DP["大数据处理<br/>Spark/Flink/Hive"]
+        FE["特征工程<br/>行为序列/时间窗口/频次统计"]
+    end
+
+    subgraph AI层
+        PE["Prompt Engineering<br/>行为分析提示模板"]
+        FT["模型微调 Fine-tuning<br/>LoRA/QLoRA 领域适配"]
+        RAG["RAG 知识检索<br/>产品知识库/营销策略库"]
+    end
+
+    subgraph 输出层
+        O1["客户动态标签<br/>高净值/流失风险/理财偏好"]
+        O2["关键服务路径<br/>用户旅程地图"]
+        O3["精准营销建议<br/>个性化产品推荐"]
+        O4["意图识别<br/>购买意向/投诉升级/流失信号"]
+    end
+
+    D1 & D2 & D3 & D4 & D5 --> DP --> FE --> PE & FT & RAG
+    PE & FT & RAG --> O1 & O2 & O3 & O4
+</div>
+
+<h3>2.3 关键技术点深度解析</h3>
+<div class="card">
+<table>
+<tr><th>技术点</th><th>详细说明</th><th>面试可能追问</th></tr>
+
+<tr class="row-expandable">
+<td>客户行为数据采集与处理</td>
+<td>从多渠道（APP/网银/柜面/客服）采集行为数据，进行ETL清洗、特征提取、行为序列建模</td>
+<td>如何处理各渠道数据格式不一致的问题？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>多源异构数据处理：</strong>
+<p>1. 数据来源：手机银行埋点日志（点击流）、网银交易记录（结构化）、柜面服务记录（半结构化）、客服对话（非结构化文本）</p>
+<p>2. 统一数据模型：建立<strong>客户统一行为视图（Customer 360）</strong>，以客户ID为主键关联所有渠道数据</p>
+<p>3. 行为序列建模：将客户行为按时间排序，形成行为链路（如：浏览理财产品 → 查看详情 → 对比 → 咨询客服 → 购买/放弃）</p>
+<p>4. 时间窗口特征：滑动窗口（近7天/30天/90天）统计行为频次、时长、转化率等特征</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>Prompt Engineering 提示词工程</td>
+<td>设计结构化的提示模板，引导LLM对客户行为进行分析和解读</td>
+<td>如何保证Prompt输出的稳定性和一致性？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>提示词工程设计思路：</strong>
+<p>1. <strong>角色设定</strong>：你是银行客户行为分析专家</p>
+<p>2. <strong>结构化输入</strong>：将客户行为数据格式化为JSON输入LLM</p>
+<p>3. <strong>约束输出格式</strong>：要求输出结构化JSON（标签列表+置信度+推荐产品+理由）</p>
+<p>4. <strong>Few-shot示例</strong>：在Prompt中提供2-3个标准示例，引导模型输出稳定</p>
+<p>5. <strong>Chain-of-Thought</strong>：要求模型先推理再输出结论（"请先分析客户行为特征，再给出建议"）</p>
+<p>6. <strong>温度参数控制</strong>：分析类任务temperature设低（0.1-0.3），创意类可设高</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>模型微调 Fine-tuning</td>
+<td>在银行领域数据上对基座模型进行微调（LoRA/QLoRA），提升模型对金融场景的理解能力</td>
+<td>全量微调 vs LoRA的区别？何时选哪种？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>模型微调方案对比：</strong>
+<div class="card"><table>
+<tr><th>方案</th><th>参数量</th><th>显存需求</th><th>训练速度</th><th>适用场景</th></tr>
+<tr><td>全量微调</td><td>全部参数</td><td>极高（7B需~56GB）</td><td>慢</td><td>数据量大、追求极致效果</td></tr>
+<tr><td>LoRA</td><td>~0.1-1%</td><td>低（7B需~16GB）</td><td>快</td><td>资源受限、多任务微调</td></tr>
+<tr><td>QLoRA</td><td>~0.1-1%</td><td>极低（7B需~10GB）</td><td>较快</td><td>消费级GPU、快速实验</td></tr>
+</table></div>
+<p>本课题使用QLoRA即可：将4-bit量化模型 + LoRA低秩适配，在消费级GPU上即可微调7B模型。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>RAG知识检索增强</td>
+<td>结合银行产品库、营销策略库，检索相关信息增强LLM的生成质量</td>
+<td>RAG中的chunking策略如何选？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>RAG在客户行为分析中的应用：</strong>
+<p>1. <strong>知识库内容</strong>：银行产品信息（理财/基金/保险）、营销话术模板、合规要求</p>
+<p>2. <strong>检索时机</strong>：当需要推荐具体产品时，检索产品库；当需要给出营销建议时，检索话术库</p>
+<p>3. <strong>Chunk策略</strong>：产品信息按产品维度切分（每个产品一个chunk），合规要求按条款切分</p>
+<p>4. <strong>重排序（Re-rank）</strong>：初检Top-K结果后用Cross-encoder做精排，提升相关性</p>
+<p>5. <strong>引用溯源</strong>：生成结果中标注信息来源，增强可解释性</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>2.4 面试准备要点</h3>
+<div class="highlight">
+<strong>核心考察能力：</strong>Prompt Engineering、模型微调（LoRA/QLoRA）、RAG架构、数据分析与特征工程
+<br/><br/>
+<strong>建议准备方向：</strong>
+<ol>
+  <li>能写出一个完整的客户行为分析Prompt模板（含Few-shot示例）</li>
+  <li>了解LoRA/QLoRA的原理和训练流程</li>
+  <li>理解客户标签体系的设计（静态标签 vs 动态标签）</li>
+  <li>能解释"意图识别"与"行为分析"的区别和联系</li>
+</ol>
+</div>
+
+<!-- ==================== 课题三 ==================== -->
+<h2 id="topic3">课题三：智眸·自助终端的AI健康管家</h2>
+
+<h3>3.1 课题概述</h3>
+<div class="highlight">
+通过<strong>端侧部署大模型</strong>，实时采集自助终端（ATM/STM/VTM等）的<strong>屏幕视频流</strong>及<strong>系统应用日志</strong>，构建智能化的设备健康状态评估体系。通过<strong>多模态数据分析（视觉+日志）</strong>，系统能够动态监测设备运行状态、识别潜在异常（界面卡顿、功能故障等）、生成健康评分，并自动生成初步故障分析报告。
+</div>
+
+<h3>3.2 核心技术架构</h3>
+<div class="mermaid">
+graph TB
+    subgraph 数据采集层
+        V["屏幕视频流采集<br/><small>实时截图/录屏</small>"]
+        L["系统应用日志采集<br/><small>Logstash/Filebeat</small>"]
+    end
+
+    subgraph 端侧推理层
+        EM["端侧大模型<br/><small>Qwen-1.8B/4B 量化版</small>"]
+        CV["视觉异常检测<br/><small>界面卡顿/白屏/弹窗识别</small>"]
+        LP["日志异常分析<br/><small>错误码识别/异常模式匹配</small>"]
+    end
+
+    subgraph 分析输出层
+        HS["健康评分引擎<br/><small>综合视觉+日志多维评分</small>"]
+        FR["故障分析报告<br/><small>自动生成根因分析</small>"]
+        AL["告警推送<br/><small>阈值触发/趋势预警</small>"]
+    end
+
+    V --> CV
+    L --> LP
+    CV & LP --> EM
+    EM --> HS & FR
+    HS & FR --> AL
+</div>
+
+<h3>3.3 关键技术点深度解析</h3>
+<div class="card">
+<table>
+<tr><th>技术点</th><th>详细说明</th><th>面试可能追问</th></tr>
+
+<tr class="row-expandable">
+<td>端侧大模型部署</td>
+<td>将大模型部署在自助终端设备本地（而非云端），实现低延迟、离线可用、数据不出设备</td>
+<td>端侧部署的挑战和解决方案？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>端侧部署核心技术：</strong>
+<p>1. <strong>模型量化</strong>：使用INT4/INT8量化压缩模型（如GPTQ、AWQ、GGUF格式），将7B模型压缩到4GB以内</p>
+<p>2. <strong>小模型选型</strong>：Qwen-1.8B/4B、Phi-3-mini等轻量模型，专门针对端侧场景设计</p>
+<p>3. <strong>推理框架</strong>：使用llama.cpp、Ollama、vLLM等支持CPU/GPU混合推理的框架</p>
+<p>4. <strong>为什么端侧部署</strong>：银行自助终端涉及客户敏感数据，不能上传云端；离线环境；实时性要求（毫秒级响应）</p>
+<p>5. <strong>挑战</strong>：模型精度损失（量化带来）、硬件资源有限（嵌入式设备）、模型更新困难</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>多模态数据分析</td>
+<td>同时分析"屏幕视觉信号"和"系统日志文本"，两种模态互补，提升异常检测准确性</td>
+<td>视觉和日志两种信号如何融合？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>多模态融合策略：</strong>
+<p>1. <strong>视觉模态</strong>：截取终端当前屏幕截图，用视觉模型（或简化版用图像哈希对比）检测异常画面——白屏、卡顿界面、异常弹窗、功能按钮缺失等</p>
+<p>2. <strong>日志模态</strong>：解析系统日志，用NLP模型识别异常错误码、异常调用栈、超时记录等</p>
+<p>3. <strong>融合方式</strong>：</p>
+<p>   - 早期融合：将视觉特征+日志特征拼接后输入统一模型</p>
+<p>   - 晚期融合：视觉和日志各自独立判断，最后投票/加权综合</p>
+<p>   - 本课题更适用<strong>晚期融合</strong>：各自独立检测，交叉验证（如日志报错+画面卡顿→高置信度故障）</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>健康状态评估体系</td>
+<td>建立多维度的设备健康评分模型，综合评估设备运行状态</td>
+<td>健康评分的指标体系怎么设计？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>设备健康评分设计（参考Google SRE黄金指标）：</strong>
+<div class="card"><table>
+<tr><th>指标维度</th><th>具体指标</th><th>权重</th><th>数据来源</th></tr>
+<tr><td>可用性</td><td>服务正常响应率、交易成功率</td><td>30%</td><td>系统日志</td></tr>
+<tr><td>性能</td><td>界面响应延迟、交易处理时长</td><td>25%</td><td>日志+视觉（帧间时差）</td></tr>
+<tr><td>错误率</td><td>异常错误码频次、崩溃次数</td><td>25%</td><td>系统日志</td></tr>
+<tr><td>饱和度</td><td>CPU/内存/磁盘使用率</td><td>20%</td><td>系统监控</td></tr>
+</table></div>
+<p>最终健康分 = Σ(维度得分 × 权重)，分数映射为：健康(80-100)/亚健康(60-79)/故障(0-59)</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>自动故障分析报告</td>
+<td>基于历史故障数据和实时采集信息，自动生成故障分析报告</td>
+<td>如何保证故障分析的准确性？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>自动故障报告生成流程：</strong>
+<p>1. 异常检测 → 触发故障分析流程</p>
+<p>2. 采集上下文数据：当前截图、近5分钟日志、系统资源快照</p>
+<p>3. 向量检索历史相似故障案例（RAG）</p>
+<p>4. LLM综合当前数据+历史案例，生成结构化故障报告：</p>
+<p>   - 故障时间、故障现象描述</p>
+<p>   - 可能根因（排序、置信度）</p>
+<p>   - 建议处理方案</p>
+<p>   - 相似历史案例参考</p>
+<p>5. 报告推送给运维人员，人工确认后回收入故障知识库</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>3.4 面试准备要点</h3>
+<div class="highlight">
+<strong>核心考察能力：</strong>端侧AI部署、模型量化与压缩、多模态融合、故障诊断、SRE运维理念
+<br/><br/>
+<strong>建议准备方向：</strong>
+<ol>
+  <li>了解模型量化的常见方法（GPTQ/AWQ/GGUF）及精度损失权衡</li>
+  <li>理解多模态AI的基本概念（视觉+文本的融合方式）</li>
+  <li>掌握Google SRE黄金指标（延迟、流量、错误、饱和度）</li>
+  <li>能说清楚端侧部署 vs 云端部署的优劣和适用场景</li>
+</ol>
+</div>
+
+<!-- ==================== 课题四 ==================== -->
+<h2 id="topic4">课题四：Web自动化测试探索与实践</h2>
+
+<h3>4.1 课题概述</h3>
+<div class="highlight">
+基于<strong>Playwright + Qwen模型</strong>，通过"录制+AI智能解析"实现<strong>零代码Web自动化测试</strong>。覆盖脚本自动生成、执行、管理的全流程闭环。适用于高频业务场景回归、组件升级功能验证、公共模块改造关联覆盖等场景。核心指标：回归测试效率提升50%，自动化替代60%重复手工操作。
+</div>
+
+<h3>4.2 核心技术架构</h3>
+<div class="mermaid">
+graph LR
+    R["操作录制<br/><small>Playwright Codegen</small>"] --> P["AI智能解析<br/><small>Qwen模型理解操作语义</small>"]
+    P --> G["脚本自动生成<br/><small>生成可维护的测试代码</small>"]
+    G --> E["自动执行<br/><small>Playwright Runner</small>"]
+    E --> V["可视化回放<br/><small>GIF动图全程记录</small>"]
+    E --> RP["结果报告<br/><small>通过/失败/异常分类</small>"]
+    V & RP --> M["用例管理平台<br/><small>集中存储+版本管理</small>"]
+</div>
+
+<h3>4.3 关键技术点深度解析</h3>
+<div class="card">
+<table>
+<tr><th>技术点</th><th>详细说明</th><th>面试可能追问</th></tr>
+
+<tr class="row-expandable">
+<td>Playwright录制原理</td>
+<td>通过Playwright的Codegen工具录制用户操作，自动生成测试脚本</td>
+<td>Playwright vs Selenium的区别？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>Playwright vs Selenium对比：</strong>
+<div class="card"><table>
+<tr><th>对比维度</th><th>Playwright</th><th>Selenium</th></tr>
+<tr><td>架构</td><td>单一WebSocket连接，自动等待</td><td>JSON Wire Protocol，需显式等待</td></tr>
+<tr><td>浏览器支持</td><td>Chromium/Firefox/WebKit</td><td>所有主流浏览器</td></tr>
+<tr><td>自动录制</td><td>内置codegen，支持多语言导出</td><td>需Selenium IDE插件</td></tr>
+<tr><td>网络拦截</td><td>原生支持API mock/modify</td><td>需额外工具</td></tr>
+<tr><td>执行速度</td><td>更快（自动等待机制）</td><td>较慢（需手动管理等待）</td></tr>
+<tr><td>移动端</td><td>原生支持移动端模拟</td><td>需Appium配合</td></tr>
+</table></div>
+<p>本课题选Playwright的原因：原生录制能力、自动等待（减少flaky test）、网络拦截、更快的执行速度。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>AI智能解析</td>
+<td>使用Qwen模型理解录制操作的业务语义，生成更可读、可维护的测试代码</td>
+<td>AI如何让生成的代码更"可维护"？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>AI增强测试代码生成：</strong>
+<p>Playwright原生录制生成的是底层操作序列（click、fill等），代码可读性差。AI的作用：</p>
+<p>1. <strong>语义理解</strong>：将"点击第3个按钮"理解为"点击'提交申请'按钮"，生成语义化的选择器</p>
+<p>2. <strong>断言自动生成</strong>：从操作上下文推断预期结果（如"提交后应跳转到成功页面"→自动加expect断言）</p>
+<p>3. <strong>代码重构</strong>：提取公共操作为函数/Page Object，遵循DRY原则</p>
+<p>4. <strong>数据驱动改造</strong>：识别硬编码的测试数据，改造为参数化</p>
+<p>5. <strong>异常处理补充</strong>：自动添加try-catch和重试逻辑</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>零代码测试方案</td>
+<td>非技术人员通过录制即可生成测试用例，无需编写代码</td>
+<td>零代码方案的局限性？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>零代码的边界与局限：</strong>
+<p><strong>适用场景：</strong></p>
+<p>- 回归测试（已有功能反复验证）</p>
+<p>- 冒烟测试（核心链路快速验证）</p>
+<p>- UI交互验证（页面跳转、表单提交）</p>
+<p><strong>不适用场景：</strong></p>
+<p>- 复杂逻辑验证（需要精确断言和数据处理）</p>
+<p>- 接口级测试（适合直接用Postman/JMeter）</p>
+<p>- 性能测试（大量并发需要专业工具）</p>
+<p>- 动态数据的断言（录制时的数据可能已过期）</p>
+<p><strong>解决方案</strong>：零代码覆盖70%-80%的常规测试，复杂场景仍保留编码能力作为补充。</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>可视化回放与用例管理</td>
+<td>GIF动图全程回放测试执行步骤，集中管理自动化用例</td>
+<td>如何保证测试用例的可维护性？</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>用例管理与可维护性：</strong>
+<p>1. <strong>版本管理</strong>：测试用例文件纳入Git管理，与业务代码同步版本</p>
+<p>2. <strong>分层组织</strong>：按模块/功能/场景三级目录组织用例</p>
+<p>3. <strong>标签分类</strong>：给用例打标签（冒烟/回归/全量/P0/P1），支持按标签筛选执行</p>
+<p>4. <strong>失败自动分类</strong>：AI分析失败原因——产品Bug / 环境问题 / 用例过期</p>
+<p>5. <strong>用例自愈</strong>：当页面元素变化导致用例失败时，AI尝试自动修复选择器</p>
+<p>6. <strong>GIF回放价值</strong>：快速定位失败步骤，无需重现环境</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>4.4 面试准备要点</h3>
+<div class="highlight">
+<strong>核心考察能力：</strong>自动化测试框架、Playwright使用、AI辅助测试、CI/CD集成
+<br/><br/>
+<strong>建议准备方向：</strong>
+<ol>
+  <li>熟悉Playwright的基本API和录制功能</li>
+  <li>了解Page Object模式、数据驱动测试等测试设计模式</li>
+  <li>理解AI如何增强测试（语义识别、断言生成、自愈）</li>
+  <li>能说清楚零代码测试的边界和适用场景</li>
+</ol>
+</div>
+
+<!-- ==================== 面试策略 ==================== -->
+<h2 id="interview-strategy">面试策略与准备建议</h2>
+
+<h3>5.1 四个课题的核心共同点</h3>
+<div class="mermaid">
+graph TB
+    CORE["四大课题共同的面试关键词"]
+    CORE --> K1["大语言模型 LLM<br/><small>Qwen/GPT系列的能力与局限</small>"]
+    CORE --> K2["RAG 检索增强生成<br/><small>Embedding → 向量检索 → 生成</small>"]
+    CORE --> K3["Prompt Engineering<br/><small>结构化提示、Few-shot、CoT</small>"]
+    CORE --> K4["Agent 智能体<br/><small>ReAct/工具调用/多Agent协同</small>"]
+    CORE --> K5["模型部署与优化<br/><small>量化/端侧/推理加速</small>"]
+    CORE --> K6["银行场景理解<br/><small>合规/安全/数据隐私</small>"]
+</div>
+
+<h3>5.2 面试可能被问到的通用问题</h3>
+<div class="card">
+<table>
+<tr><th>问题类型</th><th>可能的问题</th><th>回答要点</th></tr>
+
+<tr class="row-expandable">
+<td>技术选型</td>
+<td>为什么选择Qwen而不是GPT？为什么用RAG而不是微调？为什么用Playwright而不是Selenium？</td>
+<td>需要有清晰的权衡分析</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>回答框架——每个技术选型都从四个维度分析：</strong>
+<p>1. <strong>成本</strong>：Qwen开源/免费 vs GPT API收费；RAG无需训练成本 vs 微调需要GPU资源</p>
+<p>2. <strong>数据安全</strong>：银行数据不能出内网，必须私有化部署 → 开源模型优势</p>
+<p>3. <strong>性能</strong>：场景需求的具体指标（延迟、准确率、吞吐量）</p>
+<p>4. <strong>可维护性</strong>：团队技术栈、社区生态、文档完善度</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>架构设计</td>
+<td>如果要你设计这个系统，你会怎么做？</td>
+<td>按数据层→模型层→应用层的三层架构回答</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>回答模板（以课题2客户行为分析为例）：</strong>
+<p>1. <strong>数据层</strong>：从手机银行/网银/柜面等渠道采集行为数据，入Hive/数据湖，Spark做特征工程</p>
+<p>2. <strong>模型层</strong>：Qwen基座模型 + LoRA微调 + RAG检索增强，部署在GPU服务器上提供API服务</p>
+<p>3. <strong>应用层</strong>：Spring Boot构建后端服务，前端展示客户标签/行为路径/营销建议</p>
+<p>4. <strong>监控层</strong>：模型效果监控（标签准确率）、数据漂移检测、badcase收集</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>风险与挑战</td>
+<td>这个项目最大的挑战是什么？你打算怎么解决？</td>
+<td>从技术、业务、合规三个角度分析</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>常见挑战及应对：</strong>
+<p>1. <strong>数据质量问题</strong>：银行历史数据可能存在缺失/不一致 → 数据清洗Pipeline + 人工标注补充</p>
+<p>2. <strong>模型幻觉</strong>：LLM可能产生不存在的产品信息 → RAG约束 + 输出校验 + 人工审核</p>
+<p>3. <strong>合规风险</strong>：客户数据隐私保护 → 数据脱敏 + 端侧部署 + 最小权限原则</p>
+<p>4. <strong>效果评估</strong>：缺乏标注数据 → 先小规模试点，收集反馈后再迭代</p>
+</div></td></tr>
+
+<tr class="row-expandable">
+<td>学习计划</td>
+<td>如果选了这个课题，实习前你会做什么准备？</td>
+<td>展示主动性和学习能力</td>
+</tr>
+<tr class="detail-tr"><td colspan="3"><div class="detail-content">
+<strong>建议展示的准备计划：</strong>
+<p>1. 学习LangChain/LlamaIndex基础，跑通一个RAG Demo（1周）</p>
+<p>2. 学习Prompt Engineering最佳实践（OpenAI/Anthropic官方指南）（3天）</p>
+<p>3. 了解模型量化（GPTQ/AWQ）并在本地跑一个小模型（3天）</p>
+<p>4. 如果是课题4：学习Playwright录制和基本API（1周）</p>
+<p>5. 阅读银行数字化转型相关报告/文章，了解行业背景（持续）</p>
+<p>6. 在GitHub上找类似开源项目学习架构设计（持续）</p>
+</div></td></tr>
+</table>
+</div>
+
+<h3>5.3 课题选择策略</h3>
+<div class="highlight">
+<strong>如果你是面试者，面试官可能会问"你对哪个课题最感兴趣"</strong>——这是一个考察你对技术方向理解的问题。建议根据自己的背景选择：
+<br/><br/>
+<table style="margin:0;width:100%">
+<tr><th style="width:20%">你的背景</th><th style="width:25%">推荐课题</th><th>理由</th></tr>
+<tr><td>有AI/LLM开发经验</td><td>课题1（办公智能中枢）</td><td>Agent开发最前沿，技术含量高，面试可聊的话题多</td></tr>
+<tr><td>有数据分析/算法背景</td><td>课题2（客户行为分析）</td><td>数据分析+LLM的结合最自然，展示数据思维</td></tr>
+<tr><td>有嵌入式/系统背景</td><td>课题3（自助终端AI管家）</td><td>端侧部署+多模态，技术壁垒高，差异化优势明显</td></tr>
+<tr><td>有测试/QA背景</td><td>课题4（Web自动化测试）</td><td>上手快、出成果快，AI+测试是热门方向</td></tr>
+<tr><td>纯小白/转专业</td><td>课题4 或 课题1</td><td>课题4技术栈简单，课题1方向热门但门槛适中</td></tr>
+</table>
+</div>
+
+<h3>5.4 面试时展示项目理解的框架</h3>
+<div class="highlight">
+当面试官问"你对这个课题有什么理解"时，用以下框架回答：
+<ol>
+  <li><strong>一句话概括</strong>——这个课题要解决什么问题？（业务痛点）</li>
+  <li><strong>技术架构</strong>——用什么技术方案解决？（数据层→模型层→应用层）</li>
+  <li><strong>核心难点</strong>——技术实现上最大的挑战是什么？（展示思考深度）</li>
+  <li><strong>预期产出</strong>——最终要交付什么？（系统/平台/报告）</li>
+  <li><strong>个人价值</strong>——做这个课题能学到什么？（展示成长意愿）</li>
+</ol>
+</div>
+
+<!-- ==================== 导航 ==================== -->
+<div class="nav-bottom">
+  <span></span>
+</div>
+
+</div><!-- .main -->
+
+</body>
+</html>
